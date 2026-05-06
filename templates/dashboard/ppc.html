@@ -1,0 +1,243 @@
+{% extends "base/base.html" %}
+{% block title %}PPC Analytics{% endblock %}
+{% block nav_ppc %}active{% endblock %}
+{% block page_title %}PPC Analytics{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          onclick="location.href='?mp={{ mp }}&period={{ period }}'">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  <a class="date-btn {% if period == '7d'  %}active{% endif %}" href="?mp={{ marketplace }}&period=7d">7D</a>
+  <a class="date-btn {% if period == '30d' %}active{% endif %}" href="?mp={{ marketplace }}&period=30d">30D</a>
+  <a class="date-btn {% if period == '90d' %}active{% endif %}" href="?mp={{ marketplace }}&period=90d">90D</a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI STRIP -->
+<div class="kpi-grid" style="grid-template-columns:repeat(6,1fr);margin-bottom:16px">
+  <div class="kpi-card gold">
+    <div class="kpi-label">Total Spend</div>
+    <div class="kpi-val">${{ totals.grand_spend|default:0|floatformat:0 }}</div>
+    <div class="kpi-sub text-muted">{{ period }}</div>
+  </div>
+  <div class="kpi-card blue">
+    <div class="kpi-label">PPC Sales</div>
+    <div class="kpi-val">${{ totals.grand_sales|default:0|floatformat:0 }}</div>
+    <div class="kpi-sub text-muted">7-day attribution</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-label">Orders</div>
+    <div class="kpi-val">{{ totals.grand_orders|default:0 }}</div>
+    <div class="kpi-sub text-muted">PPC attributed</div>
+  </div>
+  <div class="kpi-card cyan">
+    <div class="kpi-label">Clicks</div>
+    <div class="kpi-val">{{ totals.grand_clicks|default:0 }}</div>
+    <div class="kpi-sub">
+      {% if totals.grand_impr and totals.grand_clicks %}
+      CTR: {{ totals.grand_clicks|floatformat:0 }} / {{ totals.grand_impr|floatformat:0 }}
+      {% else %}–{% endif %}
+    </div>
+  </div>
+  <div class="kpi-card {% if totals.grand_spend and totals.grand_sales and totals.grand_spend|floatformat:0 > totals.grand_sales|floatformat:0 %}red{% else %}green{% endif %}">
+    <div class="kpi-label">Portfolio ACoS</div>
+    <div class="kpi-val" id="portfolioAcos">–</div>
+    <div class="kpi-sub text-muted">
+      {% if target %}Target: {{ target.tacos_target }}% TACoS{% endif %}
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Portfolio ROAS</div>
+    <div class="kpi-val" id="portfolioRoas">–</div>
+    <div class="kpi-sub text-muted">$ sales per $ spend</div>
+  </div>
+</div>
+
+<!-- CHARTS -->
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Daily Spend vs Sales</div></div>
+    <div class="card-body" style="padding:12px"><canvas id="spendSalesChart" height="180"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Ad Type Breakdown</div></div>
+    <div class="card-body" style="padding:12px"><canvas id="typeChart" height="180"></canvas></div>
+  </div>
+</div>
+
+<!-- ACoS TREND -->
+<div class="card" style="margin-bottom:14px">
+  <div class="card-header">
+    <div class="card-title">ACoS Trend</div>
+    {% if target %}
+    <span class="badge badge-gold">Target TACoS: {{ target.tacos_target }}%</span>
+    {% endif %}
+  </div>
+  <div class="card-body" style="padding:12px"><canvas id="acosChart" height="120"></canvas></div>
+</div>
+
+<!-- CAMPAIGN TABLE -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+  <div>
+    <div class="section-title">Campaign Performance</div>
+    <div class="text-sm text-muted">{{ campaigns|length }} active campaigns · {{ start|date:"M j" }} — {{ today|date:"M j, Y" }}</div>
+  </div>
+  <input type="text" class="form-control" style="width:200px;padding:5px 10px;font-size:11px"
+         placeholder="Search campaign…" oninput="filterTable(this.value)">
+</div>
+
+<div class="table-wrap">
+  <table id="ppcTable">
+    <thead>
+      <tr>
+        <th style="text-align:left">Campaign</th>
+        <th style="text-align:left">Type</th>
+        <th>Spend</th>
+        <th>Sales</th>
+        <th>Orders</th>
+        <th>Clicks</th>
+        <th>Impr.</th>
+        <th>CTR%</th>
+        <th>CVR%</th>
+        <th>CPC</th>
+        <th>ACoS%</th>
+        <th>ROAS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in campaigns %}
+      <tr>
+        <td style="text-align:left;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">
+          {{ c.campaign_name }}
+        </td>
+        <td style="text-align:left">
+          {% if c.campaign_type == 'sp' %}
+            <span class="badge badge-blue">SP</span>
+          {% elif c.campaign_type == 'sb' %}
+            <span class="badge badge-gold">SB</span>
+          {% else %}
+            <span class="badge" style="background:rgba(6,182,212,.1);color:var(--cyan);border:1px solid rgba(6,182,212,.3)">SD</span>
+          {% endif %}
+        </td>
+        <td>${{ c.total_spend|default:0|floatformat:0 }}</td>
+        <td>${{ c.total_sales|default:0|floatformat:0 }}</td>
+        <td>{{ c.total_orders|default:0 }}</td>
+        <td>{{ c.total_clicks|default:0 }}</td>
+        <td class="text-muted">{{ c.total_impr|default:0 }}</td>
+        <td class="mono">{{ c.avg_ctr|default:0|floatformat:2 }}%</td>
+        <td class="mono">{{ c.avg_cvr|default:0|floatformat:2 }}%</td>
+        <td class="mono">${{ c.avg_cpc|default:0|floatformat:2 }}</td>
+        <td>
+          {% with a=c.avg_acos|default:0|floatformat:1 %}
+          <span class="{% if c.avg_acos|default:0 < 0.15 %}up{% elif c.avg_acos|default:0 > 0.25 %}dn{% else %}neutral{% endif %}">
+            {{ a }}%
+          </span>
+          {% endwith %}
+        </td>
+        <td class="mono">{{ c.avg_roas|default:0|floatformat:2 }}x</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text3)">
+        <div style="font-size:24px;margin-bottom:8px">📣</div>
+        No PPC data yet.<br>
+        <span style="font-size:11px">Configure Ads API or run <code>seed_demo_data</code>.</span>
+      </td></tr>
+      {% endfor %}
+    </tbody>
+    {% if campaigns %}
+    <tfoot>
+      <tr style="background:var(--bg3);font-weight:700;border-top:2px solid var(--border)">
+        <td style="text-align:left">TOTAL</td>
+        <td></td>
+        <td>${{ totals.grand_spend|default:0|floatformat:0 }}</td>
+        <td>${{ totals.grand_sales|default:0|floatformat:0 }}</td>
+        <td>{{ totals.grand_orders|default:0 }}</td>
+        <td>{{ totals.grand_clicks|default:0 }}</td>
+        <td>{{ totals.grand_impr|default:0 }}</td>
+        <td colspan="6"></td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CD = {{ chart_data|safe }};
+
+// Compute portfolio ACoS / ROAS
+const grandSpend = {{ totals.grand_spend|default:0 }};
+const grandSales = {{ totals.grand_sales|default:0 }};
+const acos = grandSales > 0 ? (grandSpend / grandSales * 100).toFixed(1) : '–';
+const roas = grandSpend > 0 ? (grandSales / grandSpend).toFixed(2) : '–';
+document.getElementById('portfolioAcos').textContent = acos !== '–' ? acos + '%' : '–';
+document.getElementById('portfolioRoas').textContent = roas !== '–' ? roas + 'x' : '–';
+
+const baseOpts = {
+  responsive:true,maintainAspectRatio:false,
+  plugins:{legend:{display:false}},
+  scales:{
+    x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{family:'DM Mono',size:9},maxTicksLimit:10}},
+    y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{family:'DM Mono',size:9}}}
+  }
+};
+
+// Spend vs Sales
+new Chart(document.getElementById('spendSalesChart').getContext('2d'),{
+  type:'bar',
+  data:{labels:CD.dates,datasets:[
+    {label:'Sales',  data:CD.sales,backgroundColor:'rgba(16,185,129,.5)',borderColor:'#10b981',borderWidth:1},
+    {label:'Spend',  data:CD.spend,backgroundColor:'rgba(245,158,11,.5)',borderColor:'#f59e0b',borderWidth:1},
+  ]},
+  options:{...baseOpts,plugins:{legend:{display:true,labels:{color:'#94a3b8',font:{size:10}}}}}
+});
+
+// Ad Type Pie
+const typeData = [
+  {% for t in type_breakdown %}
+  {type:'{{ t.campaign_type }}', spend:{{ t.spend|default:0 }}},
+  {% endfor %}
+];
+new Chart(document.getElementById('typeChart').getContext('2d'),{
+  type:'doughnut',
+  data:{
+    labels: typeData.map(t=>t.type.toUpperCase()),
+    datasets:[{
+      data: typeData.map(t=>t.spend),
+      backgroundColor:['rgba(59,130,246,.7)','rgba(245,158,11,.7)','rgba(6,182,212,.7)'],
+      borderColor:['#3b82f6','#f59e0b','#06b6d4'],
+      borderWidth:2
+    }]
+  },
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom',labels:{color:'#94a3b8',font:{size:10}}}}}
+});
+
+// ACoS Trend
+const targetTacos = {{ target.tacos_target|default:15 }};
+new Chart(document.getElementById('acosChart').getContext('2d'),{
+  type:'line',
+  data:{labels:CD.dates,datasets:[
+    {label:'ACoS%', data:CD.acos,borderColor:'#f97316',backgroundColor:'rgba(249,115,22,.08)',fill:true,tension:.4,pointRadius:2},
+    {label:'Target',data:CD.dates.map(()=>targetTacos),borderColor:'rgba(16,185,129,.4)',borderDash:[4,4],pointRadius:0,tension:0},
+  ]},
+  options:{...baseOpts,plugins:{legend:{display:true,labels:{color:'#94a3b8',font:{size:10}}}}}
+});
+
+function filterTable(q){
+  document.querySelectorAll('#ppcTable tbody tr').forEach(r=>{
+    r.style.display=r.textContent.toLowerCase().includes(q.toLowerCase())?'':'none';
+  });
+}
+</script>
+{% endblock %}

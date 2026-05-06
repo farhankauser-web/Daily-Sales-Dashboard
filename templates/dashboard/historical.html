@@ -1,0 +1,446 @@
+{% extends "base/base.html" %}
+{% block title %}Historical View{% endblock %}
+{% block nav_history %}active{% endblock %}
+{% block page_title %}Historical View{% endblock %}
+
+{% block topbar_controls %}
+<!-- Marketplace tabs -->
+<div class="mp-selector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          onclick="location.href='?mp={{ mp }}&period={{ period }}'">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca'  %}🇨🇦 CA
+    {% elif mp == 'uk'  %}🇬🇧 UK
+    {% elif mp == 'de'  %}🇩🇪 DE
+    {% elif mp == 'ae'  %}🇦🇪 UAE
+    {% elif mp == 'sa'  %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<!-- Period selector -->
+<div class="date-bar">
+  <a class="date-btn {% if period == '7d'  %}active{% endif %}" href="?mp={{ marketplace }}&period=7d">7 Days</a>
+  <a class="date-btn {% if period == '30d' %}active{% endif %}" href="?mp={{ marketplace }}&period=30d">30 Days</a>
+  <a class="date-btn {% if period == '90d' %}active{% endif %}" href="?mp={{ marketplace }}&period=90d">90 Days</a>
+  <a class="date-btn {% if period == 'ytd' %}active{% endif %}" href="?mp={{ marketplace }}&period=ytd">YTD</a>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'dashboard:export' %}?mp={{ marketplace }}&start={{ start }}&end={{ today }}"
+   class="btn btn-secondary btn-sm">↓ Export CSV</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Demo data notice -->
+{% if not has_data %}
+<div class="alert alert-warning" style="margin-bottom:16px">
+  ⚠ No synced data yet for <strong>{{ marketplace|upper }}</strong>. Showing demo data.
+  Run <code>python manage.py seed_demo_data</code> or configure SP-API sync to populate real data.
+</div>
+{% endif %}
+
+<!-- KPI STRIP -->
+<div class="kpi-grid" style="grid-template-columns:repeat(6,1fr);margin-bottom:18px">
+
+  <div class="kpi-card blue">
+    <div class="kpi-label">Total Revenue</div>
+    <div class="kpi-val">${{ totals.total_revenue|default:0|floatformat:0 }}</div>
+    <div class="kpi-sub">{{ start|date:"M j" }} — {{ today|date:"M j, Y" }}</div>
+  </div>
+
+  <div class="kpi-card navy">
+    <div class="kpi-label">Units Sold</div>
+    <div class="kpi-val">{{ totals.total_units|default:0 }}</div>
+    <div class="kpi-sub">{{ totals.total_orders|default:0 }} orders</div>
+  </div>
+
+  <div class="kpi-card gold">
+    <div class="kpi-label">Total PPC Spend</div>
+    <div class="kpi-val">${{ totals.total_ppc|default:0|floatformat:0 }}</div>
+    <div class="kpi-sub">Avg TACoS: <strong>{{ totals.avg_tacos|default:0|floatformat:1 }}%</strong></div>
+  </div>
+
+  {% if show_financials %}
+  <div class="kpi-card green">
+    <div class="kpi-label">Avg Gross Margin %</div>
+    <div class="kpi-val">{{ totals.avg_gm_pct|default:0|floatformat:1 }}%</div>
+    <div class="kpi-sub">Period average</div>
+  </div>
+  {% endif %}
+
+  <div class="kpi-card">
+    <div class="kpi-label">Avg ACoS</div>
+    <div class="kpi-val">{{ totals.avg_acos|default:0|floatformat:1 }}%</div>
+    <div class="kpi-sub">Advertising cost</div>
+  </div>
+
+  {% if target %}
+  <div class="kpi-card" style="border-top:3px solid #FF9900">
+    <div class="kpi-label">This Month's Target</div>
+    <div class="kpi-val" style="color:#805500">${{ target.revenue_target|floatformat:0 }}</div>
+    <div class="kpi-sub">
+      Daily: ${{ target.daily_revenue_target|floatformat:0 }} · TACoS: {{ target.tacos_target }}%
+    </div>
+  </div>
+  {% else %}
+  <div class="kpi-card" style="border-top:3px solid #D5D9D9">
+    <div class="kpi-label">Target</div>
+    <div class="kpi-val" style="font-size:14px;color:#8A8A8A">Not set</div>
+    <div class="kpi-sub"><a href="{% url 'dashboard:targets' %}">Set target →</a></div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- CHARTS ROW 1: Revenue + TACoS -->
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px">
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Revenue &amp; PPC Spend</div>
+      <div style="display:flex;gap:6px">
+        <button id="btnRev" class="btn btn-sm" style="background:#EDF6F8;color:#007185;border:1px solid #B0D9E3;font-size:11px"
+                onclick="toggleDataset(revChart,0,'btnRev')">● Revenue</button>
+        <button id="btnPpc" class="btn btn-sm" style="background:#F3F4F5;color:#8A8A8A;border:1px solid #D5D9D9;font-size:11px"
+                onclick="toggleDataset(revChart,1,'btnPpc')">● PPC</button>
+      </div>
+    </div>
+    <div class="card-body" style="padding:14px">
+      <canvas id="revChart" height="190"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">TACoS Trend</div>
+      {% if target %}
+      <span style="font-size:11px;background:#FEF9EE;color:#805500;border:1px solid #FCDBA0;padding:2px 8px;border-radius:3px">
+        Target: {{ target.tacos_target }}%
+      </span>
+      {% endif %}
+    </div>
+    <div class="card-body" style="padding:14px">
+      <canvas id="tacosChart" height="190"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- CHARTS ROW 2: Units + GM% -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Units Sold</div></div>
+    <div class="card-body" style="padding:14px">
+      <canvas id="unitsChart" height="160"></canvas>
+    </div>
+  </div>
+
+  {% if show_financials %}
+  <div class="card">
+    <div class="card-header"><div class="card-title">Gross Margin %</div></div>
+    <div class="card-body" style="padding:14px">
+      <canvas id="gmChart" height="160"></canvas>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="card-header"><div class="card-title">PPC Daily Spend</div></div>
+    <div class="card-body" style="padding:14px">
+      <canvas id="ppcChart" height="160"></canvas>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- DAILY TABLE -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+  <div class="section-title">Daily Breakdown</div>
+  <div style="font-size:12px;color:#8A8A8A">{{ start|date:"M j, Y" }} — {{ today|date:"M j, Y" }}</div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left">Date</th>
+        <th>Revenue</th>
+        <th>Units</th>
+        <th>Orders</th>
+        {% if show_ppc %}
+        <th>PPC Spend</th>
+        <th>TACoS %</th>
+        <th>ACoS %</th>
+        {% endif %}
+        {% if show_financials %}
+        <th>GM %</th>
+        {% endif %}
+        <th>Sessions</th>
+        <th>CVR %</th>
+        {% if target %}
+        <th>vs Daily Target</th>
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody id="metricsTableBody">
+      {% if has_data %}
+        {% for m in metrics|dictsortreversed:"date" %}
+        <tr>
+          <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px;color:#0F1111">
+            {{ m.date|date:"D, M j Y" }}
+          </td>
+          <td style="font-weight:600">${{ m.revenue|floatformat:0 }}</td>
+          <td>{{ m.units }}</td>
+          <td>{{ m.orders }}</td>
+          {% if show_ppc %}
+          <td>${{ m.ppc_spend|floatformat:0 }}</td>
+          <td>
+            <span style="{% if m.tacos_pct < 15 %}color:#067D62;font-weight:600{% elif m.tacos_pct > 20 %}color:#C40000;font-weight:600{% else %}color:#555555{% endif %}">
+              {{ m.tacos_pct|floatformat:1 }}%
+            </span>
+          </td>
+          <td>{{ m.acos_pct|floatformat:1 }}%</td>
+          {% endif %}
+          {% if show_financials %}
+          <td>
+            <span style="{% if m.gm_pct > 0.25 %}color:#067D62;font-weight:600{% else %}color:#555555{% endif %}">
+              {{ m.gm_pct|floatformat:1 }}%
+            </span>
+          </td>
+          {% endif %}
+          <td>{{ m.sessions }}</td>
+          <td>{{ m.conversion_rate|floatformat:2 }}%</td>
+          {% if target %}
+          <td>
+            {% with diff=m.revenue|floatformat:0 %}
+            <span style="font-size:11px;font-weight:600;color:#8A8A8A">${{ target.daily_revenue_target|floatformat:0 }}/day</span>
+            {% endwith %}
+          </td>
+          {% endif %}
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="12" style="text-align:center;padding:32px;color:#8A8A8A">No data for this range.</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+      <!-- Demo table rows generated from chart data by JS -->
+      <tr id="demoNotice">
+        <td colspan="12" style="text-align:center;padding:20px;color:#8A8A8A;font-size:12px">
+          Demo data — scroll up to see charts
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CD = {{ chart_data|safe }};
+const targetTacos = {{ target.tacos_target|default:15 }};
+const hasSPData   = {{ has_data|yesno:"true,false" }};
+
+// ── Chart options (Amazon SC palette) ────────────────────────────────────────
+const baseOpts = {
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { mode: 'index', intersect: false },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#FFFFFF',
+      borderColor: '#D5D9D9',
+      borderWidth: 1,
+      titleColor: '#0F1111',
+      bodyColor: '#555555',
+      padding: 10,
+    }
+  },
+  scales: {
+    x: {
+      grid: { color: '#EAEDED' },
+      ticks: { color: '#8A8A8A', font: { size: 10 }, maxTicksLimit: 12, maxRotation: 35 }
+    },
+    y: {
+      grid: { color: '#EAEDED' },
+      ticks: { color: '#8A8A8A', font: { size: 10 } }
+    }
+  }
+};
+
+// ── Revenue + PPC chart ───────────────────────────────────────────────────────
+const revChart = new Chart(document.getElementById('revChart').getContext('2d'), {
+  type: 'line',
+  data: {
+    labels: CD.dates,
+    datasets: [
+      {
+        label: 'Revenue',
+        data: CD.revenue,
+        borderColor: '#007185',
+        backgroundColor: 'rgba(0,113,133,.08)',
+        fill: true, tension: .4, pointRadius: 2, borderWidth: 2,
+      },
+      {
+        label: 'PPC Spend',
+        data: CD.ppc,
+        borderColor: '#FF9900',
+        backgroundColor: 'rgba(255,153,0,.06)',
+        fill: true, tension: .4, pointRadius: 2, borderWidth: 2,
+        hidden: true,
+      }
+    ]
+  },
+  options: {
+    ...baseOpts,
+    plugins: {
+      ...baseOpts.plugins,
+      legend: { display: false }
+    }
+  }
+});
+
+// ── TACoS chart with target line ──────────────────────────────────────────────
+new Chart(document.getElementById('tacosChart').getContext('2d'), {
+  type: 'line',
+  data: {
+    labels: CD.dates,
+    datasets: [
+      {
+        label: 'TACoS %',
+        data: CD.tacos,
+        borderColor: '#C40000',
+        backgroundColor: 'rgba(196,0,0,.05)',
+        fill: true, tension: .4, pointRadius: 2, borderWidth: 2,
+      },
+      {
+        label: 'Target',
+        data: CD.dates.map(() => targetTacos),
+        borderColor: '#067D62',
+        borderDash: [5, 4],
+        pointRadius: 0, borderWidth: 1.5,
+        backgroundColor: 'transparent',
+      }
+    ]
+  },
+  options: {
+    ...baseOpts,
+    plugins: {
+      ...baseOpts.plugins,
+      legend: {
+        display: true,
+        position: 'top',
+        labels: { color: '#555555', boxWidth: 12, font: { size: 10 } }
+      }
+    }
+  }
+});
+
+// ── Units chart ───────────────────────────────────────────────────────────────
+new Chart(document.getElementById('unitsChart').getContext('2d'), {
+  type: 'bar',
+  data: {
+    labels: CD.dates,
+    datasets: [{
+      label: 'Units',
+      data: CD.units,
+      backgroundColor: 'rgba(0,113,133,.55)',
+      borderColor: '#007185',
+      borderWidth: 1,
+      borderRadius: 2,
+    }]
+  },
+  options: baseOpts
+});
+
+// ── GM% or PPC chart ──────────────────────────────────────────────────────────
+{% if show_financials %}
+new Chart(document.getElementById('gmChart').getContext('2d'), {
+  type: 'line',
+  data: {
+    labels: CD.dates,
+    datasets: [{
+      label: 'GM %',
+      data: CD.gm_pct,
+      borderColor: '#067D62',
+      backgroundColor: 'rgba(6,125,98,.08)',
+      fill: true, tension: .4, pointRadius: 2, borderWidth: 2,
+    }]
+  },
+  options: baseOpts
+});
+{% else %}
+new Chart(document.getElementById('ppcChart').getContext('2d'), {
+  type: 'bar',
+  data: {
+    labels: CD.dates,
+    datasets: [{
+      label: 'PPC Spend',
+      data: CD.ppc,
+      backgroundColor: 'rgba(255,153,0,.6)',
+      borderColor: '#FF9900',
+      borderWidth: 1,
+      borderRadius: 2,
+    }]
+  },
+  options: baseOpts
+});
+{% endif %}
+
+// ── Revenue / PPC toggle buttons ──────────────────────────────────────────────
+function toggleDataset(chart, idx, btnId) {
+  const meta = chart.getDatasetMeta(idx);
+  meta.hidden = !meta.hidden;
+  chart.update();
+  const btn = document.getElementById(btnId);
+  if (meta.hidden) {
+    btn.style.background = '#F3F4F5';
+    btn.style.color      = '#8A8A8A';
+    btn.style.borderColor= '#D5D9D9';
+  } else {
+    btn.style.background = '#EDF6F8';
+    btn.style.color      = '#007185';
+    btn.style.borderColor= '#B0D9E3';
+  }
+}
+
+// ── Populate demo table rows from chart data ──────────────────────────────────
+if (!hasSPData && CD.dates && CD.dates.length) {
+  const tbody = document.getElementById('metricsTableBody');
+  tbody.innerHTML = '';
+  for (let i = CD.dates.length - 1; i >= 0; i--) {
+    const rev   = CD.revenue[i] || 0;
+    const units = CD.units[i]   || 0;
+    const ppc   = CD.ppc[i]     || 0;
+    const tacos = CD.tacos[i]   || 0;
+    const gm    = CD.gm_pct[i]  || 0;
+    const d     = new Date(CD.dates[i]);
+    const label = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+
+    const tacosColor = tacos < 15 ? '#067D62' : tacos > 20 ? '#C40000' : '#555555';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px;color:#0F1111">${label}</td>
+      <td style="font-weight:600">$${Math.round(rev).toLocaleString()}</td>
+      <td>${units.toLocaleString()}</td>
+      <td>${Math.round(units * 0.93).toLocaleString()}</td>
+      <td>$${Math.round(ppc).toLocaleString()}</td>
+      <td style="color:${tacosColor};font-weight:600">${tacos.toFixed(1)}%</td>
+      <td>${(ppc > 0 && rev > 0 ? (ppc / (rev * 0.55) * 100) : 11.4).toFixed(1)}%</td>
+      <td style="color:${gm > 14 ? '#067D62' : '#555555'}">${gm.toFixed(1)}%</td>
+      <td>${Math.round(units * 14.2).toLocaleString()}</td>
+      <td>${(units > 0 ? (units / (units * 14.2) * 100) : 7.1).toFixed(2)}%</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign In — Infinitee Xclusives Operations</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  background: #EAEDED;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 16px;
+  color: #0F1111;
+  font-size: 13px;
+}
+
+/* Top brand bar */
+.top-bar {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+.brand-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: #232F3E;
+  letter-spacing: -.3px;
+}
+.brand-name span { color: #FF9900; }
+.brand-sub {
+  font-size: 11px;
+  color: #555;
+  margin-top: 3px;
+  letter-spacing: .3px;
+}
+
+/* Card */
+.login-card {
+  background: #FFFFFF;
+  border: 1px solid #D5D9D9;
+  border-radius: 8px;
+  padding: 28px 28px 22px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.login-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #0F1111;
+  margin-bottom: 18px;
+}
+
+/* Form */
+.form-group { margin-bottom: 14px; }
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F1111;
+  margin-bottom: 5px;
+}
+.form-control {
+  width: 100%;
+  background: #FFFFFF;
+  border: 1px solid #888C8C;
+  border-radius: 4px;
+  color: #0F1111;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color .12s, box-shadow .12s;
+}
+.form-control:focus {
+  outline: none;
+  border-color: #FF9900;
+  box-shadow: 0 0 0 3px rgba(255,153,0,.2);
+}
+.form-control::placeholder { color: #B2B2B2; }
+.field-error {
+  color: #C40000;
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+
+/* Submit */
+.btn-login {
+  width: 100%;
+  background: linear-gradient(to bottom, #FFD814, #F0C14B);
+  border: 1px solid #A88734;
+  border-radius: 4px;
+  color: #111;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .12s;
+  margin-top: 6px;
+}
+.btn-login:hover {
+  background: linear-gradient(to bottom, #F5CD14, #E8B927);
+}
+
+/* Error alert */
+.alert-error {
+  background: #FDF0F0;
+  border: 1px solid #F5C6C6;
+  color: #C40000;
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  margin-bottom: 14px;
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+}
+
+/* Divider */
+.divider {
+  height: 1px;
+  background: #D5D9D9;
+  margin: 18px 0 14px;
+}
+
+/* Security notice */
+.security-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #555;
+  background: #F3F4F5;
+  border: 1px solid #D5D9D9;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-top: 14px;
+}
+
+/* Footer */
+.login-footer {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 11px;
+  color: #767676;
+}
+.login-footer a { color: #007185; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="brand-name">Infinitee <span>Xclusives</span></div>
+  <div class="brand-sub">OPERATIONS INTELLIGENCE PLATFORM</div>
+</div>
+
+<div class="login-card">
+  <div class="login-title">Sign in</div>
+
+  {% if form.non_field_errors %}
+  <div class="alert-error">
+    <span>⚠</span>
+    <div>{{ form.non_field_errors.0 }}</div>
+  </div>
+  {% endif %}
+
+  <form method="post" autocomplete="on">
+    {% csrf_token %}
+    {% if next %}
+    <input type="hidden" name="next" value="{{ next }}">
+    {% endif %}
+
+    <div class="form-group">
+      <label class="form-label" for="id_username">Email address</label>
+      <input type="email" name="username" id="id_username"
+             class="form-control"
+             placeholder="you@infiniteexclusives.com"
+             value="{{ form.username.value|default:'' }}"
+             autofocus autocomplete="username">
+      {% if form.username.errors %}
+      <div class="field-error">{{ form.username.errors.0 }}</div>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="id_password">Password</label>
+      <input type="password" name="password" id="id_password"
+             class="form-control" placeholder="••••••••••••"
+             autocomplete="current-password">
+      {% if form.password.errors %}
+      <div class="field-error">{{ form.password.errors.0 }}</div>
+      {% endif %}
+    </div>
+
+    <button type="submit" class="btn-login">Sign in</button>
+  </form>
+
+  <div class="security-notice">
+    🔒 Secured · Role-Based Access Control · Session expires in 8 hours
+  </div>
+</div>
+
+<div class="login-footer">
+  <div style="margin-bottom:6px">
+    &copy; 2026 Infinitee Xclusives · Operations Platform
+  </div>
+  <div>
+    Powered by <strong>Django</strong> &amp; <strong>Amazon SP-API</strong>
+  </div>
+</div>
+
+</body>
+</html>

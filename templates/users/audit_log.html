@@ -1,0 +1,47 @@
+{% extends "base/base.html" %}
+{% block title %}Audit Log{% endblock %}
+{% block nav_audit %}active{% endblock %}
+{% block page_title %}Audit Log{% endblock %}
+
+{% block content %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left">Timestamp</th>
+        <th style="text-align:left">User</th>
+        <th style="text-align:left">Action</th>
+        <th style="text-align:left">Resource</th>
+        <th style="text-align:left">Detail</th>
+        <th style="text-align:left">IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td style="text-align:left;font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);white-space:nowrap">
+          {{ log.created_at|date:"M j, Y H:i:s" }}
+        </td>
+        <td style="text-align:left;font-size:11px">
+          {% if log.user %}{{ log.user.full_name }}{% else %}<span style="color:var(--text3)">–</span>{% endif %}
+        </td>
+        <td style="text-align:left">
+          <span class="badge {% if log.action == 'login' %}badge-green{% elif log.action == 'delete' %}badge-red{% elif log.action == 'ai_summary' %}badge-gold{% else %}badge-blue{% endif %}">
+            {{ log.action }}
+          </span>
+        </td>
+        <td style="text-align:left;font-family:'DM Mono',monospace;font-size:10px">{{ log.resource }}</td>
+        <td style="text-align:left;font-size:11px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          {{ log.detail|default:"–" }}
+        </td>
+        <td style="text-align:left;font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">
+          {{ log.ip_address|default:"–" }}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3)">No audit entries.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base/base.html" %}
+{% block title %}Product Catalog{% endblock %}
+{% block nav_catalog %}active{% endblock %}
+{% block page_title %}Product Catalog{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector">
+  <button class="mp-btn {% if mp == 'all' %}active{% endif %}" onclick="location.href='?mp=all'">All</button>
+  {% for m in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == m %}active{% endif %}" onclick="location.href='?mp={{ m }}'">
+    {% if m == 'usa' %}🇺🇸{% elif m == 'ca' %}🇨🇦{% elif m == 'uk' %}🇬🇧{% elif m == 'de' %}🇩🇪{% elif m == 'ae' %}🇦🇪{% elif m == 'sa' %}🇸🇦{% endif %}
+    {{ m|upper }}
+  </button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+<input type="text" class="form-control" style="width:200px;padding:5px 10px;font-size:11px"
+       placeholder="Search SKU / product / variant…" oninput="filterCatalog(this.value)">
+<a href="{% url 'dashboard:product_create' %}" class="btn btn-primary">+ Add Product</a>
+{% endblock %}
+
+{% block content %}
+<div id="catalogGroups" style="display:flex;flex-direction:column;gap:12px">
+  {% for group in grouped_rows %}
+  <div class="card catalog-group" data-search="{{ group.product_type|lower }}">
+    <div class="card-header" style="padding:10px 12px">
+      <div class="card-title" style="font-size:18px">{{ group.product_type }}</div>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <span class="badge badge-blue">{{ group.sku_count }} SKUs</span>
+        <span class="badge badge-gold">{{ group.pack_count }} pack sizes</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding:10px 12px">
+      {% for pack in group.packs %}
+      <div style="margin-bottom:10px">
+        <div style="font-size:13px;font-weight:700;color:#007185;margin-bottom:6px">{{ pack.pack }}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          {% for item in pack.items %}
+          <a href="{% url 'dashboard:product_edit' item.pk %}"
+             class="catalog-chip"
+             data-search="{{ item.sku|lower }} {{ item.asin|lower }} {{ item.variant|lower }} {{ pack.pack|lower }} {{ group.product_type|lower }}"
+             style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#EDF6F8;border:1px solid #B0D9E3;border-radius:999px;padding:4px 8px;color:#005B6A;font-family:'DM Mono',monospace;font-size:10px;font-weight:600">
+            <span>{{ item.sku }}</span>
+            <span style="font-family:inherit;color:#0F1111">{{ item.variant }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="card" style="padding:32px;text-align:center;color:var(--text3)">
+    No products yet. Upload via COGS tab or add one manually.
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterCatalog(q){
+  const query = q.toLowerCase().trim();
+  const groups = document.querySelectorAll('.catalog-group');
+  groups.forEach(group => {
+    let visibleChips = 0;
+    group.querySelectorAll('.catalog-chip').forEach(chip => {
+      const hit = !query || (chip.dataset.search || '').includes(query);
+      chip.style.display = hit ? 'inline-flex' : 'none';
+      if (hit) visibleChips++;
+    });
+    group.style.display = visibleChips > 0 ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+# docker-compose.yml — Local development with MySQL
+# Usage: docker compose up -d
+
+services:
+
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE:      infinitee_db
+      MYSQL_USER:          infinitee_user
+      MYSQL_PASSWORD:      dev_password_123
+      MYSQL_ROOT_PASSWORD: root_dev_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py createcachetable &&
+        python manage.py setup_infinitee &&
+        python manage.py seed_demo_data --days 90 &&
+        python manage.py seed_inventory_ppc --days 60 &&
+        python manage.py calculate_margins &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+    environment:
+      DJANGO_DEBUG:          "True"
+      DJANGO_SECRET_KEY:     "docker-dev-secret-key-not-for-production"
+      DB_NAME:               infinitee_db
+      DB_USER:               infinitee_user
+      DB_PASSWORD:           dev_password_123
+      DB_HOST:               db
+      DB_PORT:               "3306"
+      FIELD_ENCRYPTION_KEY:  "CHANGE-ME-for-docker-dev-only-not-secure=="
+      ANTHROPIC_API_KEY:     "${ANTHROPIC_API_KEY:-}"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    working_dir: /app
+
+volumes:
+  mysql_data:
+  static_files:
+  media_files:

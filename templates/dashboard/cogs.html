@@ -1,0 +1,255 @@
+{% extends "base/base.html" %}
+{% block title %}COGS & Product Catalog Upload{% endblock %}
+{% block nav_cogs %}active{% endblock %}
+{% block page_title %}COGS & Product Catalog Upload{% endblock %}
+
+{% block topbar_actions %}
+<a href="data:text/csv;charset=utf-8,SKU%2CASIN%2CRegion%2CMonth%2CCogs%2CFBA%2CProductType%2CPackSize%2CVariant%0ATW-WHTB-BTH-600%2CB0XXXXXXXXX%2CUSA%2C2026-05%2C4.50%2C0.80%2CBath%20Towels%2C4-pack%2CBrilliant%20White%0A"
+   download="cogs_template.csv" class="btn btn-secondary">
+  ↓ Download CSV Template
+</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- HOW COGS ARE USED — clean info box, no code -->
+<div class="card mb-4">
+  <div class="card-header">
+    <div class="card-title">💡 How COGS Costs Are Used</div>
+  </div>
+  <div class="card-body" style="padding:14px 16px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px">📦 COGS / Unit</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.5">
+          From your file. Manufacturing + landed cost.
+          Varies by marketplace.
+        </div>
+        <div style="margin-top:6px">
+          <span class="badge badge-orange">From File</span>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px">🚚 FBA Fee / Unit</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.5">
+          From your file. Varies per SKU by size / weight tier.
+        </div>
+        <div style="margin-top:6px">
+          <span class="badge badge-orange">From File</span>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px">📊 Amazon Referral Fee</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.5">
+          Auto-calculated: (Revenue ÷ QTY) × 15%.
+          Not in file.
+        </div>
+        <div style="margin-top:6px">
+          <span class="badge badge-blue">Auto-Calculated</span>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px">🎯 Monthly Target</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.5">
+          Set in dashboard. Monthly ÷ days = daily.
+          Period × days = target.
+        </div>
+        <div style="margin-top:6px">
+          <span class="badge badge-navy">Set in Targets</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- UPLOAD + MANUAL ENTRY ROW -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;margin-bottom:24px">
+
+  <!-- CSV UPLOAD -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📂 Bulk CSV Upload</div>
+    </div>
+    <div class="card-body">
+
+      <div class="alert alert-info" style="margin-bottom:14px">
+        <div>
+          <strong>Required columns:</strong>
+          <code style="font-size:10.5px;background:rgba(0,113,133,.08);padding:1px 5px;border-radius:3px;display:block;margin-top:4px">
+            SKU &nbsp;·&nbsp; ASIN &nbsp;·&nbsp; Region &nbsp;·&nbsp; Month (YYYY-MM) &nbsp;·&nbsp; Cogs &nbsp;·&nbsp; FBA &nbsp;·&nbsp; ProductType &nbsp;·&nbsp; PackSize &nbsp;·&nbsp; Variant
+          </code>
+          <div style="font-size:11px;color:var(--text3);margin-top:6px">
+            This single file now updates both COGS and Product Catalog. All listed fields are required in unified format.
+          </div>
+        </div>
+      </div>
+
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="upload_csv">
+
+        <div class="form-group">
+          <label class="form-label">Select CSV File</label>
+          {{ upload_form.csv_file }}
+        </div>
+
+        <div class="form-group" style="margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+            {{ upload_form.overwrite }}
+            <span>Overwrite existing entries for same SKU/ASIN + month</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%">
+          Upload CSV
+        </button>
+      </form>
+
+      {% if upload_result %}
+      <div style="margin-top:16px">
+        <div class="alert {% if upload_result.errors %}alert-warning{% else %}alert-success{% endif %}">
+          {% if upload_result.errors %}
+            ⚠ Uploaded with {{ upload_result.errors|length }} row error{{ upload_result.errors|length|pluralize }}
+            — {{ upload_result.created }} created, {{ upload_result.updated }} updated.
+          {% else %}
+            ✓ Upload complete — {{ upload_result.created }} row{{ upload_result.created|pluralize }} created,
+            {{ upload_result.updated }} updated.
+          {% endif %}
+        </div>
+        {% if upload_result.errors %}
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:10px;max-height:140px;overflow-y:auto">
+          {% for e in upload_result.errors %}
+          <div style="font-size:11px;color:var(--red);font-family:'DM Mono',monospace;margin-bottom:3px;line-height:1.4">{{ e }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- MANUAL ENTRY -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">✏️ Manual Entry</div>
+    </div>
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="manual_entry">
+
+        <div class="form-group">
+          <label class="form-label">Product (ASIN)</label>
+          {{ manual_form.product }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Month</label>
+          {{ manual_form.month }}
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Unit Cost (FOB) $</label>
+            {{ manual_form.unit_cost }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Shipping / Unit $</label>
+            {{ manual_form.shipping_cost }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Import Duties $</label>
+            {{ manual_form.duties_cost }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">3PL Prep $</label>
+            {{ manual_form.prep_cost }}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes (optional)</label>
+          {{ manual_form.notes }}
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%">Save COGS Entry</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- UPLOAD HISTORY / RECENT ENTRIES -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">📋 Upload History</div>
+    <span style="font-size:12px;color:var(--text3)">Last 100 entries</span>
+  </div>
+
+  {% if recent %}
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left">ASIN</th>
+          <th style="text-align:left">Marketplace</th>
+          <th style="text-align:left">Month</th>
+          <th>Unit Cost</th>
+          <th>Shipping</th>
+          <th>Duties</th>
+          <th>Prep</th>
+          <th>Total COGS</th>
+          <th style="text-align:left">Status</th>
+          <th style="text-align:left">Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in recent %}
+        <tr>
+          <td>
+            <span style="font-family:'DM Mono',monospace;font-size:11.5px;font-weight:600;color:var(--accent)">
+              {{ e.product.asin }}
+            </span>
+          </td>
+          <td style="text-align:left">
+            {% with mp=e.product.marketplace %}
+            {% if mp == 'usa' %}🇺🇸 USA
+            {% elif mp == 'ca'  %}🇨🇦 CA
+            {% elif mp == 'uk'  %}🇬🇧 UK
+            {% elif mp == 'de'  %}🇩🇪 DE
+            {% elif mp == 'ae'  %}🇦🇪 UAE
+            {% elif mp == 'sa'  %}🇸🇦 KSA
+            {% else %}{{ mp|upper }}{% endif %}
+            {% endwith %}
+          </td>
+          <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px">
+            {{ e.month|date:"M Y" }}
+          </td>
+          <td>${{ e.unit_cost }}</td>
+          <td>${{ e.shipping_cost }}</td>
+          <td>${{ e.duties_cost }}</td>
+          <td>${{ e.prep_cost }}</td>
+          <td>
+            <strong style="color:var(--text)">${{ e.total_cost|floatformat:2 }}</strong>
+          </td>
+          <td style="text-align:left">
+            <span class="badge badge-green">✓ Saved</span>
+          </td>
+          <td style="text-align:left;font-size:11px;color:var(--text3)">
+            {{ e.updated_at|date:"M j, Y" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:40px;text-align:center;color:var(--text3)">
+    <div style="font-size:32px;margin-bottom:10px">📊</div>
+    <div style="font-weight:600;margin-bottom:4px;color:var(--text2)">No COGS data uploaded yet</div>
+    <div style="font-size:12px">Upload a CSV or add entries manually to get started.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

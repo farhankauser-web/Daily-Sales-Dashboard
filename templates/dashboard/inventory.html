@@ -1,0 +1,257 @@
+{% extends "base/base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block nav_inventory %}active{% endblock %}
+{% block page_title %}Inventory Management{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          onclick="location.href='?mp={{ mp }}'">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-ghost" onclick="doRefresh()">↻ Refresh</button>
+{% endblock %}
+
+{% block content %}
+
+<!-- ALERT STRIP -->
+{% if alert_counts.stockout or alert_counts.critical %}
+<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+  {% if alert_counts.stockout %}
+  <div class="alert alert-error" style="margin:0;flex:1">
+    🚨 {{ alert_counts.stockout }} ASIN{{ alert_counts.stockout|pluralize }} at STOCKOUT risk
+    — <a href="{% url 'dashboard:alerts' %}" style="color:inherit;text-decoration:underline">View Alerts →</a>
+  </div>
+  {% endif %}
+  {% if alert_counts.critical %}
+  <div class="alert alert-warning" style="margin:0;flex:1">
+    ⚠️ {{ alert_counts.critical }} ASIN{{ alert_counts.critical|pluralize }} with &lt;14 days cover
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- SUMMARY KPIs -->
+<div class="kpi-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:16px">
+  <div class="kpi-card blue">
+    <div class="kpi-label">Total ASINs</div>
+    <div class="kpi-val">{{ snapshots|length }}</div>
+    <div class="kpi-sub text-muted">{{ marketplace|upper }} marketplace</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-label">Total Fulfillable</div>
+    <div class="kpi-val">{{ snapshots|length|default:0 }}</div>
+    <div class="kpi-sub text-muted">FBA available</div>
+  </div>
+  <div class="kpi-card cyan">
+    <div class="kpi-label">Inbound</div>
+    <div class="kpi-val">{{ inbound_total }}</div>
+    <div class="kpi-sub text-muted">Units in transit</div>
+  </div>
+  <div class="kpi-card {% if alert_counts.critical > 0 %}red{% else %}green{% endif %}">
+    <div class="kpi-label">Critical (&lt;14d)</div>
+    <div class="kpi-val">{{ alert_counts.critical }}</div>
+    <div class="kpi-sub text-muted">ASINs need action</div>
+  </div>
+  <div class="kpi-card gold">
+    <div class="kpi-label">Reorder Needed</div>
+    <div class="kpi-val">{{ reorder_needed|length }}</div>
+    <div class="kpi-sub text-muted">&lt;30 days cover</div>
+  </div>
+</div>
+
+<!-- REORDER BANNER -->
+{% if reorder_needed %}
+<div class="card" style="margin-bottom:16px;border-color:rgba(245,158,11,.3)">
+  <div class="card-header" style="background:rgba(245,158,11,.05)">
+    <div class="card-title" style="color:var(--gold)">🔔 Reorder Signal — {{ reorder_needed|length }} SKUs Need Attention</div>
+    <span style="font-size:10px;color:var(--text3)">45-day lead time from PK/IN → FBA</span>
+  </div>
+  <div class="card-body" style="padding:10px 14px">
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      {% for snap in reorder_needed %}
+      <div style="background:var(--bg3);border:1px solid {% if snap.stock_alert == 'stockout' %}rgba(239,68,68,.4){% elif snap.stock_alert == 'critical' %}rgba(239,68,68,.2){% else %}rgba(245,158,11,.2){% endif %};border-radius:var(--r);padding:8px 12px;min-width:200px">
+        <div class="mono" style="font-size:11px;font-weight:700;color:var(--accent)">{{ snap.product.asin }}</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">{{ snap.product.title|truncatechars:40 }}</div>
+        <div style="display:flex;gap:12px;margin-top:6px;font-size:10px">
+          <span><b style="color:{% if snap.afn_fulfillable < 50 %}var(--red){% else %}var(--text){% endif %}">{{ snap.afn_fulfillable }}</b> <span style="color:var(--text3)">fulfillable</span></span>
+          <span><b style="color:var(--gold)">{{ snap.days_cover|floatformat:0 }}d</b> <span style="color:var(--text3)">cover</span></span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- INVENTORY TABLE -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+  <div class="section-title">FBA Inventory Detail</div>
+  <input type="text" class="form-control" style="width:180px;padding:5px 10px;font-size:11px"
+         placeholder="Search ASIN…" oninput="filterTable(this.value)">
+</div>
+
+<div class="table-wrap">
+  <table id="invTable">
+    <thead>
+      <tr>
+        <th style="text-align:left">ASIN</th>
+        <th style="text-align:left">Product</th>
+        <th>Status</th>
+        <th>Fulfillable</th>
+        <th>Reserved</th>
+        <th>Inbound</th>
+        <th>Unsellable</th>
+        <th>Warehouse</th>
+        <th>Days Cover</th>
+        <th>Reorder Pt</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for snap in snapshots %}
+      <tr data-pk="{{ snap.product.pk }}">
+        <td class="mono">{{ snap.product.asin }}</td>
+        <td style="text-align:left;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          {{ snap.product.title }}
+        </td>
+        <td>
+          {% if snap.stock_alert == 'stockout' %}
+            <span class="badge badge-red">STOCKOUT</span>
+          {% elif snap.stock_alert == 'critical' %}
+            <span class="badge badge-red">CRITICAL</span>
+          {% elif snap.stock_alert == 'low' %}
+            <span class="badge badge-gold">LOW</span>
+          {% else %}
+            <span class="badge badge-green">OK</span>
+          {% endif %}
+        </td>
+        <td><b>{{ snap.afn_fulfillable }}</b></td>
+        <td style="color:var(--text3)">{{ snap.afn_reserved }}</td>
+        <td style="color:var(--cyan)">
+          {{ snap.afn_inbound_working|add:snap.afn_inbound_shipped|add:snap.afn_inbound_receiving }}
+        </td>
+        <td style="color:var(--red)">{{ snap.afn_unsellable }}</td>
+        <td>
+          <span class="editable-wh" data-pk="{{ snap.product.pk }}">{{ snap.warehouse_stock }}</span>
+        </td>
+        <td>
+          <span class="{% if snap.days_cover < 14 %}dn{% elif snap.days_cover < 30 %}neutral{% else %}up{% endif %}">
+            {{ snap.days_cover|floatformat:0 }}d
+          </span>
+        </td>
+        <td class="mono" style="font-size:10px;color:var(--text3)">{{ snap.reorder_point }}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="showHistory({{ snap.product.pk }}, '{{ snap.product.asin }}')">
+            Trend
+          </button>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text3)">
+        <div style="font-size:24px;margin-bottom:8px">📦</div>
+        No inventory data for {{ marketplace|upper }}.<br>
+        <span style="font-size:11px">Run <code>python manage.py seed_demo_data</code> or configure SP-API sync.</span>
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- INVENTORY TREND MODAL -->
+<div id="trendModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:24px;width:600px;max-width:95vw">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="section-title" id="trendTitle">Inventory Trend</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeTrend()">✕ Close</button>
+    </div>
+    <canvas id="trendChart" height="200"></canvas>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let trendChart = null;
+
+function filterTable(q){
+  document.querySelectorAll('#invTable tbody tr').forEach(r=>{
+    r.style.display = r.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+
+// Inline warehouse stock edit
+document.querySelectorAll('.editable-wh').forEach(el=>{
+  el.style.cursor='pointer';
+  el.title='Click to update warehouse stock';
+  el.addEventListener('click', function(){
+    const pk   = this.dataset.pk;
+    const orig = this.textContent.trim();
+    const input= document.createElement('input');
+    input.type='number'; input.value=orig; input.min='0';
+    input.style.cssText='background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:2px 6px;border-radius:4px;font-size:11px;width:70px';
+    this.replaceWith(input);
+    input.focus(); input.select();
+    const save=async()=>{
+      const res=await fetch('/dashboard/inventory/update/',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+        body:JSON.stringify({product_pk:pk,warehouse_stock:input.value})
+      });
+      const d=await res.json();
+      const span=document.createElement('span');
+      span.className='editable-wh'; span.dataset.pk=pk;
+      span.textContent=input.value;
+      input.replaceWith(span);
+    };
+    input.addEventListener('blur',save);
+    input.addEventListener('keydown',e=>{if(e.key==='Enter')save();if(e.key==='Escape')location.reload();});
+  });
+});
+
+async function showHistory(pk, asin){
+  const modal=document.getElementById('trendModal');
+  document.getElementById('trendTitle').textContent=`📦 ${asin} — 30-Day Inventory Trend`;
+  modal.style.display='flex';
+
+  const res = await fetch(`/dashboard/inventory/${pk}/history/`);
+  const d   = await res.json();
+
+  if(trendChart) trendChart.destroy();
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  trendChart = new Chart(ctx,{
+    type:'line',
+    data:{
+      labels: d.data.dates,
+      datasets:[
+        {label:'Fulfillable',data:d.data.fulfillable,borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',fill:true,tension:.4},
+        {label:'Inbound',    data:d.data.inbound,    borderColor:'#06b6d4',backgroundColor:'rgba(6,182,212,.08)',fill:true,tension:.4},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,labels:{color:'#94a3b8',font:{size:10}}}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}},
+        y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}}
+      }
+    }
+  });
+}
+
+function closeTrend(){
+  document.getElementById('trendModal').style.display='none';
+  if(trendChart){trendChart.destroy();trendChart=null;}
+}
+function doRefresh(){ location.reload(); }
+</script>
+{% endblock %}

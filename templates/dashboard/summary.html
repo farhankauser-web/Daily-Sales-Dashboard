@@ -1,0 +1,135 @@
+{% extends "base/base.html" %}
+{% block title %}Executive Summary{% endblock %}
+{% block nav_summary %}active{% endblock %}
+{% block page_title %}AI Executive Summary{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector">
+  <button class="mp-btn active" data-mp="usa" onclick="setMP('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" data-mp="ca" onclick="setMP('ca',this)">🇨🇦 CA</button>
+  <button class="mp-btn" data-mp="uk" onclick="setMP('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" data-mp="de" onclick="setMP('de',this)">🇩🇪 DE</button>
+  <button class="mp-btn" data-mp="ae" onclick="setMP('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" data-mp="sa" onclick="setMP('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-primary" onclick="generate()">✨ Generate Summary</button>
+{% endblock %}
+
+{% block content %}
+
+<div style="max-width:800px">
+  <div style="margin-bottom:16px">
+    <p style="font-size:12px;color:var(--text3);line-height:1.6">
+      Generates a real-time AI executive summary using live Amazon SP-API data and Claude claude-sonnet.
+      Summaries are logged in the audit trail.
+    </p>
+  </div>
+
+  <div class="ai-panel">
+    <div class="ai-header">
+      <div class="ai-logo">✨</div>
+      <div>
+        <div class="ai-title">Claude AI · Executive Analysis</div>
+        <div class="ai-model mono" id="summaryMeta">Select marketplace and click Generate</div>
+      </div>
+      <div id="genStatus" style="margin-left:auto;font-size:11px;color:var(--text3)"></div>
+    </div>
+    <div class="ai-content" id="summaryContent">
+      <p style="color:var(--text3);font-style:italic;font-size:12px">
+        Your AI executive summary will appear here. The analysis covers revenue, PPC performance,
+        margin health, and actionable recommendations based on today's live data.
+      </p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentMP='usa';
+
+function setMP(mp, btn){
+  currentMP=mp;
+  document.querySelectorAll('.mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function generate(){
+  const el=document.getElementById('summaryContent');
+  const meta=document.getElementById('summaryMeta');
+  const status=document.getElementById('genStatus');
+
+  el.innerHTML='<span class="spin">⟳</span> Fetching live data…';
+  meta.textContent=`${currentMP.toUpperCase()} · ${new Date().toLocaleString()}`;
+  status.textContent='';
+
+  // First fetch live KPI data, then stream summary
+  fetch(`/api-config/data/?marketplace=${currentMP}&range=today`)
+    .then(r=>r.json().catch(()=>{}))
+    .then(data=>{
+      const s=data?.sales?.metrics||{};
+      const a=data?.ads||{};
+      const params=new URLSearchParams({
+        marketplace: currentMP,
+        revenue:     s.ordered_revenue?`$${Math.round(s.ordered_revenue).toLocaleString()}`:'$23,135 (demo)',
+        units:       s.ordered_units||'936 (demo)',
+        ppc_spend:   a.total_spend?`$${Math.round(a.total_spend).toLocaleString()}`:'$3,727 (demo)',
+        tacos:       s.ordered_revenue&&a.total_spend?(a.total_spend/s.ordered_revenue*100).toFixed(1)+'%':'16.1% (demo)',
+        gm_pct:      '14.0%',
+        cm_pct:      '29.3%',
+        vs_target:   '+$1,900 (demo)',
+        acos_avg:    '11.4% (demo)',
+      });
+      streamSummary(params);
+    })
+    .catch(()=>{
+      // Use demo data
+      const params=new URLSearchParams({
+        marketplace:'usa',revenue:'$23,135',units:'936',ppc_spend:'$3,727',
+        tacos:'16.1%',gm_pct:'14.0%',cm_pct:'29.3%',vs_target:'+$1,900',acos_avg:'11.4%',
+      });
+      streamSummary(params);
+    });
+}
+
+function streamSummary(params){
+  const el=document.getElementById('summaryContent');
+  const status=document.getElementById('genStatus');
+
+  el.innerHTML='<span class="typing-cursor"></span>';
+  let markdown='';
+
+  const evtSource=new EventSource(`/dashboard/summary/stream/?${params}`);
+  evtSource.onmessage=e=>{
+    if(e.data==='[DONE]'){
+      evtSource.close();
+      el.innerHTML=renderMarkdown(markdown);
+      status.textContent='✓ Complete';
+      return;
+    }
+    try{
+      const d=JSON.parse(e.data);
+      if(d.error){ el.innerHTML=`<span style="color:var(--red)">⚠️ ${d.error}</span>`; evtSource.close(); return; }
+      if(d.text){
+        markdown+=d.text;
+        el.innerHTML=renderMarkdown(markdown)+'<span class="typing-cursor"></span>';
+      }
+    }catch(_){}
+  };
+  evtSource.onerror=()=>{ evtSource.close(); status.textContent='Error — check API config'; };
+}
+
+function renderMarkdown(md){
+  return md
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>[^]*?<\/li>)+/g,'<ul>$&</ul>')
+    .split('\n\n').map(p=>p.startsWith('<')?p:`<p>${p}</p>`).join('');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,138 @@
+{% extends "base/base.html" %}
+{% block title %}{% if instance %}Edit{% else %}New{% endif %} API Config{% endblock %}
+{% block nav_api %}active{% endblock %}
+{% block page_title %}{% if instance %}Edit{% else %}Configure{% endif %} Marketplace API{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'amazon_api:list' %}" class="btn btn-ghost">← Back</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:720px">
+  <div class="alert alert-warning" style="margin-bottom:16px">
+    🔒 All credential fields are encrypted with AES-128 before storage. Values are masked after saving.
+    Never share these credentials. Use IAM roles with minimum required permissions.
+  </div>
+
+  <form method="post" autocomplete="off">
+    {% csrf_token %}
+
+    <!-- BASICS -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Marketplace</div></div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Marketplace</label>
+            {{ form.marketplace }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Label</label>
+            {{ form.label }}
+            <div class="form-hint">e.g. "USA Main Account"</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Seller ID</label>
+            {{ form.seller_id }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Marketplace ID</label>
+            {{ form.marketplace_id }}
+            <div class="form-hint">e.g. ATVPDKIKX0DER for USA</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+            {{ form.is_active }}
+            <span>Active — include in data sync</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- SP-API LWA -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <div class="card-title">SP-API — Login With Amazon (LWA)</div>
+        <a href="https://developer-docs.amazon.com/sp-api/docs/registering-your-application" target="_blank"
+           class="btn btn-ghost btn-sm">Docs ↗</a>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">LWA Client ID 🔒</label>
+          {{ form.lwa_client_id }}
+          <div class="form-hint">{{ form.lwa_client_id.help_text }}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">LWA Client Secret 🔒</label>
+          {{ form.lwa_client_secret }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Refresh Token 🔒</label>
+          {{ form.refresh_token }}
+          <div class="form-hint">{{ form.refresh_token.help_text }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AWS IAM (Optional) -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <div class="card-title">AWS IAM Credentials <span style="font-size:11px;font-weight:400;color:var(--text3)">(Optional)</span></div>
+      </div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">AWS Access Key 🔒</label>
+            {{ form.aws_access_key }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">AWS Secret Key 🔒</label>
+            {{ form.aws_secret_key }}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">IAM Role ARN 🔒</label>
+          {{ form.aws_role_arn }}
+          <div class="form-hint">{{ form.aws_role_arn.help_text }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADS API (Optional) -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <div class="card-title">Advertising API <span style="font-size:11px;font-weight:400;color:var(--text3)">(Optional)</span></div>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Ads Client ID 🔒</label>
+          {{ form.ads_client_id }}
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Ads Client Secret 🔒</label>
+            {{ form.ads_client_secret }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ads Refresh Token 🔒</label>
+            {{ form.ads_refresh_token }}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Advertising Profile ID</label>
+          {{ form.ads_profile_id }}
+          <div class="form-hint">{{ form.ads_profile_id.help_text }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button type="submit" class="btn btn-primary">Save Configuration</button>
+      <a href="{% url 'amazon_api:list' %}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

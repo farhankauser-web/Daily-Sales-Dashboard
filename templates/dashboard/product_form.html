@@ -1,0 +1,55 @@
+{% extends "base/base.html" %}
+{% block title %}{% if instance %}Edit{% else %}New{% endif %} Product{% endblock %}
+{% block nav_catalog %}active{% endblock %}
+{% block page_title %}{% if instance %}Edit{% else %}New{% endif %} Product{% endblock %}
+{% block topbar_actions %}<a href="{% url 'dashboard:catalog' %}" class="btn btn-ghost">← Back</a>{% endblock %}
+
+{% block content %}
+<div style="max-width:680px">
+  <form method="post">
+    {% csrf_token %}
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Product Details</div></div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">ASIN</label>{{ form.asin }}</div>
+          <div class="form-group"><label class="form-label">SKU</label>{{ form.sku }}</div>
+          <div class="form-group"><label class="form-label">Marketplace</label>{{ form.marketplace }}</div>
+          <div class="form-group"><label class="form-label">Status</label>{{ form.status }}</div>
+        </div>
+        <div class="form-group"><label class="form-label">Title</label>{{ form.title }}</div>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">Category</label>{{ form.category }}</div>
+          <div class="form-group"><label class="form-label">Brand</label>{{ form.brand }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Pricing & Fees</div></div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">List Price $</label>{{ form.list_price }}</div>
+          <div class="form-group"><label class="form-label">Sale Price $</label>{{ form.sale_price }}</div>
+          <div class="form-group"><label class="form-label">FBA Fee $</label>{{ form.fba_fee }}</div>
+          <div class="form-group"><label class="form-label">Referral Fee %</label>{{ form.referral_fee_pct }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Dimensions (Optional)</div></div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">Weight (lbs)</label>{{ form.weight_lbs }}</div>
+          <div class="form-group"><label class="form-label">Length (in)</label>{{ form.length_in }}</div>
+          <div class="form-group"><label class="form-label">Width (in)</label>{{ form.width_in }}</div>
+          <div class="form-group"><label class="form-label">Height (in)</label>{{ form.height_in }}</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button type="submit" class="btn btn-primary">Save Product</button>
+      <a href="{% url 'dashboard:catalog' %}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

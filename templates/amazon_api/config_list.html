@@ -1,0 +1,139 @@
+{% extends "base/base.html" %}
+{% block title %}API Configuration{% endblock %}
+{% block nav_api %}active{% endblock %}
+{% block page_title %}API Configuration{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'amazon_api:create' %}" class="btn btn-primary">+ Add Marketplace</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- SECURITY NOTICE -->
+<div class="alert alert-warning" style="margin-bottom:16px">
+  🔒 All API credentials are stored encrypted (AES-128 Fernet). Only users with <code>can_configure_api</code> permission can access this page. Credential values are never logged.
+</div>
+
+<!-- AMAZON CONFIGS -->
+<div style="margin-bottom:24px">
+  <div class="section-title" style="margin-bottom:12px">Amazon SP-API + Advertising API</div>
+
+  {% if configs %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
+    {% for cfg in configs %}
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px">
+            {% if cfg.marketplace == 'usa' %}🇺🇸
+            {% elif cfg.marketplace == 'ca' %}🇨🇦
+            {% elif cfg.marketplace == 'uk' %}🇬🇧
+            {% elif cfg.marketplace == 'de' %}🇩🇪
+            {% elif cfg.marketplace == 'ae' %}🇦🇪
+            {% elif cfg.marketplace == 'sa' %}🇸🇦{% endif %}
+          </span>
+          <div>
+            <div class="card-title">{{ cfg.get_marketplace_display }}</div>
+            <div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">{{ cfg.label }}</div>
+          </div>
+        </div>
+        <span class="badge {% if cfg.is_active %}badge-green{% else %}badge-red{% endif %}">
+          {% if cfg.is_active %}Active{% else %}Inactive{% endif %}
+        </span>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px">
+            <span style="color:var(--text3)">SP-API Credentials</span>
+            <span class="badge {% if cfg.has_sp_api_credentials %}badge-green{% else %}badge-red{% endif %}">
+              {% if cfg.has_sp_api_credentials %}✓ Configured{% else %}⚠ Missing{% endif %}
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px">
+            <span style="color:var(--text3)">Advertising API</span>
+            <span class="badge {% if cfg.has_ads_credentials %}badge-green{% else %}badge-gold{% endif %}">
+              {% if cfg.has_ads_credentials %}✓ Configured{% else %}– Optional{% endif %}
+            </span>
+          </div>
+          {% if cfg.last_tested_at %}
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px">
+            <span style="color:var(--text3)">Last Test</span>
+            <span class="badge {% if cfg.last_test_status == 'ok' %}badge-green{% elif cfg.last_test_status == 'error' %}badge-red{% else %}badge-gold{% endif %}">
+              {{ cfg.last_test_status|upper }} · {{ cfg.last_tested_at|date:"M j H:i" }}
+            </span>
+          </div>
+          {% endif %}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a href="{% url 'amazon_api:edit' cfg.pk %}" class="btn btn-ghost btn-sm">Edit</a>
+          <button class="btn btn-ghost btn-sm" onclick="testConn({{ cfg.pk }}, this)">Test Connection</button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:40px;color:var(--text3);border:1px dashed var(--border);border-radius:var(--r2)">
+    <div style="font-size:24px;margin-bottom:8px">⚙️</div>
+    <div style="margin-bottom:8px">No API configurations yet</div>
+    <a href="{% url 'amazon_api:create' %}" class="btn btn-primary">Configure First Marketplace</a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ANTHROPIC CONFIG -->
+<div class="divider"></div>
+<div style="margin-top:20px">
+  <div class="section-title" style="margin-bottom:12px">Claude AI (Anthropic)</div>
+  <div class="card" style="max-width:500px">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,#f59e0b,#f97316);display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>
+        <div class="card-title">Anthropic API Key</div>
+      </div>
+      {% if anthropic %}
+      <span class="badge badge-green">✓ Configured</span>
+      {% else %}
+      <span class="badge badge-red">Not Set</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if anthropic %}
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+        Model: <span class="mono">{{ anthropic.model }}</span> · Label: {{ anthropic.label }}
+      </div>
+      {% else %}
+      <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+        Configure to enable AI-powered executive summaries on the dashboard.
+      </p>
+      {% endif %}
+      <a href="{% url 'amazon_api:anthropic' %}" class="btn btn-ghost btn-sm">
+        {% if anthropic %}Update Key{% else %}Configure{% endif %}
+      </a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function testConn(pk, btn){
+  btn.disabled=true;
+  btn.textContent='Testing…';
+  try{
+    const res=await fetch(`/api-config/${pk}/test/`,{
+      method:'POST',
+      headers:{'X-CSRFToken':getCookie('csrftoken')}
+    });
+    const d=await res.json();
+    btn.textContent=d.status==='ok'?'✅ OK':'❌ Failed';
+    btn.style.color=d.status==='ok'?'var(--green)':'var(--red)';
+    if(d.status!=='ok') console.error(d.detail);
+  }catch(e){
+    btn.textContent='❌ Error';
+  }
+  setTimeout(()=>{btn.disabled=false;btn.textContent='Test Connection';btn.style.color='';},3000);
+}
+</script>
+{% endblock %}

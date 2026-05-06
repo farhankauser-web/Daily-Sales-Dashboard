@@ -1,0 +1,841 @@
+{% extends "base/base.html" %}
+{% block title %}Daily Dashboard{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block page_title %}Daily Dashboard{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if forloop.first %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca'  %}🇨🇦 CA
+    {% elif mp == 'uk'  %}🇬🇧 UK
+    {% elif mp == 'de'  %}🇩🇪 DE
+    {% elif mp == 'ae'  %}🇦🇪 UAE
+    {% elif mp == 'sa'  %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  <button class="date-btn active" data-range="today"     onclick="setDate('today',this)">Today</button>
+  <button class="date-btn"        data-range="yesterday" onclick="setDate('yesterday',this)">Yesterday</button>
+  <button class="date-btn"        data-range="mtd"       onclick="setDate('mtd',this)">MTD</button>
+  <button class="date-btn"        data-range="7d"        onclick="setDate('7d',this)">7D</button>
+  <button class="date-btn"        data-range="30d"       onclick="setDate('30d',this)">30D</button>
+  <button class="date-btn"        data-range="custom"    onclick="openCustomRange(this)">Custom</button>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-secondary btn-sm" onclick="exportData()">↓ Export</button>
+<button class="btn btn-primary"          onclick="doRefresh()">
+  <span class="refresh-pulse"></span> Refresh
+</button>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ── SKU table specific styles ─────────────────────────────────────────────── */
+.sku-table { width:100%; border-collapse:collapse; font-size:12px; }
+.sku-table thead tr { background:#F3F4F5; }
+.sku-table thead th {
+  padding:8px 10px; text-align:right; white-space:nowrap;
+  font-size:11px; font-weight:600; color:#555555;
+  border-bottom:2px solid #D5D9D9; border-right:1px solid #EAEDED;
+  position:sticky; top:0; background:#F3F4F5; z-index:2;
+}
+.sku-table thead th:first-child { text-align:left; min-width:110px; position:sticky; left:0; z-index:3; }
+.sku-table thead th:nth-child(2){ text-align:left; min-width:160px; }
+.sku-table thead th:last-child   { border-right:none; }
+
+/* Group rows */
+.sku-table tr.group-row { background:#FFFFFF; cursor:pointer; }
+.sku-table tr.group-row:hover { background:#F8F9FA; }
+.sku-table tr.group-row td { padding:9px 10px; border-bottom:1px solid #D5D9D9; border-right:1px solid #EAEDED; font-weight:600; text-align:right; }
+.sku-table tr.group-row td:first-child { text-align:left; position:sticky; left:0; background:#FFFFFF; z-index:1; }
+.sku-table tr.group-row:hover td:first-child { background:#F8F9FA; }
+.sku-table tr.group-row td:nth-child(2){ text-align:left; font-weight:500; color:#555555; }
+.sku-table tr.group-row td:last-child   { border-right:none; }
+
+/* Variant rows */
+.sku-table tr.variant-row { background:#FAFBFC; display:none; }
+.sku-table tr.variant-row.open { display:table-row; }
+.sku-table tr.variant-row td { padding:7px 10px; border-bottom:1px solid #EAEDED; border-right:1px solid #EAEDED; text-align:right; font-size:11.5px; color:#555555; }
+.sku-table tr.variant-row td:first-child { text-align:left; padding-left:26px; position:sticky; left:0; background:#FAFBFC; z-index:1; font-family:'DM Mono',monospace; font-size:11px; color:#007185; }
+.sku-table tr.variant-row td:nth-child(2){ text-align:left; color:#555555; }
+.sku-table tr.variant-row td:last-child   { border-right:none; }
+
+/* Expand arrow */
+.expand-btn { display:inline-flex; align-items:center; justify-content:center;
+  width:18px; height:18px; border-radius:3px; margin-right:6px;
+  background:#EAEDED; color:#555555; font-size:9px; cursor:pointer;
+  transition:transform .15s; flex-shrink:0; vertical-align:middle; }
+.expand-btn.open { transform:rotate(90deg); }
+
+/* SKU code style */
+.sku-code { font-family:'DM Mono',monospace; font-size:11px; font-weight:700; color:#007185; }
+
+/* Coloured PPC spend cells */
+.sp-spend  { color:#007185; font-weight:600; }
+.sd-spend  { color:#FF9900; font-weight:600; }
+.sb-spend  { color:#C40000; font-weight:600; }
+
+/* TAR GM highlight */
+.tar-gm-miss { color:#C40000; font-weight:600; }
+.tar-gm-hit  { color:#067D62; font-weight:600; }
+.tar-gm-dash { color:#8A8A8A; }
+
+/* Table wrap */
+.sku-table-wrap {
+  background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  overflow:hidden; overflow-x:auto; box-shadow:0 1px 3px rgba(0,0,0,.06);
+}
+.sku-table-subhead {
+  font-size:11px; color:#8A8A8A; margin-top:3px;
+}
+
+/* View toggle */
+.view-toggle { display:flex; gap:0; border:1px solid #B0B8B8; border-radius:4px; overflow:hidden; }
+.view-btn { padding:5px 12px; border:none; background:#FFFFFF; color:#555555;
+  font-size:11px; font-weight:500; cursor:pointer; font-family:inherit;
+  border-right:1px solid #B0B8B8; transition:all .12s; }
+.view-btn:last-child { border-right:none; }
+.view-btn.active { background:#232F3E; color:#FFFFFF; font-weight:600; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="status-item">
+    <span class="dot green"></span>
+    <span>SP-API</span> <b id="spStatus">Demo Mode</b>
+  </div>
+  <div class="status-item">
+    <span class="dot" id="adsDot" style="background:#8A8A8A"></span>
+    <span>Ads API</span> <b id="adsStatus">–</b>
+  </div>
+  <div class="status-item">
+    <span class="dot gold"></span>
+    <span id="statusDate">{{ today|date:"N j, Y" }}</span>
+  </div>
+  <div class="clock-badge" id="clockBadge">🌐 Loading…</div>
+</div>
+
+<!-- KPI STRIP -->
+<div class="kpi-grid" style="margin-bottom:16px">
+  <div class="kpi-card blue">
+    <div class="kpi-label">Revenue</div>
+    <div class="kpi-val" id="k-rev">–</div>
+    <div class="kpi-sub">ARPU <span id="k-arpu">–</span></div>
+  </div>
+  <div class="kpi-card navy">
+    <div class="kpi-label">Units Sold</div>
+    <div class="kpi-val" id="k-qty">–</div>
+    <div class="kpi-sub">Orders <span id="k-orders">–</span></div>
+  </div>
+  <div class="kpi-card gold">
+    <div class="kpi-label">Total PPC Spend</div>
+    <div class="kpi-val" id="k-ppc">–</div>
+    <div class="kpi-sub">TACoS <span id="k-tacos">–</span></div>
+  </div>
+  {% if show_financials %}
+  <div class="kpi-card green">
+    <div class="kpi-label">Gross Margin</div>
+    <div class="kpi-val" id="k-gm">–</div>
+    <div class="kpi-sub"><span id="k-gm-pct">–</span> GM%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Contribution Margin</div>
+    <div class="kpi-val" id="k-cm">–</div>
+    <div class="kpi-sub"><span id="k-cm-pct">–</span> CM%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">vs Daily Target</div>
+    <div class="kpi-val" id="k-vtar">–</div>
+    <div class="kpi-sub">Target <span id="k-tar">–</span>/day</div>
+  </div>
+  {% else %}
+  <div class="kpi-card green">
+    <div class="kpi-label">GM %</div>
+    <div class="kpi-val" id="k-gm-pct">–</div>
+    <div class="kpi-sub">Gross Margin</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">ACoS</div>
+    <div class="kpi-val" id="acos-val">–</div>
+    <div class="kpi-sub">Advertising</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Conversion Rate</div>
+    <div class="kpi-val" id="k-cvr">–</div>
+    <div class="kpi-sub">Sessions <span id="k-sess">–</span></div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- CHARTS ROW -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Revenue Trend</div>
+      <span class="badge badge-blue" id="chartRangeBadge">Today</span>
+    </div>
+    <div class="card-body" style="padding:12px">
+      <canvas id="revenueChart" height="150"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Units Sold Trend</div>
+    </div>
+    <div class="card-body" style="padding:12px">
+      <canvas id="unitsChart" height="150"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- PPC BREAKDOWN BAR -->
+{% if show_ppc %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-header">
+    <div class="card-title">PPC Breakdown</div>
+    <span id="tacosChip" style="background:#FEF9EE;color:#805500;border:1px solid #FCDBA0;padding:2px 10px;border-radius:3px;font-size:11px;font-weight:600">TACoS: –</span>
+  </div>
+  <div class="card-body" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:10px 16px">
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="width:8px;height:8px;border-radius:50%;background:#007185"></div>
+      <span style="font-size:11px;color:#555555">SP Ads</span>
+      <span style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;color:#007185" id="ppc-sp">–</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="width:8px;height:8px;border-radius:50%;background:#FF9900"></div>
+      <span style="font-size:11px;color:#555555">SD Ads</span>
+      <span style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;color:#FF9900" id="ppc-sd">–</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="width:8px;height:8px;border-radius:50%;background:#C40000"></div>
+      <span style="font-size:11px;color:#555555">SB Ads</span>
+      <span style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;color:#C40000" id="ppc-sb">–</span>
+    </div>
+    <div style="width:1px;height:18px;background:#D5D9D9;margin:0 4px"></div>
+    <div style="font-size:11px;color:#555555">Total: <b id="ppc-total" style="color:#0F1111">–</b></div>
+    <div style="font-size:11px;color:#555555">ACoS: <b id="acos-val" style="color:#0F1111">–</b></div>
+  </div>
+</div>
+{% endif %}
+
+<!-- PRODUCT PERFORMANCE TABLE -->
+<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px">
+  <div>
+    <div class="section-title" id="tableHeading">Product Performance — {{ today|date:"M j, Y" }}</div>
+    <div class="sku-table-subhead">
+      ▶ Expand row to see color variants · SP+SD exact per SKU · SB on group row
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <!-- Group / All SKUs toggle -->
+    <div class="view-toggle">
+      <button class="view-btn active" id="btnGroup" onclick="setView('group',this)">Group View</button>
+      <button class="view-btn"        id="btnFlat"  onclick="setView('flat', this)">All SKUs</button>
+    </div>
+    <!-- Search -->
+    <input type="text" class="form-control" style="width:190px;padding:5px 10px;font-size:11px"
+           placeholder="Search SKU or product…" oninput="filterTable(this.value)" id="skuSearch">
+  </div>
+</div>
+
+<div class="sku-table-wrap">
+  <table class="sku-table" id="skuTable">
+    <thead>
+      <tr>
+        <th style="text-align:left">SKU / Group</th>
+        <th style="text-align:left">Product</th>
+        <th>QTY</th>
+        <th>Revenue</th>
+        <th>CGS</th>
+        <th>Amz Fee</th>
+        <th>Fulfill</th>
+        <th>CM</th>
+        <th>CM%</th>
+        <th>ARPU</th>
+        <th>SP Spend</th>
+        <th>SD Spend</th>
+        <th>SB Spend</th>
+        <th>Total PPC</th>
+        <th>Gross Margin</th>
+        <th>GM%</th>
+        <th>CPA</th>
+        <th>TACoS</th>
+        <th>TAR GM/Day</th>
+        <th>GM-TAR</th>
+      </tr>
+    </thead>
+    <tbody id="skuTableBody">
+      <tr>
+        <td colspan="20" style="text-align:center;padding:32px;color:#8A8A8A">
+          <span class="spin">⟳</span> Loading product data…
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- AI EXECUTIVE SUMMARY -->
+{% if can_ai_summary %}
+<div style="margin-top:18px">
+  <div class="ai-panel">
+    <div class="ai-header">
+      <div class="ai-logo">✨</div>
+      <div>
+        <div class="ai-title">Claude AI Executive Summary</div>
+        <div class="ai-model" style="font-size:10px;color:#8A8A8A">claude-sonnet · Real-time Analysis</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="generateSummary()">
+        Generate Summary
+      </button>
+    </div>
+    <div class="ai-content" id="aiContent">
+      <p style="color:#8A8A8A;font-style:italic;font-size:12px">
+        Click "Generate Summary" to get an AI-powered executive analysis of today's performance.
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div id="customRangeModal" style="display:none;position:fixed;inset:0;background:rgba(15,17,17,.45);z-index:9999;align-items:center;justify-content:center">
+  <div style="width:min(640px,92vw);background:#fff;border-radius:10px;border:1px solid #D5D9D9;box-shadow:0 12px 26px rgba(0,0,0,.18);padding:18px 18px 14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:28px;font-weight:700;color:#0F1111">Custom Date Range</div>
+      <button type="button" onclick="closeCustomRange()" class="btn btn-ghost">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+      <div>
+        <label class="form-label">Start Date</label>
+        <input type="date" id="customStart" class="form-control">
+      </div>
+      <div>
+        <label class="form-label">End Date</label>
+        <input type="date" id="customEnd" class="form-control">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" class="btn btn-secondary" onclick="closeCustomRange()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="applyCustomRange()">Apply Range</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentMP    = '{{ allowed_marketplaces.0 }}';
+let currentRange = 'today';
+let customStartDate = '';
+let customEndDate = '';
+let currentView  = 'group';   // 'group' | 'flat'
+let allSkuData   = [];
+let targetData   = {};
+let revenueChart, unitsChart;
+let clockTimer;
+
+const marketplaceTZ = {
+  usa: { zone: 'America/Los_Angeles', label: 'PT' },
+  ca:  { zone: 'America/Toronto',     label: 'ET' },
+  uk:  { zone: 'Europe/London',       label: 'GMT/BST' },
+  de:  { zone: 'Europe/Berlin',       label: 'CET/CEST' },
+  ae:  { zone: 'Asia/Dubai',          label: 'GST' },
+  sa:  { zone: 'Asia/Riyadh',         label: 'AST' },
+};
+
+// ── CHART INIT ────────────────────────────────────────────────────────────────
+function initCharts(){
+  const opts = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{display:false},
+      tooltip:{ backgroundColor:'#FFFFFF', borderColor:'#D5D9D9', borderWidth:1,
+                titleColor:'#0F1111', bodyColor:'#555555', padding:10 }
+    },
+    scales:{
+      x:{ grid:{color:'#EAEDED'}, ticks:{color:'#8A8A8A',font:{size:9},maxTicksLimit:10} },
+      y:{ grid:{color:'#EAEDED'}, ticks:{color:'#8A8A8A',font:{size:9}} }
+    }
+  };
+  revenueChart = new Chart(document.getElementById('revenueChart').getContext('2d'),{
+    type:'line',
+    data:{ labels:[], datasets:[{data:[],borderColor:'#007185',backgroundColor:'rgba(0,113,133,.08)',fill:true,tension:.4,pointRadius:3,borderWidth:2}] },
+    options:opts
+  });
+  unitsChart = new Chart(document.getElementById('unitsChart').getContext('2d'),{
+    type:'bar',
+    data:{ labels:[], datasets:[{data:[],backgroundColor:'rgba(255,153,0,.55)',borderColor:'#FF9900',borderWidth:1,borderRadius:2}] },
+    options:opts
+  });
+}
+
+// ── LOAD DATA ─────────────────────────────────────────────────────────────────
+async function loadData(){
+  try{
+    let url = `/api-config/data/?marketplace=${currentMP}&range=${currentRange}`;
+    if(currentRange === 'custom' && customStartDate && customEndDate){
+      url += `&start=${customStartDate}&end=${customEndDate}`;
+    }
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(res.statusText);
+    const d = await res.json();
+    targetData = d.targets || {};
+    if(d.error) throw new Error(d.error);
+    renderKPIs(d.sales, d.ads);
+    renderCharts(d.sales);
+    allSkuData = d.sales?.skus || [];
+    renderSKUTable(allSkuData, targetData);
+    document.getElementById('spStatus').textContent = 'Live';
+    document.getElementById('adsDot').style.background = d.ads ? '#067D62' : '#8A8A8A';
+    document.getElementById('adsStatus').textContent   = d.ads ? 'Live' : 'No Config';
+  } catch(e){
+    console.warn('Using demo data:', e.message);
+    showFallbackData();
+  }
+}
+
+// ── DEMO DATA ─────────────────────────────────────────────────────────────────
+function showFallbackData(){
+  document.getElementById('spStatus').textContent = 'Demo Mode';
+
+  const demo = {
+    revenue:23135, units:936, orders:891, ppc_spend:3727, tacos:16.11,
+    gm:3128, gm_pct:13.5, cm:6624, cm_pct:28.6,
+    vs_target:1900, daily_target:4797, arpu:24.72,
+    sp:2890, sd:512, sb:325, acos:11.4, cvr:7.2, sessions:12980
+  };
+  renderKPIsFromObject(demo);
+
+  const labels = ['9AM','10AM','11AM','12PM','1PM','2PM','3PM','4PM','5PM'];
+  const rev    = [1820,2140,2450,2890,3210,3560,3890,4120,4570];
+  const units  = [74,87,99,117,130,144,158,167,185];
+  updateChart(revenueChart, labels, rev);
+  updateChart(unitsChart,   labels, units);
+
+  // ── Demo SKU data matching screenshot structure exactly ────────────────────
+  allSkuData = [
+    {
+      group:'4BTH-TWL', groupName:'Bath Towels · 4-pack',
+      qty:213, revenue:7965, cgs:2901, amzFee:1195, fulfill:1764,
+      cm:2106, cmPct:26.44, arpu:37.40,
+      spSpend:769, sdSpend:165, sbSpend:44, totalPpc:978,
+      grossMargin:1128, gmPct:14.16, cpa:4.59, tacos:12.27,
+      tarGM:12.30,
+      variants:[
+        { sku:'TW-WHTB-BTH-600', name:'Brilliant White',
+          qty:172, revenue:6356, cgs:2343, amzFee:953,  fulfill:1424,
+          cm:1636, cmPct:25.73, arpu:36.95,
+          spSpend:620, sdSpend:127, sbSpend:0,   totalPpc:782,
+          grossMargin:854,  gmPct:13.44, cpa:4.54, tacos:12.30, tarGM:null },
+        { sku:'TW-LG-BTH-4',    name:'Light Grey',
+          qty:19,  revenue:722,  cgs:259,  amzFee:108,  fulfill:157,
+          cm:197,  cmPct:27.34, arpu:37.98,
+          spSpend:68,  sdSpend:17,  sbSpend:0,   totalPpc:89,
+          grossMargin:108,  gmPct:15.01, cpa:4.68, tacos:12.33, tarGM:null },
+        { sku:'TW-DK-BTH-4',    name:'Dark',
+          qty:15,  revenue:585,  cgs:204,  amzFee:88,   fulfill:124,
+          cm:169,  cmPct:28.83, arpu:38.99,
+          spSpend:54,  sdSpend:13,  sbSpend:0,   totalPpc:70,
+          grossMargin:98,   gmPct:16.83, cpa:4.68, tacos:12.00, tarGM:null },
+        { sku:'TW-NBL-BTH-4',   name:'Navy Blue',
+          qty:4,   revenue:156,  cgs:54,   amzFee:23,   fulfill:33,
+          cm:45,   cmPct:28.82, arpu:38.98,
+          spSpend:14,  sdSpend:4,   sbSpend:0,   totalPpc:19,
+          grossMargin:26,   gmPct:16.73, cpa:4.71, tacos:12.09, tarGM:null },
+        { sku:'TW-PUR-BTH-4',   name:'Purple',
+          qty:3,   revenue:147,  cgs:41,   amzFee:22,   fulfill:25,
+          cm:59,   cmPct:40.30, arpu:48.99,
+          spSpend:13,  sdSpend:4,   sbSpend:0,   totalPpc:18,
+          grossMargin:41,   gmPct:28.18, cpa:5.93, tacos:12.11, tarGM:null },
+      ]
+    },
+    {
+      group:'8BTH', groupName:'Bath Towels · 8-pack',
+      qty:93,  revenue:3350, cgs:993,  amzFee:487,  fulfill:736,
+      cm:1053, cmPct:32.40, arpu:34.94,
+      spSpend:430, sdSpend:100, sbSpend:44, totalPpc:572,
+      grossMargin:480, gmPct:14.78, cpa:6.16, tacos:17.03,
+      tarGM:17.03,
+      variants:[
+        { sku:'TW-WHTB-BTH-1200', name:'Brilliant White',
+          qty:71,  revenue:2558, cgs:758,  amzFee:372,  fulfill:562,
+          cm:804,  cmPct:31.44, arpu:36.01,
+          spSpend:328, sdSpend:76,  sbSpend:0, totalPpc:437,
+          grossMargin:366, gmPct:14.31, cpa:6.16, tacos:17.09, tarGM:null },
+        { sku:'TW-LG-BTH-8',      name:'Light Grey',
+          qty:14,  revenue:505,  cgs:155,  amzFee:74,   fulfill:111,
+          cm:160,  cmPct:31.67, arpu:36.07,
+          spSpend:65,  sdSpend:15,  sbSpend:0, totalPpc:87,
+          grossMargin:75,  gmPct:14.85, cpa:6.16, tacos:17.09, tarGM:null },
+        { sku:'TW-DK-BTH-8',      name:'Dark',
+          qty:8,   revenue:288,  cgs:80,   amzFee:42,   fulfill:63,
+          cm:89,   cmPct:30.92, arpu:36.00,
+          spSpend:37,  sdSpend:9,   sbSpend:0, totalPpc:50,
+          grossMargin:39,  gmPct:13.60, cpa:6.16, tacos:17.09, tarGM:null },
+      ]
+    },
+    {
+      group:'BDSHT-Q', groupName:'Bed Sheets · Queen',
+      qty:187, revenue:9341, cgs:3367, amzFee:1401, fulfill:1961,
+      cm:2500, cmPct:26.76, arpu:49.95,
+      spSpend:1120, sdSpend:248, sbSpend:67, totalPpc:1435,
+      grossMargin:1065, gmPct:11.40, cpa:7.67, tacos:15.36,
+      tarGM:12.00,
+      variants:[
+        { sku:'BS-WHT-Q-400',  name:'White · 400TC',
+          qty:98,  revenue:4900, cgs:1764, amzFee:735,  fulfill:1029,
+          cm:1293, cmPct:26.39, arpu:50.00,
+          spSpend:588, sdSpend:130, sbSpend:0, totalPpc:753,
+          grossMargin:559, gmPct:11.41, cpa:7.68, tacos:15.37, tarGM:null },
+        { sku:'BS-GRY-Q-400',  name:'Grey · 400TC',
+          qty:56,  revenue:2800, cgs:1008, amzFee:420,  fulfill:588,
+          cm:740,  cmPct:26.43, arpu:50.00,
+          spSpend:336, sdSpend:74,  sbSpend:0, totalPpc:430,
+          grossMargin:320, gmPct:11.43, cpa:7.68, tacos:15.36, tarGM:null },
+        { sku:'BS-NVY-Q-400',  name:'Navy · 400TC',
+          qty:33,  revenue:1641, cgs:595,  amzFee:246,  fulfill:344,
+          cm:467,  cmPct:28.46, arpu:49.73,
+          spSpend:196, sdSpend:44,  sbSpend:0, totalPpc:253,
+          grossMargin:186, gmPct:11.34, cpa:7.64, tacos:15.41, tarGM:null },
+      ]
+    },
+    {
+      group:'BDSHT-K', groupName:'Bed Sheets · King',
+      qty:134, revenue:7516, cgs:2857, amzFee:1127, fulfill:1578,
+      cm:1843, cmPct:24.52, arpu:56.09,
+      spSpend:901, sdSpend:200, sbSpend:54, totalPpc:1154,
+      grossMargin:954,  gmPct:12.69, cpa:8.62, tacos:15.36,
+      tarGM:12.50,
+      variants:[
+        { sku:'BS-WHT-K-400',  name:'White · 400TC',
+          qty:79,  revenue:4434, cgs:1686, amzFee:665,  fulfill:931,
+          cm:1088, cmPct:24.55, arpu:56.13,
+          spSpend:532, sdSpend:118, sbSpend:0, totalPpc:681,
+          grossMargin:562, gmPct:12.68, cpa:8.62, tacos:15.37, tarGM:null },
+        { sku:'BS-GRY-K-400',  name:'Grey · 400TC',
+          qty:55,  revenue:3082, cgs:1171, amzFee:462,  fulfill:647,
+          cm:755,  cmPct:24.50, arpu:56.04,
+          spSpend:369, sdSpend:82,  sbSpend:0, totalPpc:473,
+          grossMargin:392, gmPct:12.72, cpa:8.60, tacos:15.34, tarGM:null },
+      ]
+    },
+  ];
+
+  renderSKUTable(allSkuData, targetData || {});
+}
+
+// ── RENDER KPIs ───────────────────────────────────────────────────────────────
+function renderKPIs(sales, ads){
+  if(!sales) return;
+  const m = sales.metrics || {};
+  renderKPIsFromObject({
+    revenue:     m.ordered_revenue || 0,
+    units:       m.ordered_units   || 0,
+    orders:      m.total_orders    || 0,
+    ppc_spend:   ads?.total_spend  || 0,
+    tacos:       m.ordered_revenue ? (ads?.total_spend / m.ordered_revenue * 100) : 0,
+    gm:0, gm_pct:0, cm:0, cm_pct:0, vs_target:0, daily_target:0,
+    arpu: m.ordered_units ? (m.ordered_revenue / m.ordered_units) : 0,
+    sp:0, sd:0, sb:0, acos: ads?.acos || 0,
+  });
+}
+
+function renderKPIsFromObject(d){
+  const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  set('k-rev',    fmt(d.revenue));
+  set('k-qty',    num(d.units));
+  set('k-orders', num(d.orders || 0));
+  set('k-arpu',   fmt(d.arpu   || 0));
+  set('k-ppc',    fmt(d.ppc_spend || 0));
+  set('k-tacos',  pct(d.tacos  || 0));
+  set('k-gm',     fmt(d.gm     || 0));
+  set('k-gm-pct', pct(d.gm_pct || 0));
+  set('k-cm',     fmt(d.cm     || 0));
+  set('k-cm-pct', pct(d.cm_pct || 0));
+  set('k-vtar',   fmt(d.vs_target   || 0));
+  set('k-tar',    fmt(d.daily_target|| 0));
+  set('k-cvr',    pct(d.cvr || 0));
+  set('k-sess',   num(d.sessions || 0));
+  set('acos-val', pct(d.acos || 0));
+  set('ppc-sp',   fmt(d.sp || 0));
+  set('ppc-sd',   fmt(d.sd || 0));
+  set('ppc-sb',   fmt(d.sb || 0));
+  set('ppc-total',fmt(d.ppc_spend || 0));
+  const tc = document.getElementById('tacosChip');
+  if(tc) tc.textContent = 'TACoS: ' + pct(d.tacos || 0);
+}
+
+// ── RENDER SKU TABLE ──────────────────────────────────────────────────────────
+function renderSKUTable(data, targets){
+  const tbody = document.getElementById('skuTableBody');
+  if(!data || !data.length){
+    tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:32px;color:#8A8A8A">No SKU data available</td></tr>';
+    return;
+  }
+
+  let html = '';
+  data.forEach((grp, gi) => {
+    const hasVariants = grp.variants && grp.variants.length > 0;
+    const groupTarGM = Number(targets?.by_group?.[grp.groupName] || 0);
+    const groupTarDisplay = groupTarGM > 0 ? fmt(groupTarGM) : '—';
+    const groupGMTar = grp.grossMargin - groupTarGM;
+    const groupGMTarCls = groupTarGM > 0 ? (groupGMTar >= 0 ? 'tar-gm-hit' : 'tar-gm-miss') : 'tar-gm-dash';
+    const groupGMTarDisplay = groupTarGM > 0 ? fmt(groupGMTar) : '—';
+
+    // ── Group row ────────────────────────────────────────────────────────────
+    html += `<tr class="group-row" onclick="toggleGroup(${gi})">
+      <td>
+        ${hasVariants ? `<span class="expand-btn" id="arr-${gi}">▶</span>` : '<span style="width:24px;display:inline-block"></span>'}
+        <span class="sku-code">${grp.group}</span>
+      </td>
+      <td>${grp.groupName}</td>
+      <td>${num(grp.qty)}</td>
+      <td>${fmt(grp.revenue)}</td>
+      <td>${fmt(grp.cgs)}</td>
+      <td>${fmt(grp.amzFee)}</td>
+      <td>${fmt(grp.fulfill)}</td>
+      <td>${fmt(grp.cm)}</td>
+      <td>${pct(grp.cmPct)}</td>
+      <td>${fmt(grp.arpu)}</td>
+      <td class="sp-spend">${fmt(grp.spSpend)}</td>
+      <td class="sd-spend">${fmt(grp.sdSpend)}</td>
+      <td class="sb-spend">${fmt(grp.sbSpend)}</td>
+      <td style="font-weight:700">${fmt(grp.totalPpc)}</td>
+      <td>${fmt(grp.grossMargin)}</td>
+      <td style="${grp.gmPct > 15 ? 'color:#067D62;font-weight:600' : ''}">${pct(grp.gmPct)}</td>
+      <td>${fmt(grp.cpa)}</td>
+      <td style="${grp.tacos < 15 ? 'color:#067D62;font-weight:600' : grp.tacos > 18 ? 'color:#C40000;font-weight:600' : ''}">${pct(grp.tacos)}</td>
+      <td class="${groupGMTarCls}">${groupTarDisplay}</td>
+      <td class="${groupGMTarCls}">${groupGMTarDisplay}</td>
+    </tr>`;
+
+    // ── Variant rows ─────────────────────────────────────────────────────────
+    if(hasVariants){
+      grp.variants.forEach(v => {
+        const skuTarGM = Number(targets?.by_sku?.[v.sku] || 0);
+        const skuTarDisplay = skuTarGM > 0 ? fmt(skuTarGM) : '—';
+        const skuGMTar = v.grossMargin - skuTarGM;
+        const skuGMTarCls = skuTarGM > 0 ? (skuGMTar >= 0 ? 'tar-gm-hit' : 'tar-gm-miss') : 'tar-gm-dash';
+        const skuGMTarDisplay = skuTarGM > 0 ? fmt(skuGMTar) : '—';
+        html += `<tr class="variant-row" data-group="${gi}">
+          <td><span style="font-family:'DM Mono',monospace;font-size:10.5px;color:#007185">${v.sku}</span></td>
+          <td>${v.name}</td>
+          <td>${num(v.qty)}</td>
+          <td>${fmt(v.revenue)}</td>
+          <td>${fmt(v.cgs)}</td>
+          <td>${fmt(v.amzFee)}</td>
+          <td>${fmt(v.fulfill)}</td>
+          <td>${fmt(v.cm)}</td>
+          <td>${pct(v.cmPct)}</td>
+          <td>${fmt(v.arpu)}</td>
+          <td class="sp-spend">${fmt(v.spSpend)}</td>
+          <td class="sd-spend">${fmt(v.sdSpend)}</td>
+          <td style="color:#8A8A8A">${v.sbSpend > 0 ? fmt(v.sbSpend) : '—'}</td>
+          <td>${fmt(v.totalPpc)}</td>
+          <td>${fmt(v.grossMargin)}</td>
+          <td>${pct(v.gmPct)}</td>
+          <td>${fmt(v.cpa)}</td>
+          <td>${pct(v.tacos)}</td>
+          <td class="${skuGMTarCls}">${skuTarDisplay}</td>
+          <td class="${skuGMTarCls}">${skuGMTarDisplay}</td>
+        </tr>`;
+      });
+    }
+  });
+  tbody.innerHTML = html;
+}
+
+// ── EXPAND / COLLAPSE GROUP ───────────────────────────────────────────────────
+function toggleGroup(gi){
+  const rows = document.querySelectorAll(`.variant-row[data-group="${gi}"]`);
+  const arr  = document.getElementById(`arr-${gi}`);
+  const isOpen = arr && arr.classList.contains('open');
+  rows.forEach(r => r.classList.toggle('open', !isOpen));
+  if(arr) arr.classList.toggle('open', !isOpen);
+}
+
+// ── FLAT / GROUP VIEW ─────────────────────────────────────────────────────────
+function setView(mode, btn){
+  currentView = mode;
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  if(mode === 'flat'){
+    // Expand all groups and show all rows
+    document.querySelectorAll('.group-row').forEach(r => r.style.display = 'none');
+    document.querySelectorAll('.variant-row').forEach(r => { r.style.display='table-row'; r.classList.remove('open'); });
+    document.querySelectorAll('.expand-btn').forEach(b => b.classList.remove('open'));
+  } else {
+    // Collapse back to group view
+    document.querySelectorAll('.group-row').forEach(r => r.style.display = '');
+    document.querySelectorAll('.variant-row').forEach(r => { r.style.display='none'; r.classList.remove('open'); });
+    document.querySelectorAll('.expand-btn').forEach(b => b.classList.remove('open'));
+  }
+}
+
+// ── SEARCH FILTER ─────────────────────────────────────────────────────────────
+function filterTable(q){
+  const lower = q.toLowerCase();
+  document.querySelectorAll('#skuTableBody tr').forEach(r => {
+    r.style.display = r.textContent.toLowerCase().includes(lower) ? '' : 'none';
+  });
+}
+
+// ── CHARTS ────────────────────────────────────────────────────────────────────
+function renderCharts(sales){
+  if(!sales?.daily_breakdown) return;
+  updateChart(revenueChart, sales.daily_breakdown.map(d=>d.date),    sales.daily_breakdown.map(d=>d.revenue));
+  updateChart(unitsChart,   sales.daily_breakdown.map(d=>d.date),    sales.daily_breakdown.map(d=>d.units));
+}
+function updateChart(chart, labels, data){
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = data;
+  chart.update('none');
+}
+
+// ── CONTROLS ──────────────────────────────────────────────────────────────────
+function setMP(mp, btn){
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  startMarketplaceClock();
+  loadData();
+}
+function setDate(range, btn){
+  currentRange = range;
+  document.querySelectorAll('.date-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const labels={'today':'Today','yesterday':'Yesterday','mtd':'MTD','7d':'7 Days','30d':'30 Days','custom':'Custom'};
+  const badge = document.getElementById('chartRangeBadge');
+  if(badge) badge.textContent = labels[range] || range;
+  loadData();
+}
+function openCustomRange(btn){
+  const m = document.getElementById('customRangeModal');
+  const s = document.getElementById('customStart');
+  const e = document.getElementById('customEnd');
+  const today = new Date();
+  const end = today.toISOString().slice(0,10);
+  const startObj = new Date(today);
+  startObj.setDate(startObj.getDate() - 6);
+  const start = startObj.toISOString().slice(0,10);
+  s.value = customStartDate || start;
+  e.value = customEndDate || end;
+  m.style.display = 'flex';
+  document.querySelectorAll('.date-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+}
+function closeCustomRange(){
+  const m = document.getElementById('customRangeModal');
+  if(m) m.style.display = 'none';
+}
+function applyCustomRange(){
+  const s = document.getElementById('customStart').value;
+  const e = document.getElementById('customEnd').value;
+  if(!s || !e || s > e){
+    alert('Please select a valid start and end date.');
+    return;
+  }
+  customStartDate = s;
+  customEndDate = e;
+  currentRange = 'custom';
+  const badge = document.getElementById('chartRangeBadge');
+  if(badge) badge.textContent = `${s} to ${e}`;
+  closeCustomRange();
+  loadData();
+}
+function doRefresh(){ loadData(); }
+function exportData(){
+  let url = '/api-config/data/?marketplace=' + currentMP + '&range=' + currentRange + '&format=csv';
+  if(currentRange === 'custom' && customStartDate && customEndDate){
+    url += '&start=' + customStartDate + '&end=' + customEndDate;
+  }
+  window.location = url;
+}
+
+// ── AI SUMMARY ────────────────────────────────────────────────────────────────
+{% if can_ai_summary %}
+function generateSummary(){
+  const el = document.getElementById('aiContent');
+  el.innerHTML = '<span class="spin">⟳</span> Generating analysis…';
+  const p = id => document.getElementById(id)?.textContent || 'N/A';
+  const params = new URLSearchParams({
+    marketplace: currentMP,
+    revenue:     p('k-rev'),   units:     p('k-qty'),
+    ppc_spend:   p('k-ppc'),   tacos:     p('k-tacos'),
+    gm_pct:      p('k-gm-pct'),cm_pct:   p('k-cm-pct'),
+    vs_target:   p('k-vtar'),  acos_avg:  p('acos-val'),
+  });
+  const src = new EventSource(`/dashboard/summary/stream/?${params}`);
+  let md = '';
+  el.innerHTML = '<span class="typing-cursor"></span>';
+  src.onmessage = e => {
+    if(e.data==='[DONE]'){ src.close(); el.innerHTML=renderMD(md); return; }
+    try{
+      const d = JSON.parse(e.data);
+      if(d.error){ el.innerHTML=`<span style="color:#C40000">⚠ ${d.error}</span>`; src.close(); return; }
+      if(d.text){ md+=d.text; el.innerHTML=renderMD(md)+'<span class="typing-cursor"></span>'; }
+    }catch(_){}
+  };
+  src.onerror = () => src.close();
+}
+function renderMD(md){
+  return md
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>[^]*?<\/li>)+/g,'<ul>$&</ul>')
+    .split('\n\n').map(p=>p.startsWith('<')?p:`<p>${p}</p>`).join('');
+}
+{% endif %}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+const fmt = v => '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+const pct = v => Number(v).toFixed(2) + '%';
+const num = v => Number(v).toLocaleString();
+
+function updateMarketplaceClock(){
+  const cfg = marketplaceTZ[currentMP] || { zone: 'UTC', label: 'UTC' };
+  const now = new Date();
+  const timeText = now.toLocaleTimeString('en-US', {
+    timeZone: cfg.zone,
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+  const dateText = now.toLocaleDateString('en-US', {
+    timeZone: cfg.zone,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+  const clockEl = document.getElementById('clockBadge');
+  const dateEl = document.getElementById('statusDate');
+  if (clockEl) clockEl.textContent = `🕒 ${timeText} ${cfg.label}`;
+  if (dateEl) dateEl.textContent = `${dateText} (${cfg.label})`;
+}
+
+function startMarketplaceClock(){
+  if (clockTimer) clearInterval(clockTimer);
+  updateMarketplaceClock();
+  clockTimer = setInterval(updateMarketplaceClock, 1000);
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initCharts();
+  startMarketplaceClock();
+  loadData();
+});
+</script>
+{% endblock %}

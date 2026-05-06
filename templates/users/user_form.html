@@ -1,0 +1,94 @@
+{% extends "base/base.html" %}
+{% block title %}{{ action }} User{% endblock %}
+{% block nav_users %}active{% endblock %}
+{% block page_title %}{{ action }} User{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'users:list' %}" class="btn btn-ghost">← Back</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:680px">
+  <form method="post">
+    {% csrf_token %}
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Personal Information</div></div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">First Name</label>
+            {{ form.first_name }}
+            {% if form.first_name.errors %}<div style="color:var(--red);font-size:11px;margin-top:4px">{{ form.first_name.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Name</label>
+            {{ form.last_name }}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          {{ form.email }}
+          {% if form.email.errors %}<div style="color:var(--red);font-size:11px;margin-top:4px">{{ form.email.errors.0 }}</div>{% endif %}
+        </div>
+        {% if form.phone %}
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          {{ form.phone }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Role & Access</div></div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          {{ form.role }}
+          <div class="form-hint">Role determines which features this user can access.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Allowed Marketplaces</label>
+          <input type="text" name="allowed_marketplaces" class="form-control"
+                 placeholder='["usa","uk","de"] — leave empty for all'
+                 value="{{ form.allowed_marketplaces.value|default:'' }}">
+          <div class="form-hint">JSON array. Leave empty to allow access to all marketplaces.</div>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            {{ form.is_active }}
+            <span style="font-size:12px">Account Active</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    {% if form.password1 %}
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Set Password</div></div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            {{ form.password1 }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm Password</label>
+            {{ form.password2 }}
+          </div>
+        </div>
+        {% if form.non_field_errors %}
+        <div class="alert alert-error">{{ form.non_field_errors.0 }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="display:flex;gap:10px">
+      <button type="submit" class="btn btn-primary">{{ action }} User</button>
+      <a href="{% url 'users:list' %}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

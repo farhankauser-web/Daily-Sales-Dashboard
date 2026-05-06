@@ -1,0 +1,103 @@
+{% extends "base/base.html" %}
+{% block title %}User Management{% endblock %}
+{% block nav_users %}active{% endblock %}
+{% block page_title %}User Management{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'users:create' %}" class="btn btn-primary">+ Add User</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+  <a href="{% url 'users:roles' %}" class="btn btn-ghost btn-sm">🔑 Manage Roles</a>
+  <a href="{% url 'users:audit' %}" class="btn btn-ghost btn-sm">📋 Audit Log</a>
+  <div style="margin-left:auto;font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);display:flex;align-items:center">
+    {{ users|length }} user{{ users|length|pluralize }} total
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left">User</th>
+        <th style="text-align:left">Email</th>
+        <th style="text-align:left">Role</th>
+        <th style="text-align:left">Marketplaces</th>
+        <th>Status</th>
+        <th>Logins</th>
+        <th>Last Login</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td style="text-align:left">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--cyan));display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">
+              {{ u.first_name.0 }}{{ u.last_name.0 }}
+            </div>
+            <span>{{ u.full_name }}</span>
+          </div>
+        </td>
+        <td style="text-align:left;font-family:'DM Mono',monospace;font-size:10px;color:var(--text2)">{{ u.email }}</td>
+        <td style="text-align:left">
+          {% if u.role %}
+          <span class="badge badge-blue">{{ u.role.name }}</span>
+          {% else %}
+          <span class="badge badge-gold">Superuser</span>
+          {% endif %}
+        </td>
+        <td style="text-align:left;font-size:10px;color:var(--text3)">
+          {% if u.allowed_marketplaces %}
+            {{ u.allowed_marketplaces|join:", " }}
+          {% else %}
+            <span style="color:var(--green)">All</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="badge {% if u.is_active %}badge-green{% else %}badge-red{% endif %}">
+            {% if u.is_active %}Active{% else %}Inactive{% endif %}
+          </span>
+        </td>
+        <td class="mono">{{ u.login_count }}</td>
+        <td style="font-size:10px;color:var(--text3)">
+          {% if u.last_login %}{{ u.last_login|date:"M j, Y H:i" }}{% else %}Never{% endif %}
+        </td>
+        <td>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            {% if not u.is_superuser or request.user.is_superuser %}
+            <a href="{% url 'users:edit' u.pk %}" class="btn btn-ghost btn-sm">Edit</a>
+            {% if u != request.user %}
+            <button class="btn btn-sm {% if u.is_active %}btn-danger{% else %}btn-success{% endif %}"
+                    onclick="toggleUser({{ u.pk }}, this)">
+              {% if u.is_active %}Deactivate{% else %}Activate{% endif %}
+            </button>
+            {% endif %}
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3)">No users found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function toggleUser(pk, btn){
+  const res=await fetch(`/auth/manage/${pk}/toggle/`,{
+    method:'POST',
+    headers:{'X-CSRFToken':getCookie('csrftoken')}
+  });
+  const d=await res.json();
+  if(d.error){ alert(d.error); return; }
+  // Refresh the row
+  location.reload();
+}
+</script>
+{% endblock %}

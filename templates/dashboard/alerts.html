@@ -1,0 +1,108 @@
+{% extends "base/base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block nav_alerts %}active{% endblock %}
+{% block page_title %}Operational Alerts{% endblock %}
+
+{% block content %}
+
+<!-- SUMMARY -->
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+  <div class="card" style="flex:1;min-width:160px;border-color:rgba(239,68,68,.3)">
+    <div class="card-body" style="text-align:center;padding:16px">
+      <div style="font-size:32px;font-weight:700;font-family:'Bebas Neue',sans-serif;color:var(--red)">{{ critical }}</div>
+      <div class="kpi-label" style="margin-top:4px">Critical</div>
+    </div>
+  </div>
+  <div class="card" style="flex:1;min-width:160px;border-color:rgba(245,158,11,.3)">
+    <div class="card-body" style="text-align:center;padding:16px">
+      <div style="font-size:32px;font-weight:700;font-family:'Bebas Neue',sans-serif;color:var(--gold)">{{ warnings }}</div>
+      <div class="kpi-label" style="margin-top:4px">Warnings</div>
+    </div>
+  </div>
+  <div class="card" style="flex:1;min-width:160px">
+    <div class="card-body" style="text-align:center;padding:16px">
+      <div style="font-size:32px;font-weight:700;font-family:'Bebas Neue',sans-serif;color:var(--text)">{{ alerts|length }}</div>
+      <div class="kpi-label" style="margin-top:4px">Total Open</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+    <a href="{% url 'dashboard:inventory' %}" class="btn btn-ghost">📦 Inventory</a>
+    <a href="{% url 'dashboard:ppc' %}" class="btn btn-ghost">📣 PPC</a>
+  </div>
+</div>
+
+<!-- ALERTS LIST -->
+{% if alerts %}
+<div style="display:flex;flex-direction:column;gap:10px">
+  {% for alert in alerts %}
+  <div class="card"
+       style="border-left:3px solid {% if alert.severity == 'critical' %}var(--red){% elif alert.severity == 'warning' %}var(--gold){% else %}var(--accent){% endif %}"
+       id="alert-{{ alert.pk }}">
+    <div class="card-body" style="padding:14px 16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span class="badge {% if alert.severity == 'critical' %}badge-red{% elif alert.severity == 'warning' %}badge-gold{% else %}badge-blue{% endif %}">
+              {{ alert.severity|upper }}
+            </span>
+            <span class="badge {% if alert.category == 'inventory' %}badge-blue{% elif alert.category == 'ppc' %}badge-gold{% else %}badge-green{% endif %}">
+              {{ alert.category }}
+            </span>
+            {% if alert.marketplace %}
+            <span class="mono" style="font-size:9px;color:var(--text3)">{{ alert.marketplace|upper }}</span>
+            {% endif %}
+            {% if alert.asin %}
+            <span class="mono" style="font-size:9px;color:var(--accent)">{{ alert.asin }}</span>
+            {% endif %}
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">{{ alert.title }}</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.5">{{ alert.message }}</div>
+          {% if alert.metric_value and alert.threshold %}
+          <div style="margin-top:6px;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">
+            Value: <b>{{ alert.metric_value }}</b> · Threshold: {{ alert.threshold }}
+          </div>
+          {% endif %}
+          <div style="margin-top:6px;font-size:10px;color:var(--text3)">
+            {{ alert.created_at|date:"M j, Y H:i" }}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          {% if alert.category == 'inventory' %}
+          <a href="{% url 'dashboard:inventory' %}{% if alert.marketplace %}?mp={{ alert.marketplace }}{% endif %}"
+             class="btn btn-ghost btn-sm">View Inventory</a>
+          {% elif alert.category == 'ppc' %}
+          <a href="{% url 'dashboard:ppc' %}{% if alert.marketplace %}?mp={{ alert.marketplace }}{% endif %}"
+             class="btn btn-ghost btn-sm">View PPC</a>
+          {% endif %}
+          <button class="btn btn-success btn-sm" onclick="resolveAlert({{ alert.pk }})">✓ Resolve</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div style="text-align:center;padding:64px;color:var(--text3)">
+  <div style="font-size:48px;margin-bottom:12px">✅</div>
+  <div style="font-size:18px;font-weight:600;margin-bottom:6px">All clear!</div>
+  <div style="font-size:13px">No unresolved alerts across your marketplaces.</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function resolveAlert(pk){
+  const res=await fetch(`/dashboard/alerts/${pk}/resolve/`,{
+    method:'POST',
+    headers:{'X-CSRFToken':getCookie('csrftoken')}
+  });
+  if((await res.json()).ok){
+    const el=document.getElementById(`alert-${pk}`);
+    el.style.opacity='0';
+    el.style.transition='opacity .3s';
+    setTimeout(()=>el.remove(),300);
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,563 @@
+{% extends "base/base.html" %}
+{% load ix_tags %}
+{% block title %}Monthly Targets{% endblock %}
+{% block nav_targets %}active{% endblock %}
+{% block page_title %}Monthly Targets{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:8px;align-items:center">
+  <!-- View toggle -->
+  <div class="mp-selector">
+    <a href="?view=monthly&mp={{ active_mp }}"
+       class="mp-btn {% if view_mode == 'monthly' %}active{% endif %}"
+       style="text-decoration:none">📅 Monthly</a>
+    <a href="?view=annual&mp={{ active_mp }}"
+       class="mp-btn {% if view_mode == 'annual' %}active{% endif %}"
+       style="text-decoration:none">📊 Annual Budget</a>
+  </div>
+  <a href="{% url 'dashboard:targets' %}?view=monthly" class="btn btn-primary" id="addTargetBtn">
+    + Add Target
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     ANNUAL BUDGET VIEW
+     ════════════════════════════════════════════════════════════════════════ -->
+{% if view_mode == 'annual' %}
+
+<!-- Marketplace tabs for annual view -->
+<div class="tab-bar" style="margin-bottom:20px">
+  {% for mp, label, flag in marketplace_list %}
+  <a href="?view=annual&mp={{ mp }}"
+     class="tab-btn {% if mp == active_mp %}active{% endif %}"
+     style="text-decoration:none">
+    {{ flag }} {{ label }}
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Product-wise annual plan (current month → Dec) -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+  <div>
+    <div class="section-title">{{ year }} Annual Budget —
+      {% for mp, label, flag in marketplace_list %}{% if mp == active_mp %}{{ flag }} {{ label }}{% endif %}{% endfor %}
+    </div>
+    <div style="font-size:12px;color:#8A8A8A;margin-top:3px">
+      Product-wise revenue targets for each product and month (Jan to Dec).
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:12px">
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:#8A8A8A">{{ tracking.this_month|date:"M Y" }} Target</div>
+    <div style="font-size:18px;font-weight:700;color:#0F1111">${{ tracking.this_month_total|floatformat:0 }}</div>
+  </div>
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:#8A8A8A">{{ tracking.next_month|date:"M Y" }} Target</div>
+    <div style="font-size:18px;font-weight:700;color:#0F1111">${{ tracking.next_month_total|floatformat:0 }}</div>
+  </div>
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:#8A8A8A">Next vs Current</div>
+    <div style="font-size:18px;font-weight:700;{% if tracking.delta_to_next >= 0 %}color:#067D62{% else %}color:#C40000{% endif %}">
+      ${{ tracking.delta_to_next|floatformat:0 }}
+    </div>
+  </div>
+  <div style="background:#FFFBF2;border:1px solid #FCDBA0;border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:#805500">Year Totality</div>
+    <div style="font-size:18px;font-weight:700;color:#805500">${{ tracking.grand_total|floatformat:0 }}</div>
+  </div>
+</div>
+
+<!-- Annual bulk-save form -->
+<form method="post" id="annualForm">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="bulk_save_products">
+  <input type="hidden" name="bulk_marketplace" value="{{ active_mp }}">
+
+  <div class="table-wrap" style="margin-bottom:20px">
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left;min-width:180px">Product Type</th>
+          <th style="text-align:left;min-width:90px">Pack Size</th>
+          {% for month_date in annual_months %}
+          <th style="min-width:120px">{{ month_date|date:"M Y" }} Target</th>
+          {% endfor %}
+          <th style="min-width:120px;background:#FFF8E6">Totality</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in product_rows %}
+        <tr>
+          <td style="text-align:left;font-weight:700;color:#0F1111">{{ row.product_type }}</td>
+          <td style="text-align:left;color:#555">{{ row.pack_size }}</td>
+          {% for month_date in annual_months %}
+          {% with key=month_date|date:"Y-m" %}
+          {% with existing=row.targets_by_month|get_item:key %}
+          <td>
+            <input type="number"
+                   name="rev_{{ row.row_key }}_{{ key }}"
+                   step="0.01"
+                   min="0"
+                   class="form-control"
+                   style="text-align:right;font-family:'DM Mono',monospace;font-size:12px"
+                   value="{% if existing %}{{ existing.revenue_target }}{% endif %}"
+                   placeholder="0.00">
+          </td>
+          {% endwith %}
+          {% endwith %}
+          {% endfor %}
+          <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#FFFDF6">
+            ${{ row.yearly_total|floatformat:0 }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="background:#FFFBF2;border-top:2px solid #FCDBA0">
+          <td style="text-align:left;font-weight:700">All Products</td>
+          <td style="text-align:left;color:#8A8A8A">Total</td>
+          {% for month_date in annual_months %}
+          {% with key=month_date|date:"Y-m" %}
+          <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:700">
+            ${{ month_totals|get_item:key|floatformat:0 }}
+          </td>
+          {% endwith %}
+          {% endfor %}
+          <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:700;background:#FFF8E6">
+            ${{ tracking.grand_total|floatformat:0 }}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- Save bar -->
+  <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#FFFBF2;border:1px solid #FCDBA0;border-radius:var(--r)">
+    <div style="font-size:13px;color:#805500;font-weight:600">
+      💡 Fill product targets month-by-month (Jan to Dec), then click Save.
+    </div>
+    <button type="submit" class="btn btn-primary" style="margin-left:auto">
+      Save Product Targets ({{ active_mp|upper }})
+    </button>
+    <a href="?view=annual&mp={{ active_mp }}" class="btn btn-secondary">Reset</a>
+  </div>
+</form>
+
+{% else %}
+<!-- ════════════════════════════════════════════════════════════════════════
+     MONTHLY VIEW
+     ════════════════════════════════════════════════════════════════════════ -->
+
+<!-- Marketplace filter tabs -->
+<div class="tab-bar" style="margin-bottom:20px">
+  <button class="tab-btn active" data-mp="all"  onclick="switchTab('all', this)">🌐 All Regions</button>
+  {% for mp, label, flag in marketplace_list %}
+  <button class="tab-btn" data-mp="{{ mp }}" onclick="switchTab('{{ mp }}', this)">{{ flag }} {{ label }}</button>
+  {% endfor %}
+</div>
+
+<div style="display:grid;grid-template-columns:340px 1fr;gap:20px;align-items:start">
+
+  <!-- ── SET / EDIT FORM ─────────────────────────────────────────────────── -->
+  <div class="card" style="position:sticky;top:70px">
+    <div class="card-header" style="background:#F3F4F5">
+      <div class="card-title" id="formCardTitle">🎯 Set Monthly Target</div>
+    </div>
+    <div class="card-body">
+
+      {% if form.errors %}
+      <div class="alert alert-error" style="margin-bottom:12px">
+        Please fix the errors below.
+      </div>
+      {% endif %}
+
+      <form method="post" id="targetForm">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save">
+        <input type="hidden" name="pk" id="targetPk" value="">
+
+        <!-- Marketplace selector as proper dropdown -->
+        <div class="form-group">
+          <label class="form-label">Marketplace *</label>
+          {{ form.marketplace }}
+          {% if form.marketplace.errors %}
+          <div style="color:#C40000;font-size:11px;margin-top:3px">{{ form.marketplace.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <!-- Month picker -->
+        <div class="form-group">
+          <label class="form-label">Month *</label>
+          {{ form.month }}
+          {% if form.month.errors %}
+          <div style="color:#C40000;font-size:11px;margin-top:3px">{{ form.month.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <div style="height:1px;background:#D5D9D9;margin:14px 0 14px"></div>
+        <div style="font-size:11px;font-weight:600;color:#8A8A8A;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Revenue &amp; Volume</div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Revenue Target ($) *</label>
+            {{ form.revenue_target }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Units Target</label>
+            {{ form.units_target }}
+          </div>
+        </div>
+
+        <div style="height:1px;background:#D5D9D9;margin:14px 0 14px"></div>
+        <div style="font-size:11px;font-weight:600;color:#8A8A8A;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Efficiency Targets</div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">TACoS Target (%)</label>
+            {{ form.tacos_target }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">GM Target (%)</label>
+            {{ form.gm_target }}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Monthly PPC Budget ($)</label>
+          {{ form.ppc_budget }}
+        </div>
+
+        <!-- Live daily breakdown preview -->
+        <div id="dailyPreview" style="display:none;background:#EDF6F8;border:1px solid #B0D9E3;border-radius:4px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#005B6A">
+          <div style="font-weight:600;margin-bottom:3px">📅 Daily breakdown</div>
+          <div id="dailyPreviewText"></div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button type="submit" class="btn btn-primary" style="flex:1">Save Target</button>
+          <button type="button" class="btn btn-secondary" onclick="clearForm()">Clear</button>
+        </div>
+      </form>
+
+      <!-- Quick link to annual view -->
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #D5D9D9;text-align:center;font-size:12px;color:#8A8A8A">
+        Need to set all 12 months at once?
+        <a href="?view=annual&mp={{ active_mp }}" style="color:#007185;font-weight:600">
+          Open Annual Budget Grid →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TARGETS TABLE ───────────────────────────────────────────────────── -->
+  <div>
+    {% if grouped %}
+      {% for month_key, month_targets in grouped.items %}
+      <div class="month-section" style="margin-bottom:20px">
+
+        <!-- Month heading + coverage pills -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:14px;font-weight:700;color:#0F1111">
+            📅 {{ month_key }}
+            {% if month_key == today|date:"Y-m" %}
+            <span style="background:#FF9900;color:#FFFFFF;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;margin-left:6px">CURRENT</span>
+            {% endif %}
+          </div>
+          <div style="font-size:11px;color:#8A8A8A">
+            {{ month_targets|length }}/6 regions set
+          </div>
+        </div>
+
+        <!-- Coverage pills -->
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px" id="pills-{{ month_key }}">
+          {% for mp_code, mp_label, mp_flag in marketplace_list %}
+          {% with covered=False %}
+          <span class="coverage-pill" data-month="{{ month_key }}" data-mp="{{ mp_code }}"
+                style="padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500;background:#F3F4F5;color:#8A8A8A;border:1px solid #D5D9D9">
+            {{ mp_flag }} {{ mp_label }}
+          </span>
+          {% endwith %}
+          {% endfor %}
+        </div>
+
+        <!-- Targets table -->
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align:left">Marketplace</th>
+                <th>Revenue Target</th>
+                <th>Daily Target</th>
+                <th>Units</th>
+                <th>TACoS %</th>
+                <th>GM %</th>
+                <th>PPC Budget</th>
+                <th style="text-align:left">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in month_targets %}
+              <tr class="target-row" data-mp="{{ t.marketplace }}">
+                <td style="text-align:left">
+                  <div style="display:flex;align-items:center;gap:7px">
+                    <span style="font-size:16px">
+                      {% if t.marketplace == 'usa' %}🇺🇸
+                      {% elif t.marketplace == 'ca'  %}🇨🇦
+                      {% elif t.marketplace == 'uk'  %}🇬🇧
+                      {% elif t.marketplace == 'de'  %}🇩🇪
+                      {% elif t.marketplace == 'ae'  %}🇦🇪
+                      {% elif t.marketplace == 'sa'  %}🇸🇦{% endif %}
+                    </span>
+                    <div>
+                      <div style="font-weight:600;font-size:12.5px">{{ t.get_marketplace_display }}</div>
+                      <div style="font-size:10px;color:#8A8A8A">{{ t.marketplace|upper }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td style="font-weight:700;color:#0F1111">${{ t.revenue_target|floatformat:0 }}</td>
+                <td style="font-size:11px;color:#8A8A8A;font-family:'DM Mono',monospace">
+                  ${{ t.daily_revenue_target|floatformat:0 }}/day
+                </td>
+                <td>{{ t.units_target|default:"—" }}</td>
+                <td>
+                  <span style="background:#FEF9EE;color:#805500;border:1px solid #FCDBA0;padding:2px 7px;border-radius:3px;font-size:11px;font-weight:600">
+                    {{ t.tacos_target }}%
+                  </span>
+                </td>
+                <td>
+                  <span style="background:#EBF5F0;color:#067D62;border:1px solid #C3E6D8;padding:2px 7px;border-radius:3px;font-size:11px;font-weight:600">
+                    {{ t.gm_target }}%
+                  </span>
+                </td>
+                <td style="font-family:'DM Mono',monospace">${{ t.ppc_budget|floatformat:0 }}</td>
+                <td style="text-align:left">
+                  <div style="display:flex;gap:6px">
+                    <button class="btn btn-secondary btn-sm"
+                      onclick="editTarget({{ t.pk }}, '{{ t.marketplace }}', '{{ t.month|date:'Y-m' }}', {{ t.revenue_target }}, {{ t.units_target }}, {{ t.tacos_target }}, {{ t.gm_target }}, {{ t.ppc_budget }})">
+                      Edit
+                    </button>
+                    <form method="post" style="display:inline" onsubmit="return confirm('Delete this target?')">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="delete">
+                      <input type="hidden" name="pk"     value="{{ t.pk }}">
+                      <button type="submit" class="btn btn-danger btn-sm">Del</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Annual budget link for this month -->
+        <div style="text-align:right;margin-top:6px">
+          <a href="?view=annual&mp=usa" style="font-size:11px;color:#007185">
+            Set annual budget for all regions →
+          </a>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+    <div style="text-align:center;padding:56px 32px;background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px">
+      <div style="font-size:40px;margin-bottom:12px">🎯</div>
+      <div style="font-size:16px;font-weight:700;color:#0F1111;margin-bottom:8px">No targets set yet</div>
+      <div style="font-size:13px;color:#555555;margin-bottom:24px;max-width:360px;margin-left:auto;margin-right:auto">
+        Use the form on the left to set monthly targets one at a time, or use the Annual Budget Grid to plan all 12 months at once.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <a href="?view=annual&mp=usa" class="btn btn-primary">📊 Open Annual Budget Grid</a>
+        {% for mp, label, flag in marketplace_list %}
+        <button class="btn btn-secondary btn-sm"
+          onclick="prefillMarketplace('{{ mp }}')">
+          {{ flag }} {{ label }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Coverage pills: colour them based on which MPs have targets in each month ──
+(function() {
+  // Build a map: month_key → Set of marketplace codes
+  const covered = {};
+  document.querySelectorAll('.target-row').forEach(row => {
+    const section = row.closest('.month-section');
+    if (!section) return;
+    const monthEl = section.querySelector('[id^="pills-"]');
+    if (!monthEl) return;
+    const month = monthEl.id.replace('pills-', '');
+    covered[month] = covered[month] || new Set();
+    covered[month].add(row.dataset.mp);
+  });
+
+  // Apply styles to pills
+  document.querySelectorAll('.coverage-pill').forEach(pill => {
+    const month = pill.dataset.month;
+    const mp    = pill.dataset.mp;
+    if (covered[month] && covered[month].has(mp)) {
+      pill.style.cssText += 'background:#EBF5F0;color:#067D62;border:1px solid #C3E6D8;';
+      pill.textContent += ' ✓';
+    }
+  });
+})();
+
+// ── Tab switching (monthly view) ──────────────────────────────────────────────
+function switchTab(mp, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  // Filter rows
+  document.querySelectorAll('.target-row').forEach(row => {
+    row.style.display = (mp === 'all' || row.dataset.mp === mp) ? '' : 'none';
+  });
+
+  // Hide month sections with no visible rows
+  document.querySelectorAll('.month-section').forEach(section => {
+    const visible = [...section.querySelectorAll('tbody tr')].filter(r => r.style.display !== 'none');
+    section.style.display = visible.length > 0 ? '' : 'none';
+  });
+
+  // Pre-select marketplace in form
+  if (mp !== 'all') {
+    const sel = document.querySelector('[name=marketplace]');
+    if (sel) sel.value = mp;
+  }
+}
+
+// ── Edit an existing target ───────────────────────────────────────────────────
+function editTarget(pk, mp, month, rev, units, tacos, gm, ppc) {
+  document.getElementById('targetPk').value              = pk;
+  document.querySelector('[name=marketplace]').value     = mp;
+  document.querySelector('[name=month]').value           = month;
+  document.querySelector('[name=revenue_target]').value  = rev;
+  document.querySelector('[name=units_target]').value    = units;
+  document.querySelector('[name=tacos_target]').value    = tacos;
+  document.querySelector('[name=gm_target]').value       = gm;
+  document.querySelector('[name=ppc_budget]').value      = ppc;
+  document.getElementById('formCardTitle').textContent   = '✏️ Edit Target';
+  document.getElementById('targetForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  updateDailyPreview(null, rev);
+}
+
+// ── Prefill marketplace from quick-add buttons ────────────────────────────────
+function prefillMarketplace(mp) {
+  const sel = document.querySelector('[name=marketplace]');
+  if (sel) sel.value = mp;
+  document.getElementById('targetForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Clear form ────────────────────────────────────────────────────────────────
+function clearForm() {
+  document.getElementById('targetPk').value = '';
+  document.getElementById('targetForm').reset();
+  document.getElementById('formCardTitle').textContent = '🎯 Set Monthly Target';
+  document.getElementById('dailyPreview').style.display = 'none';
+}
+
+// ── Daily breakdown live preview ──────────────────────────────────────────────
+function updateDailyPreview(monthKey, revVal) {
+  const revEl   = document.querySelector('[name=revenue_target]');
+  const ppcEl   = document.querySelector('[name=ppc_budget]');
+  const monthEl = document.querySelector('[name=month]');
+  const rev     = parseFloat(revVal || (revEl ? revEl.value : 0)) || 0;
+  const ppc     = parseFloat(ppcEl  ? ppcEl.value  : 0) || 0;
+  const month   = monthEl ? monthEl.value : '';
+  if (!rev) { document.getElementById('dailyPreview').style.display = 'none'; return; }
+
+  let days = 30;
+  if (month) {
+    const [y, m] = month.split('-').map(Number);
+    if (y && m) days = new Date(y, m, 0).getDate();
+  }
+  const tacos = rev > 0 ? ((ppc / rev) * 100).toFixed(1) : '—';
+  document.getElementById('dailyPreview').style.display = 'block';
+  document.getElementById('dailyPreviewText').innerHTML =
+    `<strong>$${Math.round(rev / days).toLocaleString()}</strong>/day revenue &nbsp;·&nbsp; ` +
+    `<strong>$${Math.round(ppc / days).toLocaleString()}</strong>/day PPC &nbsp;·&nbsp; ` +
+    `${days} days &nbsp;·&nbsp; Implied TACoS: <strong>${tacos}%</strong>`;
+}
+
+// Attach listeners for live preview
+['revenue_target', 'ppc_budget', 'month'].forEach(n => {
+  const el = document.querySelector(`[name=${n}]`);
+  if (el) el.addEventListener('input', () => updateDailyPreview(null, null));
+});
+
+// ── Annual grid: update daily preview cell + totals row ───────────────────────
+function updateDailyPreview(key, revVal) {
+  if (!key) return;  // called from monthly form
+  const rev = parseFloat(revVal) || 0;
+  if (!rev) { document.getElementById('daily-' + key) && (document.getElementById('daily-' + key).textContent = '—'); }
+  else {
+    const [y, m] = key.split('-').map(Number);
+    const days = new Date(y, m, 0).getDate();
+    const el = document.getElementById('daily-' + key);
+    if (el) el.textContent = '$' + Math.round(rev / days).toLocaleString() + '/day';
+  }
+  recalcAnnualTotals();
+}
+
+function recalcAnnualTotals() {
+  const revInputs   = document.querySelectorAll('input[name^="rev_"]');
+  const ppcInputs   = document.querySelectorAll('input[name^="ppc_"]');
+  const tacosInputs = document.querySelectorAll('input[name^="tacos_"]');
+  const gmInputs    = document.querySelectorAll('input[name^="gm_"]');
+  const unitsInputs = document.querySelectorAll('input[name^="units_"]');
+  if (!revInputs.length) return;
+
+  let totalRev = 0, totalPPC = 0, totalUnits = 0, countTacos = 0, sumTacos = 0, countGM = 0, sumGM = 0;
+  revInputs.forEach(el   => { totalRev   += parseFloat(el.value) || 0; });
+  ppcInputs.forEach(el   => { totalPPC   += parseFloat(el.value) || 0; });
+  unitsInputs.forEach(el => { totalUnits += parseInt(el.value)   || 0; });
+  tacosInputs.forEach(el => { const v = parseFloat(el.value); if (v) { sumTacos += v; countTacos++; } });
+  gmInputs.forEach(el    => { const v = parseFloat(el.value); if (v) { sumGM    += v; countGM++;    } });
+
+  const fmt = n => n > 0 ? '$' + Math.round(n).toLocaleString() : '—';
+  const pct = (s, c) => c > 0 ? (s / c).toFixed(1) + '%' : '—';
+  const dailyAvg = totalRev > 0 ? '$' + Math.round(totalRev / 365).toLocaleString() + '/day' : '—';
+
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setEl('annual-rev-total',  fmt(totalRev));
+  setEl('annual-ppc-total',  fmt(totalPPC));
+  setEl('annual-tacos-avg',  pct(sumTacos, countTacos) + ' avg');
+  setEl('annual-gm-avg',     pct(sumGM, countGM) + ' avg');
+  setEl('annual-units-total', totalUnits > 0 ? totalUnits.toLocaleString() : '—');
+  setEl('annual-daily-avg',  dailyAvg);
+}
+
+// Run on load to populate totals from existing values
+document.addEventListener('DOMContentLoaded', () => {
+  recalcAnnualTotals();
+  // Attach live listeners to all annual inputs
+  document.querySelectorAll('input[name^="rev_"]').forEach(el => {
+    el.addEventListener('input', () => updateDailyPreview(el.name.replace('rev_', ''), el.value));
+  });
+  document.querySelectorAll('input[name^="ppc_"], input[name^="tacos_"], input[name^="gm_"], input[name^="units_"]').forEach(el => {
+    el.addEventListener('input', recalcAnnualTotals);
+  });
+});
+</script>
+
+<!-- Template filter helper - get dict item by key -->
+{% comment %}
+  The get_item filter is used for: annual_targets_map|get_item:key
+  Make sure ix_tags.py has:
+    @register.filter
+    def get_item(dictionary, key):
+        return dictionary.get(key)
+{% endcomment %}
+{% endblock %}
