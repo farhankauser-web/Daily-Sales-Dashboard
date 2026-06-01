@@ -1,6 +1,6 @@
 """apps/amazon_api/forms.py"""
 from django import forms
-from .models import AmazonAPIConfig, AnthropicConfig
+from .models import AmazonAPIConfig, AnthropicConfig, AIProviderConfig
 
 
 class AmazonAPIConfigForm(forms.ModelForm):
@@ -41,5 +41,17 @@ class AnthropicConfigForm(forms.ModelForm):
             'label':   forms.TextInput(attrs={'class': 'form-control'}),
             'api_key': forms.PasswordInput(attrs={'class': 'form-control', 'autocomplete': 'off'}, render_value=True),
             'model':   forms.TextInput(attrs={'class': 'form-control'}),
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+
+class AIProviderConfigForm(forms.ModelForm):
+    class Meta:
+        model = AIProviderConfig
+        fields = ['label', 'api_key', 'model', 'is_active']
+        widgets = {
+            'label':     forms.TextInput(attrs={'class': 'form-control'}),
+            'api_key':   forms.PasswordInput(attrs={'class': 'form-control', 'autocomplete': 'off'}, render_value=True),
+            'model':     forms.TextInput(attrs={'class': 'form-control'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }

@@ -112,7 +112,7 @@
 <div class="status-bar">
   <div class="status-item">
     <span class="dot green"></span>
-    <span>SP-API</span> <b id="spStatus">Demo Mode</b>
+    <span>SP-API</span> <b id="spStatus">Connecting…</b>
   </div>
   <div class="status-item">
     <span class="dot" id="adsDot" style="background:#8A8A8A"></span>
@@ -124,6 +124,7 @@
   </div>
   <div class="clock-badge" id="clockBadge">🌐 Loading…</div>
 </div>
+<div id="dataDebug" style="margin:6px 0 10px;padding:6px 10px;background:#FEF9EE;border:1px solid #FCDBA0;border-radius:4px;font-size:11px;color:#805500;display:none"></div>
 
 <!-- KPI STRIP -->
 <div class="kpi-grid" style="margin-bottom:16px">
@@ -385,6 +386,12 @@ async function loadData(){
     if(currentRange === 'custom' && customStartDate && customEndDate){
       url += `&start=${customStartDate}&end=${customEndDate}`;
     }
+    if(window._adsSpReportId)   url += `&ads_sp_report_id=${window._adsSpReportId}`;
+    if(window._adsSbReportId)   url += `&ads_sb_report_id=${window._adsSbReportId}`;
+    if(window._adsSdReportId)   url += `&ads_sd_report_id=${window._adsSdReportId}`;
+    // backward-compat: old sessions may only have _adsReportId
+    if(!window._adsSpReportId && window._adsReportId) url += `&ads_report_id=${window._adsReportId}`;
+    if(window._adsProdReportId) url += `&ads_product_report_id=${window._adsProdReportId}`;
     const res = await fetch(url);
     if(!res.ok) throw new Error(res.statusText);
     const d = await res.json();
@@ -395,157 +402,108 @@ async function loadData(){
     allSkuData = d.sales?.skus || [];
     renderSKUTable(allSkuData, targetData);
     document.getElementById('spStatus').textContent = 'Live';
-    document.getElementById('adsDot').style.background = d.ads ? '#067D62' : '#8A8A8A';
-    document.getElementById('adsStatus').textContent   = d.ads ? 'Live' : 'No Config';
+    // ── Ads API status badge ──────────────────────────────────────────────
+    const adsDot = document.getElementById('adsDot');
+    const adsSt  = document.getElementById('adsStatus');
+    if (!d.ads) {
+      adsDot.style.background = '#8A8A8A';
+      adsSt.textContent = 'No Config';
+    } else if (d.ads.status === 'ok') {
+      adsDot.style.background = d.ads.source === 'db_cache' ? '#f59e0b' : '#22c55e';
+      adsSt.textContent = d.ads.note ? `Est (${d.ads.note})` : (d.ads.source === 'db_cache' ? 'Cached' : 'Live');
+    } else if (d.ads.status === 'pending') {
+      adsDot.style.background = '#f59e0b';
+      adsSt.textContent = 'Loading…';
+      // Store report IDs so next manual refresh re-checks instead of re-submitting
+      if (d.ads.sp_report_id)   window._adsSpReportId   = d.ads.sp_report_id;
+      if (d.ads.sb_report_id)   window._adsSbReportId   = d.ads.sb_report_id;
+      if (d.ads.sd_report_id)   window._adsSdReportId   = d.ads.sd_report_id;
+      if (d.ads.report_id)      window._adsReportId     = d.ads.report_id;   // backward compat
+      if (d.ads.prod_report_id) window._adsProdReportId = d.ads.prod_report_id;
+      // Auto-reload the full dashboard every 90 s while pending
+      // (re-uses stored report IDs so it just polls, no new submission)
+      if (!window._adsPollTimer) {
+        window._adsPollTimer = setInterval(() => {
+          if (document.getElementById('adsStatus')?.textContent === 'Loading…') {
+            loadDashboard();
+          } else {
+            clearInterval(window._adsPollTimer);
+            window._adsPollTimer = null;
+          }
+        }, 90000);
+      }
+    } else if (d.ads.status === 'error') {
+      adsDot.style.background = '#ef4444';
+      adsSt.textContent = 'Error';
+    }
+    // ── Debug strip: show what the API actually returned ────────────────────
+    const dbg = d.sales?.debug || {};
+    const dbgEl = document.getElementById('dataDebug');
+    if(dbgEl){
+      dbgEl.style.display = 'block';
+      if(dbg.source === 'report'){
+        dbgEl.innerHTML =
+          `📄 Source: <b>FlatFileAllOrdersReport</b> (${dbg.report_status}) · ` +
+          `<b>${dbg.report_rows_used ?? '–'}</b> line items · ` +
+          `<b>${dbg.unique_orders ?? '–'}</b> unique orders`;
+      } else {
+        dbgEl.innerHTML =
+          `⏳ Report not ready yet (${dbg.report_status || 'unknown'}). ` +
+          `Showing live Orders API data — revenue may be $0 for Pending orders. ` +
+          `Refresh in 1–2 min.<br>` +
+          `Live API: <b>${dbg.orders_total_from_api ?? 0}</b> orders · ` +
+          `items fetched: <b>${dbg.order_items_fetch_success ?? 0}</b> ok / ` +
+          `<b>${dbg.order_items_fetch_errors ?? 0}</b> failed.`;
+      }
+    }
   } catch(e){
-    console.warn('Using demo data:', e.message);
-    showFallbackData();
+    console.warn('Live data load failed:', e.message);
+    const st = document.getElementById('spStatus');
+    if (st) st.textContent = 'Error';
+    const ads = document.getElementById('adsStatus');
+    if (ads) ads.textContent = 'Error';
+    renderKPIsFromObject({
+      revenue:0, units:0, orders:0, ppc_spend:0, tacos:0,
+      gm:0, gm_pct:0, cm:0, cm_pct:0, vs_target:0, daily_target:0,
+      arpu:0, sp:0, sd:0, sb:0, acos:0, cvr:0, sessions:0
+    });
+    updateChart(revenueChart, [], []);
+    updateChart(unitsChart, [], []);
+    renderSKUTable([], targetData || {});
   }
-}
-
-// ── DEMO DATA ─────────────────────────────────────────────────────────────────
-function showFallbackData(){
-  document.getElementById('spStatus').textContent = 'Demo Mode';
-
-  const demo = {
-    revenue:23135, units:936, orders:891, ppc_spend:3727, tacos:16.11,
-    gm:3128, gm_pct:13.5, cm:6624, cm_pct:28.6,
-    vs_target:1900, daily_target:4797, arpu:24.72,
-    sp:2890, sd:512, sb:325, acos:11.4, cvr:7.2, sessions:12980
-  };
-  renderKPIsFromObject(demo);
-
-  const labels = ['9AM','10AM','11AM','12PM','1PM','2PM','3PM','4PM','5PM'];
-  const rev    = [1820,2140,2450,2890,3210,3560,3890,4120,4570];
-  const units  = [74,87,99,117,130,144,158,167,185];
-  updateChart(revenueChart, labels, rev);
-  updateChart(unitsChart,   labels, units);
-
-  // ── Demo SKU data matching screenshot structure exactly ────────────────────
-  allSkuData = [
-    {
-      group:'4BTH-TWL', groupName:'Bath Towels · 4-pack',
-      qty:213, revenue:7965, cgs:2901, amzFee:1195, fulfill:1764,
-      cm:2106, cmPct:26.44, arpu:37.40,
-      spSpend:769, sdSpend:165, sbSpend:44, totalPpc:978,
-      grossMargin:1128, gmPct:14.16, cpa:4.59, tacos:12.27,
-      tarGM:12.30,
-      variants:[
-        { sku:'TW-WHTB-BTH-600', name:'Brilliant White',
-          qty:172, revenue:6356, cgs:2343, amzFee:953,  fulfill:1424,
-          cm:1636, cmPct:25.73, arpu:36.95,
-          spSpend:620, sdSpend:127, sbSpend:0,   totalPpc:782,
-          grossMargin:854,  gmPct:13.44, cpa:4.54, tacos:12.30, tarGM:null },
-        { sku:'TW-LG-BTH-4',    name:'Light Grey',
-          qty:19,  revenue:722,  cgs:259,  amzFee:108,  fulfill:157,
-          cm:197,  cmPct:27.34, arpu:37.98,
-          spSpend:68,  sdSpend:17,  sbSpend:0,   totalPpc:89,
-          grossMargin:108,  gmPct:15.01, cpa:4.68, tacos:12.33, tarGM:null },
-        { sku:'TW-DK-BTH-4',    name:'Dark',
-          qty:15,  revenue:585,  cgs:204,  amzFee:88,   fulfill:124,
-          cm:169,  cmPct:28.83, arpu:38.99,
-          spSpend:54,  sdSpend:13,  sbSpend:0,   totalPpc:70,
-          grossMargin:98,   gmPct:16.83, cpa:4.68, tacos:12.00, tarGM:null },
-        { sku:'TW-NBL-BTH-4',   name:'Navy Blue',
-          qty:4,   revenue:156,  cgs:54,   amzFee:23,   fulfill:33,
-          cm:45,   cmPct:28.82, arpu:38.98,
-          spSpend:14,  sdSpend:4,   sbSpend:0,   totalPpc:19,
-          grossMargin:26,   gmPct:16.73, cpa:4.71, tacos:12.09, tarGM:null },
-        { sku:'TW-PUR-BTH-4',   name:'Purple',
-          qty:3,   revenue:147,  cgs:41,   amzFee:22,   fulfill:25,
-          cm:59,   cmPct:40.30, arpu:48.99,
-          spSpend:13,  sdSpend:4,   sbSpend:0,   totalPpc:18,
-          grossMargin:41,   gmPct:28.18, cpa:5.93, tacos:12.11, tarGM:null },
-      ]
-    },
-    {
-      group:'8BTH', groupName:'Bath Towels · 8-pack',
-      qty:93,  revenue:3350, cgs:993,  amzFee:487,  fulfill:736,
-      cm:1053, cmPct:32.40, arpu:34.94,
-      spSpend:430, sdSpend:100, sbSpend:44, totalPpc:572,
-      grossMargin:480, gmPct:14.78, cpa:6.16, tacos:17.03,
-      tarGM:17.03,
-      variants:[
-        { sku:'TW-WHTB-BTH-1200', name:'Brilliant White',
-          qty:71,  revenue:2558, cgs:758,  amzFee:372,  fulfill:562,
-          cm:804,  cmPct:31.44, arpu:36.01,
-          spSpend:328, sdSpend:76,  sbSpend:0, totalPpc:437,
-          grossMargin:366, gmPct:14.31, cpa:6.16, tacos:17.09, tarGM:null },
-        { sku:'TW-LG-BTH-8',      name:'Light Grey',
-          qty:14,  revenue:505,  cgs:155,  amzFee:74,   fulfill:111,
-          cm:160,  cmPct:31.67, arpu:36.07,
-          spSpend:65,  sdSpend:15,  sbSpend:0, totalPpc:87,
-          grossMargin:75,  gmPct:14.85, cpa:6.16, tacos:17.09, tarGM:null },
-        { sku:'TW-DK-BTH-8',      name:'Dark',
-          qty:8,   revenue:288,  cgs:80,   amzFee:42,   fulfill:63,
-          cm:89,   cmPct:30.92, arpu:36.00,
-          spSpend:37,  sdSpend:9,   sbSpend:0, totalPpc:50,
-          grossMargin:39,  gmPct:13.60, cpa:6.16, tacos:17.09, tarGM:null },
-      ]
-    },
-    {
-      group:'BDSHT-Q', groupName:'Bed Sheets · Queen',
-      qty:187, revenue:9341, cgs:3367, amzFee:1401, fulfill:1961,
-      cm:2500, cmPct:26.76, arpu:49.95,
-      spSpend:1120, sdSpend:248, sbSpend:67, totalPpc:1435,
-      grossMargin:1065, gmPct:11.40, cpa:7.67, tacos:15.36,
-      tarGM:12.00,
-      variants:[
-        { sku:'BS-WHT-Q-400',  name:'White · 400TC',
-          qty:98,  revenue:4900, cgs:1764, amzFee:735,  fulfill:1029,
-          cm:1293, cmPct:26.39, arpu:50.00,
-          spSpend:588, sdSpend:130, sbSpend:0, totalPpc:753,
-          grossMargin:559, gmPct:11.41, cpa:7.68, tacos:15.37, tarGM:null },
-        { sku:'BS-GRY-Q-400',  name:'Grey · 400TC',
-          qty:56,  revenue:2800, cgs:1008, amzFee:420,  fulfill:588,
-          cm:740,  cmPct:26.43, arpu:50.00,
-          spSpend:336, sdSpend:74,  sbSpend:0, totalPpc:430,
-          grossMargin:320, gmPct:11.43, cpa:7.68, tacos:15.36, tarGM:null },
-        { sku:'BS-NVY-Q-400',  name:'Navy · 400TC',
-          qty:33,  revenue:1641, cgs:595,  amzFee:246,  fulfill:344,
-          cm:467,  cmPct:28.46, arpu:49.73,
-          spSpend:196, sdSpend:44,  sbSpend:0, totalPpc:253,
-          grossMargin:186, gmPct:11.34, cpa:7.64, tacos:15.41, tarGM:null },
-      ]
-    },
-    {
-      group:'BDSHT-K', groupName:'Bed Sheets · King',
-      qty:134, revenue:7516, cgs:2857, amzFee:1127, fulfill:1578,
-      cm:1843, cmPct:24.52, arpu:56.09,
-      spSpend:901, sdSpend:200, sbSpend:54, totalPpc:1154,
-      grossMargin:954,  gmPct:12.69, cpa:8.62, tacos:15.36,
-      tarGM:12.50,
-      variants:[
-        { sku:'BS-WHT-K-400',  name:'White · 400TC',
-          qty:79,  revenue:4434, cgs:1686, amzFee:665,  fulfill:931,
-          cm:1088, cmPct:24.55, arpu:56.13,
-          spSpend:532, sdSpend:118, sbSpend:0, totalPpc:681,
-          grossMargin:562, gmPct:12.68, cpa:8.62, tacos:15.37, tarGM:null },
-        { sku:'BS-GRY-K-400',  name:'Grey · 400TC',
-          qty:55,  revenue:3082, cgs:1171, amzFee:462,  fulfill:647,
-          cm:755,  cmPct:24.50, arpu:56.04,
-          spSpend:369, sdSpend:82,  sbSpend:0, totalPpc:473,
-          grossMargin:392, gmPct:12.72, cpa:8.60, tacos:15.34, tarGM:null },
-      ]
-    },
-  ];
-
-  renderSKUTable(allSkuData, targetData || {});
 }
 
 // ── RENDER KPIs ───────────────────────────────────────────────────────────────
 function renderKPIs(sales, ads){
   if(!sales) return;
-  const m = sales.metrics || {};
+  const m   = sales.metrics || {};
+  const rev = m.ordered_revenue || 0;
+  // ads object: {status, total_spend, sp, sd, sb, acos} when ok; {} when pending/null
+  const adsOk = ads?.status === 'ok';
+  // Use m.ppc_spend (server-patched to campaign total) as the authoritative PPC figure.
+  // Falls back to ads.total_spend for display when metrics patch hasn't run yet.
+  const ppc = (m.ppc_spend > 0) ? m.ppc_spend : (adsOk ? (ads.total_spend || 0) : 0);
+  // TACoS = Total PPC / Revenue
+  const tacos = (rev && ppc) ? (ppc / rev * 100) : 0;
+  // GM% = GM / Revenue  (m.gross_margin = CM − PPC, already correct server-side)
+  const gm_pct = rev ? ((m.gross_margin || 0) / rev * 100) : (m.gm_pct || 0);
   renderKPIsFromObject({
-    revenue:     m.ordered_revenue || 0,
-    units:       m.ordered_units   || 0,
-    orders:      m.total_orders    || 0,
-    ppc_spend:   ads?.total_spend  || 0,
-    tacos:       m.ordered_revenue ? (ads?.total_spend / m.ordered_revenue * 100) : 0,
-    gm:0, gm_pct:0, cm:0, cm_pct:0, vs_target:0, daily_target:0,
-    arpu: m.ordered_units ? (m.ordered_revenue / m.ordered_units) : 0,
-    sp:0, sd:0, sb:0, acos: ads?.acos || 0,
+    revenue:      rev,
+    units:        m.ordered_units || 0,
+    orders:       m.total_orders  || 0,
+    ppc_spend:    ppc,
+    tacos:        tacos,
+    gm:           m.gross_margin  || 0,
+    gm_pct:       gm_pct,
+    cm:           m.cm            || 0,
+    cm_pct:       m.cm_pct        || 0,
+    vs_target:    0,
+    daily_target: 0,
+    arpu:         m.arpu          || 0,
+    sp:           adsOk ? (ads.sp || 0) : 0,
+    sd:           adsOk ? (ads.sd || 0) : 0,
+    sb:           adsOk ? (ads.sb || 0) : 0,
+    acos:         adsOk ? (ads.acos || 0) : 0,
   });
 }
 
@@ -585,7 +543,19 @@ function renderSKUTable(data, targets){
   let html = '';
   data.forEach((grp, gi) => {
     const hasVariants = grp.variants && grp.variants.length > 0;
-    const groupTarGM = Number(targets?.by_group?.[grp.groupName] || 0);
+    // Match targets robustly: 'Bath Towels · 2-Pack' (dashboard) ↔ 'Bath Towels' + '2' (target)
+    const _normGroup = (gn) => {
+      const parts = (gn || '').split(' · ');
+      const pt    = (parts[0] || '').trim().toLowerCase();
+      const pack  = parts[1] || '';
+      const dig   = pack.match(/\d+/);
+      return pt + '::' + (dig ? dig[0] : pack.trim().toLowerCase());
+    };
+    const groupTarGM = Number(
+      targets?.by_group_match?.[_normGroup(grp.groupName)]
+      ?? targets?.by_group?.[grp.groupName]
+      ?? 0
+    );
     const groupTarDisplay = groupTarGM > 0 ? fmt(groupTarGM) : '—';
     const groupGMTar = grp.grossMargin - groupTarGM;
     const groupGMTarCls = groupTarGM > 0 ? (groupGMTar >= 0 ? 'tar-gm-hit' : 'tar-gm-miss') : 'tar-gm-dash';
@@ -651,6 +621,52 @@ function renderSKUTable(data, targets){
       });
     }
   });
+
+  // ── Totals row ─────────────────────────────────────────────────────────────
+  const sum = (k) => data.reduce((a, g) => a + (Number(g[k]) || 0), 0);
+  const tQty   = sum('qty');
+  const tRev   = sum('revenue');
+  const tCgs   = sum('cgs');
+  const tAmz   = sum('amzFee');
+  const tFul   = sum('fulfill');
+  const tCm    = sum('cm');
+  const tSp    = sum('spSpend');
+  const tSd    = sum('sdSpend');
+  const tSb    = sum('sbSpend');
+  const tPpc   = sum('totalPpc');
+  const tGm    = sum('grossMargin');
+  const tTar   = data.reduce((a, g) => a + Number(targets?.by_group?.[g.groupName] || 0), 0);
+  const cmPct  = tRev ? (tCm  / tRev * 100) : 0;
+  const gmPct  = tRev ? (tGm  / tRev * 100) : 0;
+  const tacos  = tRev ? (tPpc / tRev * 100) : 0;
+  const arpu   = tQty ? (tRev / tQty)       : 0;
+  const cpa    = tQty ? (tPpc / tQty)       : 0;
+  const gmTar  = tGm - tTar;
+  const gmTarCls = tTar > 0 ? (gmTar >= 0 ? 'tar-gm-hit' : 'tar-gm-miss') : 'tar-gm-dash';
+
+  html += `<tr class="group-row" style="background:#F3F4F5;font-weight:700;border-top:2px solid #232F3E">
+    <td><span class="sku-code" style="color:#0F1111">TOTAL</span></td>
+    <td></td>
+    <td>${num(tQty)}</td>
+    <td>${fmt(tRev)}</td>
+    <td>${fmt(tCgs)}</td>
+    <td>${fmt(tAmz)}</td>
+    <td>${fmt(tFul)}</td>
+    <td>${fmt(tCm)}</td>
+    <td>${pct(cmPct)}</td>
+    <td>${fmt(arpu)}</td>
+    <td class="sp-spend">${fmt(tSp)}</td>
+    <td class="sd-spend">${fmt(tSd)}</td>
+    <td class="sb-spend">${fmt(tSb)}</td>
+    <td>${fmt(tPpc)}</td>
+    <td>${fmt(tGm)}</td>
+    <td>${pct(gmPct)}</td>
+    <td>${fmt(cpa)}</td>
+    <td>${pct(tacos)}</td>
+    <td class="${gmTarCls}">${tTar > 0 ? fmt(tTar) : '—'}</td>
+    <td class="${gmTarCls}">${tTar > 0 ? fmt(gmTar) : '—'}</td>
+  </tr>`;
+
   tbody.innerHTML = html;
 }
 
@@ -703,8 +719,14 @@ function updateChart(chart, labels, data){
 }
 
 // ── CONTROLS ──────────────────────────────────────────────────────────────────
+function clearAdsReportCache(){
+  window._adsReportId     = null;
+  window._adsProdReportId = null;
+  if(window._adsPollTimer){ clearInterval(window._adsPollTimer); window._adsPollTimer = null; }
+}
 function setMP(mp, btn){
   currentMP = mp;
+  clearAdsReportCache();
   document.querySelectorAll('.mp-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   startMarketplaceClock();
@@ -712,6 +734,7 @@ function setMP(mp, btn){
 }
 function setDate(range, btn){
   currentRange = range;
+  clearAdsReportCache();
   document.querySelectorAll('.date-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   const labels={'today':'Today','yesterday':'Yesterday','mtd':'MTD','7d':'7 Days','30d':'30 Days','custom':'Custom'};
@@ -753,13 +776,111 @@ function applyCustomRange(){
   closeCustomRange();
   loadData();
 }
-function doRefresh(){ loadData(); }
-function exportData(){
-  let url = '/api-config/data/?marketplace=' + currentMP + '&range=' + currentRange + '&format=csv';
-  if(currentRange === 'custom' && customStartDate && customEndDate){
-    url += '&start=' + customStartDate + '&end=' + customEndDate;
+function doRefresh(){
+  const btn = document.querySelector('button.btn.btn-primary[onclick="doRefresh()"]');
+  if (btn){
+    btn.disabled = true;
+    btn.textContent = 'Refreshing…';
   }
-  window.location = url;
+  const st = document.getElementById('spStatus');
+  if (st) st.textContent = 'Loading…';
+  loadData().finally(() => {
+    if (btn){
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+  });
+}
+function exportData(){
+  if(typeof XLSX === 'undefined'){
+    alert('Spreadsheet library not loaded yet — please retry in a moment.');
+    return;
+  }
+  if(!allSkuData || !allSkuData.length){
+    alert('No product performance data to export yet.');
+    return;
+  }
+
+  const headers = [
+    'SKU / Group','Product','QTY','Revenue','CGS','Amz Fee','Fulfill',
+    'CM','CM%','ARPU','SP Spend','SD Spend','SB Spend','Total PPC',
+    'Gross Margin','GM%','CPA','TACoS','TAR GM/Day','GM-TAR',
+  ];
+  const rows = [headers];
+
+  allSkuData.forEach(g => {
+    const tar  = Number(targetData?.by_group?.[g.groupName] || 0);
+    const gmTar = (g.grossMargin || 0) - tar;
+    rows.push([
+      g.group, g.groupName, g.qty, g.revenue, g.cgs, g.amzFee, g.fulfill,
+      g.cm, (g.cmPct || 0) / 100, g.arpu,
+      g.spSpend, g.sdSpend, g.sbSpend, g.totalPpc,
+      g.grossMargin, (g.gmPct || 0) / 100, g.cpa, (g.tacos || 0) / 100,
+      tar > 0 ? tar : null, tar > 0 ? gmTar : null,
+    ]);
+    (g.variants || []).forEach(v => {
+      rows.push([
+        '  ' + v.sku, v.name, v.qty, v.revenue, v.cgs, v.amzFee, v.fulfill,
+        v.cm, (v.cmPct || 0) / 100, v.arpu,
+        v.spSpend, v.sdSpend, v.sbSpend, v.totalPpc,
+        v.grossMargin, (v.gmPct || 0) / 100, v.cpa, (v.tacos || 0) / 100,
+        null, null,
+      ]);
+    });
+  });
+
+  // Totals row (matches the on-screen footer)
+  const sum = (k) => allSkuData.reduce((a, g) => a + (Number(g[k]) || 0), 0);
+  const tQty = sum('qty');
+  const tRev = sum('revenue');
+  const tCm  = sum('cm');
+  const tGm  = sum('grossMargin');
+  const tPpc = sum('totalPpc');
+  const tTar = allSkuData.reduce((a, g) => a + Number(targetData?.by_group?.[g.groupName] || 0), 0);
+  rows.push([
+    'TOTAL', '', tQty, tRev, sum('cgs'), sum('amzFee'), sum('fulfill'),
+    tCm,  tRev ? tCm / tRev : 0,
+    tQty ? tRev / tQty : 0,
+    sum('spSpend'), sum('sdSpend'), sum('sbSpend'), tPpc,
+    tGm, tRev ? tGm / tRev : 0,
+    tQty ? tPpc / tQty : 0,
+    tRev ? tPpc / tRev : 0,
+    tTar > 0 ? tTar : null,
+    tTar > 0 ? (tGm - tTar) : null,
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Column widths (chars)
+  ws['!cols'] = [
+    {wch:14},{wch:32},{wch:6},{wch:10},{wch:10},{wch:10},{wch:10},
+    {wch:10},{wch:8},{wch:9},{wch:10},{wch:10},{wch:10},{wch:11},
+    {wch:13},{wch:8},{wch:8},{wch:8},{wch:11},{wch:10},
+  ];
+
+  // Number / percent formatting
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for(let R = 1; R <= range.e.r; R++){
+    for(let C = 2; C <= range.e.c; C++){
+      const cell = ws[XLSX.utils.encode_cell({r:R, c:C})];
+      if(!cell || cell.v === null || cell.v === undefined) continue;
+      // Columns 8 (CM%), 15 (GM%), 17 (TACoS) → percent
+      if(C === 8 || C === 15 || C === 17){
+        cell.t = 'n'; cell.z = '0.00%';
+      } else if(C === 2){
+        cell.t = 'n'; cell.z = '#,##0';
+      } else {
+        cell.t = 'n'; cell.z = '$#,##0.00';
+      }
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Product Performance');
+
+  const today = new Date().toISOString().slice(0,10);
+  const filename = `product_performance_${currentMP}_${currentRange}_${today}.xlsx`;
+  XLSX.writeFile(wb, filename);
 }
 
 // ── AI SUMMARY ────────────────────────────────────────────────────────────────

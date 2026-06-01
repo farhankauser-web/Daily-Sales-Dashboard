@@ -252,4 +252,100 @@
   {% endif %}
 </div>
 
+<!-- ════════════════════════════════════════════════════════════════════════
+     FBA FEE RATES — separate from COGS, with effective_from dates so peak/
+     off-peak fulfilment surcharges (Oct 15 → Jan 14) get the right rate per day.
+     ════════════════════════════════════════════════════════════════════════ -->
+<div class="card" style="margin-top:18px">
+  <div class="card-header">
+    <div class="card-title">📦 FBA Fulfilment Fee Rates</div>
+    <span style="font-size:11px;color:var(--text3)">
+      Used per-day during sync. Falls back to COGS <em>FBA</em> column when no rate is set.
+    </span>
+  </div>
+  <div style="padding:16px">
+    <form method="post" enctype="multipart/form-data" style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="upload_fba_rates">
+      <div style="flex:1;min-width:280px">
+        <label class="form-label">CSV or .xlsx file</label>
+        {{ fba_form.file }}
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">
+          Columns: <code>SKU, ASIN, Region, EffectiveFrom, FBAFee</code>.
+          Two rows per SKU per year is typical (peak start ~Oct 15, peak end ~Jan 15).
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+        {{ fba_form.overwrite }} {{ fba_form.overwrite.label }}
+      </div>
+      <a href="{% url 'dashboard:fba_template' %}?mp=usa"
+         class="btn btn-secondary"
+         title="Download an Excel template pre-filled with your products and example peak/off-peak dates.">
+         ↓ Template
+      </a>
+      <button type="submit" class="btn btn-primary">↑ Upload FBA rates</button>
+    </form>
+
+    {% if fba_result %}
+    <div style="margin-top:12px;padding:10px 12px;background:#F3F4F5;border-left:3px solid #232F3E;font-size:12px">
+      <b>{{ fba_result.created }}</b> created · <b>{{ fba_result.updated }}</b> updated
+      {% if fba_result.errors %}· <b style="color:#C40000">{{ fba_result.errors|length }} errors</b>{% endif %}
+      {% if fba_result.errors %}
+        <ul style="margin:6px 0 0 18px;color:#C40000">
+          {% for e in fba_result.errors|slice:":10" %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if recent_fba %}
+  <div style="overflow-x:auto;border-top:1px solid var(--border)">
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left">SKU / ASIN</th>
+          <th style="text-align:left">Marketplace</th>
+          <th style="text-align:left">Effective From</th>
+          <th>FBA Fee / unit</th>
+          <th style="text-align:left">Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recent_fba %}
+        <tr>
+          <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11.5px">
+            <strong>{{ r.product.sku|default:r.product.asin }}</strong>
+            <span style="color:var(--text3)">· {{ r.product.asin }}</span>
+          </td>
+          <td style="text-align:left">
+            {% with mp=r.product.marketplace %}
+            {% if mp == 'usa' %}🇺🇸 USA
+            {% elif mp == 'ca' %}🇨🇦 CA
+            {% elif mp == 'uk' %}🇬🇧 UK
+            {% elif mp == 'de' %}🇩🇪 DE
+            {% elif mp == 'ae' %}🇦🇪 UAE
+            {% elif mp == 'sa' %}🇸🇦 KSA
+            {% else %}{{ mp|upper }}{% endif %}
+            {% endwith %}
+          </td>
+          <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px">
+            {{ r.effective_from|date:"M j, Y" }}
+          </td>
+          <td><strong>${{ r.fba_fee_per_unit|floatformat:2 }}</strong></td>
+          <td style="text-align:left;font-size:11px;color:var(--text3)">
+            {{ r.updated_at|date:"M j, Y" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:24px;text-align:center;color:var(--text3);font-size:12px;border-top:1px solid var(--border)">
+    No FBA rate overrides yet — sync uses the <em>FBA</em> column from your COGS upload as the daily fee.
+  </div>
+  {% endif %}
+</div>
+
 {% endblock %}

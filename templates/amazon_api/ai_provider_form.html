@@ -1,0 +1,76 @@
+{% extends "base/base.html" %}
+{% block title %}{{ provider_label }} API{% endblock %}
+{% block nav_api %}active{% endblock %}
+{% block page_title %}{{ provider_label }} Configuration{% endblock %}
+{% block topbar_actions %}<a href="{% url 'amazon_api:list' %}" class="btn btn-ghost">← Back</a>{% endblock %}
+
+{% block content %}
+<div style="max-width:500px">
+
+  <!-- Provider info banner -->
+  <div class="ai-panel" style="margin-bottom:16px">
+    <div class="ai-header">
+      <div class="ai-logo" style="background:{{ meta.color|default:'linear-gradient(135deg,#6366f1,#8b5cf6)' }}">
+        {{ meta.icon|default:"🔑" }}
+      </div>
+      <div>
+        <div class="ai-title">{{ provider_label }}</div>
+        <div class="ai-model mono">{{ meta.purpose|default:"AI provider API key" }}</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:8px">
+      Keys are encrypted at rest using Fernet AES-128.
+      Get your key at
+      <a href="{{ meta.docs_url|default:'#' }}" target="_blank" style="color:var(--accent)">
+        {{ meta.docs_label|default:provider_label }}
+      </a>.
+    </p>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="card">
+      <div class="card-header"><div class="card-title">API Key Settings</div></div>
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">Label</label>
+          {{ form.label }}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">API Key 🔒</label>
+          {{ form.api_key }}
+          {% if meta.hint %}
+          <div class="form-hint">{{ meta.hint }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Model</label>
+          {{ form.model }}
+          <div class="form-hint">
+            Default: <code>{{ default_model }}</code>
+            {% if provider == 'openai' %}
+              · Other options: <code>gpt-4o-mini</code>, <code>gpt-4-turbo</code>, <code>o1</code>
+            {% elif provider == 'gemini' %}
+              · Other options: <code>gemini-1.5-pro</code>, <code>gemini-2.0-pro</code>
+            {% elif provider == 'anthropic' %}
+              · Other options: <code>claude-opus-4-5</code>, <code>claude-haiku-4-5</code>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+            {{ form.is_active }}<span>Active</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Save API Key</button>
+      </div>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

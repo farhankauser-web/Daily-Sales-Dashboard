@@ -1,0 +1,500 @@
+{% extends "base/base.html" %}
+{% block title %}Search Query Performance{% endblock %}
+{% block page_title %}Search Query Performance — Overview{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca'  %}🇨🇦 CA
+    {% elif mp == 'uk'  %}🇬🇧 UK
+    {% elif mp == 'de'  %}🇩🇪 DE
+    {% elif mp == 'ae'  %}🇦🇪 UAE
+    {% elif mp == 'sa'  %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  <select id="weekPicker" class="form-control" style="font-size:11px;padding:5px 8px"
+          onchange="setWeek(this.value)">
+    {% if not available_weeks %}<option value="">(no weeks synced yet)</option>{% endif %}
+    {% for w in available_weeks %}
+      <option value="{{ w|date:'Y-\WW' }}">Week of {{ w|date:'M j, Y' }}</option>
+    {% endfor %}
+  </select>
+  <input type="text" id="asinFilter" placeholder="ASIN filter (optional)"
+         class="form-control" style="width:170px;padding:5px 8px;font-size:11px;margin-left:6px"
+         oninput="onAsinChange(this.value)">
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-primary" onclick="syncLatest()">
+  <span id="syncSpin"></span> ↻ Sync latest week
+</button>
+{% endblock %}
+
+{% block content %}
+
+<!-- Status / hint bar -->
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+  {% if not has_config %}
+    <div style="flex:1;font-size:12px;color:#805500;background:#FFFBF2;border:1px solid #FCDBA0;border-radius:6px;padding:8px 12px">
+      ⚠ SP-API not configured for <b>{{ marketplace|upper }}</b>.
+      <a href="/api-config/">Configure API →</a>
+    </div>
+  {% elif not available_weeks %}
+    <div style="flex:1;font-size:12px;color:#555;background:#F3F4F5;border:1px solid #D5D9D9;border-radius:6px;padding:8px 12px">
+      No SQP weeks synced yet. Click <b>↻ Sync latest week</b> above to pull the most recent
+      completed ISO week (<b>{{ last_completed_week|date:'M j, Y' }}</b>),
+      or run <code>python manage.py backfill_sqp --weeks 12</code> for history.
+    </div>
+  {% else %}
+    <div id="syncMsg" style="font-size:11px;color:#8A8A8A;flex:1">
+      📦 Reading from synced weeks · Brand Analytics SQP via SP-API.
+    </div>
+  {% endif %}
+</div>
+
+<!-- KPI strip -->
+<div class="kpi-grid" style="margin-bottom:16px">
+  <div class="kpi-card blue">
+    <div class="kpi-label">Impressions</div>
+    <div class="kpi-val" id="k-imp">–</div>
+    <div class="kpi-sub">Total query exposure</div>
+  </div>
+  <div class="kpi-card navy">
+    <div class="kpi-label">Clicks</div>
+    <div class="kpi-val" id="k-clk">–</div>
+    <div class="kpi-sub">CTR <span id="k-ctr">–</span></div>
+  </div>
+  <div class="kpi-card gold">
+    <div class="kpi-label">Add to Cart</div>
+    <div class="kpi-val" id="k-atc">–</div>
+    <div class="kpi-sub">ATC rate <span id="k-atcr">–</span></div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-label">Purchases</div>
+    <div class="kpi-val" id="k-pur">–</div>
+    <div class="kpi-sub">CVR <span id="k-cvr">–</span></div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Unique Queries</div>
+    <div class="kpi-val" id="k-q">–</div>
+    <div class="kpi-sub">Search terms tracked</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Sync status</div>
+    <div class="kpi-val" style="font-size:14px" id="k-status">–</div>
+    <div class="kpi-sub" id="k-synced">–</div>
+  </div>
+</div>
+
+<!-- Trend chart -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-header">
+    <div class="card-title">Trend (last 12 weeks)</div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm" id="btnImp"  onclick="setTrendMetric('impressions',this)" style="background:#EDF6F8;color:#007185;border:1px solid #B0D9E3;font-size:11px">● Impressions</button>
+      <button class="btn btn-sm" id="btnClk"  onclick="setTrendMetric('clicks',this)"      style="background:#F3F4F5;color:#8A8A8A;border:1px solid #D5D9D9;font-size:11px">● Clicks</button>
+      <button class="btn btn-sm" id="btnCtr"  onclick="setTrendMetric('ctr',this)"         style="background:#F3F4F5;color:#8A8A8A;border:1px solid #D5D9D9;font-size:11px">● CTR %</button>
+      <button class="btn btn-sm" id="btnCvr"  onclick="setTrendMetric('cvr',this)"         style="background:#F3F4F5;color:#8A8A8A;border:1px solid #D5D9D9;font-size:11px">● CVR %</button>
+    </div>
+  </div>
+  <div class="card-body" style="padding:14px"><canvas id="trendChart" height="180"></canvas></div>
+</div>
+
+<!-- Top queries table -->
+<div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+  <div class="section-title" id="tableHeader">Top Queries</div>
+  <input type="text" id="qSearch" placeholder="Filter queries…" class="form-control"
+         style="width:220px;padding:5px 10px;font-size:11px" oninput="filterRows()">
+</div>
+<div class="table-wrap" style="overflow-x:auto">
+  <table style="font-size:11.5px;min-width:1100px">
+    <thead>
+      <tr style="background:#F3F4F5">
+        <th data-sort="rank"        onclick="setSort('rank')"        style="cursor:pointer;text-align:right">#</th>
+        <th data-sort="" style="text-align:left">Search Query</th>
+        <th data-sort="volume"      onclick="setSort('volume')"      style="cursor:pointer">Volume</th>
+        <th data-sort="impressions" onclick="setSort('impressions')" style="cursor:pointer">Impressions</th>
+        <th data-sort="clicks"      onclick="setSort('clicks')"      style="cursor:pointer">Clicks</th>
+        <th data-sort="ctr"         onclick="setSort('ctr')"         style="cursor:pointer">CTR %</th>
+        <th data-sort="atc"         onclick="setSort('atc')"         style="cursor:pointer">ATC</th>
+        <th>ATC %</th>
+        <th data-sort="purchases"   onclick="setSort('purchases')"   style="cursor:pointer">Purchases</th>
+        <th data-sort="cvr"         onclick="setSort('cvr')"         style="cursor:pointer">CVR %</th>
+        <th>Click Share %</th>
+        <th>Median Price</th>
+      </tr>
+    </thead>
+    <tbody id="rowsBody">
+      <tr><td colspan="12" style="text-align:center;padding:32px;color:#8A8A8A">
+        <span class="spin">⟳</span> Loading…
+      </td></tr>
+    </tbody>
+  </table>
+</div>
+<div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#8A8A8A">
+  <span id="pageInfo">—</span>
+  <span>
+    <button class="btn btn-secondary btn-sm" id="prevBtn" onclick="changePage(-1)">‹ Prev</button>
+    <button class="btn btn-secondary btn-sm" id="nextBtn" onclick="changePage(1)">Next ›</button>
+  </span>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     AI INSIGHTS — Phase A (ASIN analyzer)
+     ════════════════════════════════════════════════════════════════════════ -->
+<div class="card" style="margin-top:22px;border-left:4px solid #FF9900">
+  <div class="card-header">
+    <div class="card-title">✨ AI Insights · ASIN Analyzer</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="aiCompare" class="form-control" style="font-size:11px;padding:4px 8px;width:auto">
+        <option value="wow">WoW (week-over-week)</option>
+        <option value="mom">MoM (month-over-month)</option>
+        <option value="yoy">YoY (year-over-year)</option>
+      </select>
+      <button class="btn btn-primary btn-sm"   id="aiRunBtn"     onclick="aiRun(false)">Analyze</button>
+      <button class="btn btn-secondary btn-sm" id="aiRegenBtn"  onclick="aiRun(true)"
+              title="Skip cache and regenerate">↻ Regenerate</button>
+    </div>
+  </div>
+  <div class="card-body" style="padding:14px">
+    <div id="aiBlank" style="font-size:12px;color:#8A8A8A;text-align:center;padding:18px">
+      Enter an ASIN in the filter above (or leave blank for brand-level) and click <b>Analyze</b>.
+      Claude analyses the compressed metric summary — no raw SQP rows are ever sent.
+    </div>
+    <div id="aiPanel" style="display:none">
+      <div id="aiMetaBar" style="font-size:11px;color:#8A8A8A;margin-bottom:10px"></div>
+      <div id="aiSummary" style="font-size:13.5px;line-height:1.55;color:#0F1111;margin-bottom:14px"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;margin-bottom:6px">Key Findings</div>
+          <ul id="aiFindings" style="margin:0 0 14px 18px;font-size:12px;line-height:1.6"></ul>
+
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#C40000;margin-bottom:6px">Risks</div>
+          <div id="aiRisks" style="font-size:12px;line-height:1.5"></div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#067D62;margin-bottom:6px">Opportunities</div>
+          <div id="aiOpps" style="font-size:12px;line-height:1.5;margin-bottom:14px"></div>
+
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#005A95;margin-bottom:6px">Recommended Actions</div>
+          <div id="aiActions" style="font-size:12px;line-height:1.5"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;padding-top:10px;border-top:1px solid #EAEDED;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:11px;color:#8A8A8A">Priority Score</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:160px;background:#EAEDED;border-radius:4px;height:8px;overflow:hidden">
+            <div id="aiPriBar" style="height:100%;width:0%;background:linear-gradient(90deg,#067D62,#FF9900,#C40000);transition:width .4s"></div>
+          </div>
+          <div id="aiPriNum" style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace">–</div>
+        </div>
+      </div>
+    </div>
+    <div id="aiError" style="display:none;background:#FEF1F1;color:#C40000;border:1px solid #F5C2C2;padding:10px 12px;border-radius:6px;font-size:12px"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = '{{ csrf_token }}';
+let currentMP   = '{{ marketplace }}';
+let currentWeek = document.getElementById('weekPicker')?.value || '';
+let currentAsin = '';
+let currentSort = '-volume';
+let currentPage = 1;
+const PAGE_SIZE = 50;
+let trendChart;
+let trendMetric = 'impressions';
+
+const fmt  = v => Number(v||0).toLocaleString();
+const pct  = v => Number(v||0).toFixed(2) + '%';
+const dolr = v => v == null ? '—' : '$' + Number(v).toFixed(2);
+
+// ── Marketplace / week / asin handlers ───────────────────────────────────────
+function setMP(mp, btn){
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentPage = 1;
+  reloadAll();
+}
+function setWeek(v){ currentWeek = v; currentPage = 1; reloadAll(); }
+let asinDebounce;
+function onAsinChange(v){
+  clearTimeout(asinDebounce);
+  asinDebounce = setTimeout(() => {
+    currentAsin = (v || '').trim().toUpperCase();
+    currentPage = 1;
+    reloadAll();
+  }, 350);
+}
+function setSort(field){
+  currentSort = currentSort === field ? '-' + field
+              : currentSort === '-' + field ? field : '-' + field;
+  currentPage = 1;
+  loadQueries();
+}
+function setTrendMetric(m, btn){
+  trendMetric = m;
+  document.querySelectorAll('.card-header .btn-sm').forEach(b => {
+    b.style.background = '#F3F4F5'; b.style.color = '#8A8A8A'; b.style.borderColor = '#D5D9D9';
+  });
+  if (btn) { btn.style.background = '#EDF6F8'; btn.style.color = '#007185'; btn.style.borderColor = '#B0D9E3'; }
+  loadTrends();
+}
+function changePage(delta){
+  currentPage = Math.max(1, currentPage + delta);
+  loadQueries();
+}
+
+// ── Data loaders ─────────────────────────────────────────────────────────────
+function qs(extra){
+  const p = new URLSearchParams({mp: currentMP});
+  if (currentWeek) p.set('week', currentWeek);
+  if (currentAsin) p.set('asin', currentAsin);
+  for (const k in (extra||{})) p.set(k, extra[k]);
+  return p.toString();
+}
+
+async function loadKPIs(){
+  try {
+    const r = await fetch('/sqp/api/overview/?' + qs());
+    const d = await r.json();
+    const k = d.kpi || {};
+    document.getElementById('k-imp').textContent = fmt(k.impressions);
+    document.getElementById('k-clk').textContent = fmt(k.clicks);
+    document.getElementById('k-ctr').textContent = pct(k.ctr);
+    document.getElementById('k-atc').textContent = fmt(k.atc);
+    document.getElementById('k-atcr').textContent = pct(k.atc_rate);
+    document.getElementById('k-pur').textContent = fmt(k.purchases);
+    document.getElementById('k-cvr').textContent = pct(k.cvr);
+    document.getElementById('k-q').textContent   = fmt(k.sqp_queries);
+    document.getElementById('k-status').textContent = (d.report && d.report.status) || 'not_synced';
+    document.getElementById('k-synced').textContent = (d.report && d.report.synced_at) ? new Date(d.report.synced_at).toLocaleString() : '—';
+
+    const hdr = document.getElementById('tableHeader');
+    if (hdr) hdr.textContent = `Top Queries · ${d.period_start} → ${d.period_end}` + (d.asin_scope ? ` · ASIN ${d.asin_scope}` : '');
+  } catch (e) {
+    console.warn('KPI load failed', e);
+  }
+}
+
+async function loadQueries(){
+  const body = document.getElementById('rowsBody');
+  body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:#8A8A8A"><span class="spin">⟳</span> Loading…</td></tr>';
+  try {
+    const r = await fetch('/sqp/api/queries/?' + qs({sort: currentSort, page: currentPage, page_size: PAGE_SIZE}));
+    const d = await r.json();
+    if (!d.rows || !d.rows.length){
+      body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:32px;color:#8A8A8A">No queries for this period.</td></tr>';
+      document.getElementById('pageInfo').textContent = '—';
+      return;
+    }
+    const html = d.rows.map(r => `
+      <tr>
+        <td style="text-align:right;font-family:'DM Mono',monospace;color:#8A8A8A">${r.search_query_score || ''}</td>
+        <td style="text-align:left"><b>${escapeHtml(r.query)}</b>${r.asin ? `<br><span style="font-size:10.5px;font-family:'DM Mono',monospace;color:#007185">${r.asin}</span>` : ''}</td>
+        <td>${fmt(r.search_query_volume)}</td>
+        <td>${fmt(r.impressions)}</td>
+        <td>${fmt(r.clicks)}</td>
+        <td>${pct(r.ctr)}</td>
+        <td>${fmt(r.atc)}</td>
+        <td>${pct(r.atc_rate)}</td>
+        <td>${fmt(r.purchases)}</td>
+        <td>${pct(r.cvr)}</td>
+        <td>${pct(r.clicks_share)}</td>
+        <td>${dolr(r.click_price_median)}</td>
+      </tr>`).join('');
+    body.innerHTML = html;
+
+    const start = (d.page - 1) * d.page_size + 1;
+    const end   = Math.min(d.total, d.page * d.page_size);
+    document.getElementById('pageInfo').textContent = `${start.toLocaleString()}–${end.toLocaleString()} of ${d.total.toLocaleString()}`;
+    document.getElementById('prevBtn').disabled = d.page <= 1;
+    document.getElementById('nextBtn').disabled = end >= d.total;
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:32px;color:#C40000">Failed to load: ' + e.message + '</td></tr>';
+  }
+}
+
+async function loadTrends(){
+  try {
+    const r = await fetch('/sqp/api/trends/?' + qs({weeks: 12}));
+    const d = await r.json();
+    const series = d[trendMetric] || [];
+    const isPct = trendMetric === 'ctr' || trendMetric === 'cvr';
+    if (!trendChart){
+      trendChart = new Chart(document.getElementById('trendChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: d.dates, datasets: [{ data: series,
+                  borderColor:'#007185', backgroundColor:'rgba(0,113,133,.08)',
+                  fill:true, tension:.3, pointRadius:3, borderWidth:2 }] },
+        options: {
+          responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{display:false},
+            tooltip:{ callbacks:{ label: ctx => isPct ? ctx.parsed.y + '%' : Number(ctx.parsed.y).toLocaleString() }}},
+          scales:{
+            x:{ grid:{color:'#EAEDED'}, ticks:{color:'#8A8A8A',font:{size:9}}},
+            y:{ grid:{color:'#EAEDED'}, ticks:{color:'#8A8A8A',font:{size:9},
+                callback: v => isPct ? v + '%' : Number(v).toLocaleString() }}
+          }
+        }
+      });
+    } else {
+      trendChart.data.labels = d.dates;
+      trendChart.data.datasets[0].data = series;
+      trendChart.update('none');
+    }
+  } catch (e) { console.warn('trend load failed', e); }
+}
+
+function reloadAll(){ loadKPIs(); loadQueries(); loadTrends(); }
+
+function filterRows(){
+  const q = document.getElementById('qSearch').value.toLowerCase();
+  document.querySelectorAll('#rowsBody tr').forEach(tr => {
+    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// ── Manual sync trigger ─────────────────────────────────────────────────────
+async function syncLatest(){
+  const spin = document.getElementById('syncSpin');
+  spin.textContent = '⟳';
+  const msg = document.getElementById('syncMsg');
+  if (msg) msg.innerHTML = '⏳ Requesting Brand Analytics SQP report from SP-API… (1–3 min)';
+  try {
+    const fd = new FormData();
+    if (currentAsin) fd.append('asin', currentAsin);
+    const r = await fetch('/sqp/sync/', {
+      method:'POST', headers:{'X-CSRFToken': CSRF}, body: fd,
+    });
+    const d = await r.json();
+    if (msg) msg.innerHTML = d.ok
+      ? `✓ Synced ${d.rows_loaded.toLocaleString()} rows for week ${d.period_start} → ${d.period_end}.`
+      : `⚠ ${d.status || d.error || 'sync failed'}. ReportId: ${d.report_id || '—'}. Re-click to resume.`;
+    if (d.ok) setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    if (msg) msg.innerHTML = '⚠ Sync failed: ' + e.message;
+  } finally {
+    spin.textContent = '';
+  }
+}
+
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ── AI Insights panel ───────────────────────────────────────────────────────
+function _sevColor(sev){ return sev === 'high' ? '#C40000' : sev === 'medium' ? '#805500' : '#555555'; }
+function _priColor(p){   return p === 'high'   ? '#C40000' : p === 'medium'   ? '#805500' : '#067D62'; }
+
+async function aiRun(force){
+  const compare = document.getElementById('aiCompare').value;
+  const blank   = document.getElementById('aiBlank');
+  const panel   = document.getElementById('aiPanel');
+  const errBox  = document.getElementById('aiError');
+  const runBtn  = document.getElementById('aiRunBtn');
+  const regBtn  = document.getElementById('aiRegenBtn');
+
+  blank.style.display = 'none';
+  errBox.style.display = 'none';
+  panel.style.display  = 'block';
+  runBtn.disabled = regBtn.disabled = true;
+
+  document.getElementById('aiMetaBar').innerHTML = '⏳ Aggregating SQP data → Claude…';
+  document.getElementById('aiSummary').textContent  = '';
+  document.getElementById('aiFindings').innerHTML   = '';
+  document.getElementById('aiRisks').innerHTML      = '';
+  document.getElementById('aiOpps').innerHTML       = '';
+  document.getElementById('aiActions').innerHTML    = '';
+  document.getElementById('aiPriBar').style.width   = '0%';
+  document.getElementById('aiPriNum').textContent   = '–';
+
+  try {
+    const fd = new FormData();
+    fd.append('mp',      currentMP);
+    if (currentAsin) fd.append('asin', currentAsin);
+    fd.append('compare', compare);
+    if (force) fd.append('force', '1');
+
+    const r = await fetch('/sqp/api/ai/asin/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': CSRF},
+      body: fd,
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'AI analysis failed');
+
+    // Meta bar
+    const m = d.meta || {};
+    const tag = m.cache_hit ? 'cached' : 'fresh';
+    const tagColor = m.cache_hit ? '#067D62' : '#FF9900';
+    document.getElementById('aiMetaBar').innerHTML =
+      `<b>${d.scope.asin}</b> · ${compare.toUpperCase()} · ${d.scope.marketplace.toUpperCase()} · ` +
+      `<span style="color:${tagColor};font-weight:600">${tag}</span> · ` +
+      `model <code>${m.model || '—'}</code> · ` +
+      `tokens in=${m.input_tokens || 0} out=${m.output_tokens || 0} · ${m.latency_ms || 0}ms` +
+      (m.generated_at ? ` · generated ${new Date(m.generated_at).toLocaleString()}` : '');
+
+    document.getElementById('aiSummary').textContent = d.summary || '(no summary returned)';
+
+    // Findings
+    const f = document.getElementById('aiFindings');
+    f.innerHTML = (d.key_findings || []).map(t => `<li>${escapeHtml(t)}</li>`).join('') || '<li style="color:#8A8A8A;list-style:none">No findings.</li>';
+
+    // Risks
+    document.getElementById('aiRisks').innerHTML = (d.risks || []).map(r => `
+      <div style="margin-bottom:8px;padding:6px 8px;background:#FEF1F1;border-left:3px solid ${_sevColor(r.severity)};border-radius:3px">
+        <div style="font-weight:600;color:${_sevColor(r.severity)};font-size:12px">${escapeHtml(r.title)}</div>
+        <div style="font-size:11.5px;color:#555">${escapeHtml(r.evidence || '')}</div>
+      </div>`).join('') || '<div style="color:#8A8A8A;font-size:11.5px">No risks flagged.</div>';
+
+    // Opportunities
+    document.getElementById('aiOpps').innerHTML = (d.opportunities || []).map(o => `
+      <div style="margin-bottom:8px;padding:6px 8px;background:#EFF8F1;border-left:3px solid #067D62;border-radius:3px">
+        <div style="font-weight:600;color:#067D62;font-size:12px">${escapeHtml(o.title)}</div>
+        <div style="font-size:11.5px;color:#555">${escapeHtml(o.evidence || '')}</div>
+        ${o.estimated_impact ? `<div style="font-size:11px;color:#067D62;margin-top:2px">Estimated impact: <b>${escapeHtml(o.estimated_impact)}</b></div>` : ''}
+      </div>`).join('') || '<div style="color:#8A8A8A;font-size:11.5px">No opportunities flagged.</div>';
+
+    // Actions
+    document.getElementById('aiActions').innerHTML = (d.recommended_actions || []).map(a => `
+      <div style="margin-bottom:8px;padding:6px 8px;background:#F3F4F5;border-left:3px solid ${_priColor(a.priority)};border-radius:3px">
+        <div style="font-weight:600;color:#0F1111;font-size:12px">${escapeHtml(a.action)}</div>
+        <div style="font-size:11.5px;color:#555">${escapeHtml(a.rationale || '')}</div>
+        <div style="font-size:10.5px;color:${_priColor(a.priority)};margin-top:2px;font-weight:600;text-transform:uppercase">Priority: ${escapeHtml(a.priority || '')}</div>
+      </div>`).join('') || '<div style="color:#8A8A8A;font-size:11.5px">No actions recommended.</div>';
+
+    // Priority bar
+    const pri = Math.max(0, Math.min(100, Number(d.priority_score) || 0));
+    document.getElementById('aiPriBar').style.width = pri + '%';
+    document.getElementById('aiPriNum').textContent = pri;
+    document.getElementById('aiPriNum').style.color = pri >= 70 ? '#C40000' : pri >= 40 ? '#805500' : '#067D62';
+
+  } catch (e) {
+    errBox.style.display = 'block';
+    errBox.textContent = '⚠ ' + e.message;
+  } finally {
+    runBtn.disabled = regBtn.disabled = false;
+  }
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (!currentWeek && document.querySelectorAll('#weekPicker option').length){
+    currentWeek = document.getElementById('weekPicker').value;
+  }
+  reloadAll();
+});
+</script>
+{% endblock %}

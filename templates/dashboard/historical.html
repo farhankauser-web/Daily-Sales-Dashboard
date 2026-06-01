@@ -29,18 +29,44 @@
 {% endblock %}
 
 {% block topbar_actions %}
-<a href="{% url 'dashboard:export' %}?mp={{ marketplace }}&start={{ start }}&end={{ today }}"
+<a href="{% url 'dashboard:export' %}?mp={{ marketplace }}&start={{ start }}&end={{ end }}"
    class="btn btn-secondary btn-sm">↓ Export CSV</a>
 {% endblock %}
 
 {% block content %}
 
-<!-- Demo data notice -->
-{% if not has_data %}
-<div class="alert alert-warning" style="margin-bottom:16px">
-  ⚠ No synced data yet for <strong>{{ marketplace|upper }}</strong>. Showing demo data.
-  Run <code>python manage.py seed_demo_data</code> or configure SP-API sync to populate real data.
+<!-- Data status / backfill bar -->
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+  {% if not has_config %}
+    <div style="flex:1;font-size:12px;color:#805500;background:#FFFBF2;border:1px solid #FCDBA0;border-radius:6px;padding:8px 12px">
+      ⚠ SP-API not configured for <strong>{{ marketplace|upper }}</strong>.
+      <a href="/api-config/">Configure API →</a>
+    </div>
+  {% elif not has_data %}
+    <div style="flex:1;font-size:12px;color:#555555;background:#F3F4F5;border:1px solid #D5D9D9;border-radius:6px;padding:8px 12px">
+      No daily snapshots yet for <strong>{{ start|date:"M j" }} – {{ end|date:"M j, Y" }}</strong>.
+      Click <b>⬇ Backfill {{ period|upper }}</b> to pull the full report once
+      (Amazon takes 1–3 minutes to build it; if the first click times out, click again).
+    </div>
+  {% else %}
+    <div style="font-size:11px;color:#8A8A8A;flex:1">
+      📦 Period: <b>{{ start|date:"M j" }} – {{ end|date:"M j, Y" }}</b>
+      · Yesterday synced:
+      {% if last_sync_yest %}<b>{{ last_sync_yest|date:"M j, H:i" }}</b>{% else %}<b>never</b>{% endif %}
+      · Today's live data is on the <a href="{% url 'dashboard:index' %}">main dashboard</a>.
+    </div>
+  {% endif %}
+  {% if has_config %}
+    <a href="?period={{ period }}&mp={{ marketplace }}&backfill_days={% if period == '7d' %}7{% elif period == '30d' %}30{% elif period == '90d' %}90{% else %}30{% endif %}"
+       class="btn btn-primary btn-sm"
+       title="Pulls one bulk FlatFileAllOrdersReport for the whole period from Amazon and writes per-day snapshots.">
+      ⬇ Backfill {{ period|upper }}
+    </a>
+  {% endif %}
 </div>
+
+{% if sync_status %}
+<div class="alert alert-info" style="margin-bottom:14px;font-size:12px">{{ sync_status }}</div>
 {% endif %}
 
 <!-- KPI STRIP -->
@@ -49,7 +75,7 @@
   <div class="kpi-card blue">
     <div class="kpi-label">Total Revenue</div>
     <div class="kpi-val">${{ totals.total_revenue|default:0|floatformat:0 }}</div>
-    <div class="kpi-sub">{{ start|date:"M j" }} — {{ today|date:"M j, Y" }}</div>
+    <div class="kpi-sub">{{ start|date:"M j" }} — {{ end|date:"M j, Y" }}</div>
   </div>
 
   <div class="kpi-card navy">
@@ -158,33 +184,77 @@
 
 </div>
 
-<!-- DAILY TABLE -->
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-  <div class="section-title">Daily Breakdown</div>
-  <div style="font-size:12px;color:#8A8A8A">{{ start|date:"M j, Y" }} — {{ today|date:"M j, Y" }}</div>
+<!-- ══════════════════════════════════════════════════════════════════════════
+     PRODUCT LINE ANALYSIS TABLE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:4px">
+  <div class="section-title">Product Line Analysis
+    <span style="font-size:11px;font-weight:400;color:#8A8A8A;margin-left:8px">{{ start|date:"M j" }} – {{ end|date:"M j, Y" }} cumulative</span>
+  </div>
+  <button id="loadPLBtn" class="btn btn-primary btn-sm" onclick="loadProductLines()">
+    ⬇ Load Product Analysis
+  </button>
+</div>
+<div id="plStatus" style="font-size:11px;color:#8A8A8A;margin-bottom:8px;display:none">
+  ⏳ Fetching order report from Amazon… (takes 1-3 min)
 </div>
 
-<div class="table-wrap">
-  <table>
+<div class="table-wrap" style="overflow-x:auto;margin-bottom:24px">
+  <table id="plTable" style="font-size:11.5px;min-width:1600px;display:none">
     <thead>
-      <tr>
+      <tr style="background:#232F3E;color:#FFFFFF">
+        <th style="text-align:left;padding:8px 10px;white-space:nowrap">Product</th>
+        <th style="text-align:left;padding:8px 10px">Product Name</th>
+        <th style="padding:8px 6px">QTY</th>
+        <th style="padding:8px 6px">Revenue</th>
+        <th style="padding:8px 6px">CGS</th>
+        <th style="padding:8px 6px">Amazon Fee</th>
+        <th style="padding:8px 6px">Fulfillment<br>Fee</th>
+        <th style="padding:8px 6px">CM</th>
+        <th style="padding:8px 6px">CM %</th>
+        <th style="padding:8px 6px">ARPU</th>
+        <th style="padding:8px 6px;background:#FFF3CD;color:#7B3F00">PPC Spent</th>
+        <th style="padding:8px 6px">Gross Margin</th>
+        <th style="padding:8px 6px">GM Per Unit</th>
+        <th style="padding:8px 6px">GM%</th>
+        <th style="padding:8px 6px">CPA</th>
+        <th style="padding:8px 6px">T.CoS %</th>
+        <th style="padding:8px 6px;background:#F0FFF4;color:#276749">TAR GM</th>
+        <th style="padding:8px 6px;background:#F0FFF4;color:#276749">GM-TAR</th>
+      </tr>
+    </thead>
+    <tbody id="plBody"></tbody>
+  </table>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     DAILY BREAKDOWN TABLE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+  <div class="section-title">Daily Breakdown</div>
+  <div style="font-size:12px;color:#8A8A8A">{{ start|date:"M j, Y" }} — {{ end|date:"M j, Y" }}</div>
+</div>
+
+<div class="table-wrap" style="overflow-x:auto">
+  <table style="font-size:11.5px;min-width:1400px">
+    <thead>
+      <tr style="background:#F3F4F5">
         <th style="text-align:left">Date</th>
+        <th>QTY</th>
         <th>Revenue</th>
-        <th>Units</th>
+        <th>CGS</th>
+        <th>Amz Fee</th>
+        <th>Fulfill</th>
+        <th>CM</th>
+        <th>CM%</th>
         <th>Orders</th>
-        {% if show_ppc %}
-        <th>PPC Spend</th>
-        <th>TACoS %</th>
-        <th>ACoS %</th>
-        {% endif %}
-        {% if show_financials %}
-        <th>GM %</th>
-        {% endif %}
-        <th>Sessions</th>
-        <th>CVR %</th>
-        {% if target %}
-        <th>vs Daily Target</th>
-        {% endif %}
+        <th>Total PPC</th>
+        <th>Gross Margin</th>
+        <th>GM%</th>
+        <th>CPA</th>
+        <th>TACoS</th>
+        <th>TAR GM/Day</th>
+        <th>GM-TAR</th>
       </tr>
     </thead>
     <tbody id="metricsTableBody">
@@ -194,45 +264,67 @@
           <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px;color:#0F1111">
             {{ m.date|date:"D, M j Y" }}
           </td>
-          <td style="font-weight:600">${{ m.revenue|floatformat:0 }}</td>
           <td>{{ m.units }}</td>
+          <td style="font-weight:600">${{ m.revenue|floatformat:0 }}</td>
+          <td>${{ m.cgs|floatformat:0 }}</td>
+          <td>${{ m.amazon_fee|floatformat:0 }}</td>
+          <td>${{ m.fba_fee|floatformat:0 }}</td>
+          <td>${{ m.cm|floatformat:0 }}</td>
+          <td>{{ m.cm_pct|floatformat:2 }}%</td>
           <td>{{ m.orders }}</td>
-          {% if show_ppc %}
           <td>${{ m.ppc_spend|floatformat:0 }}</td>
+          <td>${{ m.gm|floatformat:0 }}</td>
           <td>
-            <span style="{% if m.tacos_pct < 15 %}color:#067D62;font-weight:600{% elif m.tacos_pct > 20 %}color:#C40000;font-weight:600{% else %}color:#555555{% endif %}">
-              {{ m.tacos_pct|floatformat:1 }}%
+            <span style="{% if m.gm_pct > 15 %}color:#067D62;font-weight:600{% elif m.gm_pct < 0 %}color:#C40000;font-weight:600{% endif %}">
+              {{ m.gm_pct|floatformat:2 }}%
             </span>
           </td>
-          <td>{{ m.acos_pct|floatformat:1 }}%</td>
-          {% endif %}
-          {% if show_financials %}
+          <td>${{ m.cpa|floatformat:2 }}</td>
           <td>
-            <span style="{% if m.gm_pct > 0.25 %}color:#067D62;font-weight:600{% else %}color:#555555{% endif %}">
-              {{ m.gm_pct|floatformat:1 }}%
+            <span style="{% if m.tacos > 0 and m.tacos < 15 %}color:#067D62;font-weight:600{% elif m.tacos > 20 %}color:#C40000;font-weight:600{% endif %}">
+              {{ m.tacos|floatformat:2 }}%
             </span>
           </td>
-          {% endif %}
-          <td>{{ m.sessions }}</td>
-          <td>{{ m.conversion_rate|floatformat:2 }}%</td>
-          {% if target %}
+          <td>{% if m.tar_gm_day %}${{ m.tar_gm_day|floatformat:0 }}{% else %}—{% endif %}</td>
           <td>
-            {% with diff=m.revenue|floatformat:0 %}
-            <span style="font-size:11px;font-weight:600;color:#8A8A8A">${{ target.daily_revenue_target|floatformat:0 }}/day</span>
-            {% endwith %}
+            {% if m.tar_gm_day %}
+              <span style="{% if m.gm_minus_tar >= 0 %}color:#067D62;font-weight:600{% else %}color:#C40000;font-weight:600{% endif %}">
+                ${{ m.gm_minus_tar|floatformat:0 }}
+              </span>
+            {% else %}—{% endif %}
           </td>
-          {% endif %}
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="12" style="text-align:center;padding:32px;color:#8A8A8A">No data for this range.</td>
         </tr>
         {% endfor %}
+        <!-- TOTAL row -->
+        <tr style="background:#F3F4F5;font-weight:700;border-top:2px solid #232F3E">
+          <td style="text-align:left">TOTAL</td>
+          <td>{{ totals.total_units }}</td>
+          <td>${{ totals.total_revenue|floatformat:0 }}</td>
+          <td>${{ totals.total_cgs|floatformat:0 }}</td>
+          <td>${{ totals.total_amz|floatformat:0 }}</td>
+          <td>${{ totals.total_fba|floatformat:0 }}</td>
+          <td>${{ totals.total_cm|floatformat:0 }}</td>
+          <td>{{ totals.avg_cm_pct|floatformat:2 }}%</td>
+          <td>{{ totals.total_orders }}</td>
+          <td>${{ totals.total_ppc|floatformat:0 }}</td>
+          <td>${{ totals.total_gm|floatformat:0 }}</td>
+          <td>{{ totals.avg_gm_pct|floatformat:2 }}%</td>
+          <td>${{ totals.cpa|floatformat:2 }}</td>
+          <td>{{ totals.avg_tacos|floatformat:2 }}%</td>
+          <td>{% if totals.total_tar %}${{ totals.total_tar|floatformat:0 }}{% else %}—{% endif %}</td>
+          <td>
+            {% if totals.total_tar %}
+              <span style="{% if totals.gm_minus_tar >= 0 %}color:#067D62{% else %}color:#C40000{% endif %}">
+                ${{ totals.gm_minus_tar|floatformat:0 }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
       {% else %}
-      <!-- Demo table rows generated from chart data by JS -->
-      <tr id="demoNotice">
-        <td colspan="12" style="text-align:center;padding:20px;color:#8A8A8A;font-size:12px">
-          Demo data — scroll up to see charts
+      <tr>
+        <td colspan="16" style="text-align:center;padding:24px;color:#8A8A8A;font-size:12px">
+          No daily snapshots for this period yet.
+          {% if has_config %}Click <b>⬇ Backfill</b> above to pull historical data.{% endif %}
         </td>
       </tr>
       {% endif %}
@@ -247,6 +339,9 @@
 const CD = {{ chart_data|safe }};
 const targetTacos = {{ target.tacos_target|default:15 }};
 const hasSPData   = {{ has_data|yesno:"true,false" }};
+const MP          = '{{ marketplace }}';
+const PERIOD_START = '{{ start|date:"Y-m-d" }}';
+const PERIOD_END   = '{{ end|date:"Y-m-d" }}';
 
 // ── Chart options (Amazon SC palette) ────────────────────────────────────────
 const baseOpts = {
@@ -301,10 +396,7 @@ const revChart = new Chart(document.getElementById('revChart').getContext('2d'),
   },
   options: {
     ...baseOpts,
-    plugins: {
-      ...baseOpts.plugins,
-      legend: { display: false }
-    }
+    plugins: { ...baseOpts.plugins, legend: { display: false } }
   }
 });
 
@@ -335,11 +427,8 @@ new Chart(document.getElementById('tacosChart').getContext('2d'), {
     ...baseOpts,
     plugins: {
       ...baseOpts.plugins,
-      legend: {
-        display: true,
-        position: 'top',
-        labels: { color: '#555555', boxWidth: 12, font: { size: 10 } }
-      }
+      legend: { display: true, position: 'top',
+                labels: { color: '#555555', boxWidth: 12, font: { size: 10 } } }
     }
   }
 });
@@ -354,8 +443,7 @@ new Chart(document.getElementById('unitsChart').getContext('2d'), {
       data: CD.units,
       backgroundColor: 'rgba(0,113,133,.55)',
       borderColor: '#007185',
-      borderWidth: 1,
-      borderRadius: 2,
+      borderWidth: 1, borderRadius: 2,
     }]
   },
   options: baseOpts
@@ -368,10 +456,8 @@ new Chart(document.getElementById('gmChart').getContext('2d'), {
   data: {
     labels: CD.dates,
     datasets: [{
-      label: 'GM %',
-      data: CD.gm_pct,
-      borderColor: '#067D62',
-      backgroundColor: 'rgba(6,125,98,.08)',
+      label: 'GM %', data: CD.gm_pct,
+      borderColor: '#067D62', backgroundColor: 'rgba(6,125,98,.08)',
       fill: true, tension: .4, pointRadius: 2, borderWidth: 2,
     }]
   },
@@ -383,12 +469,9 @@ new Chart(document.getElementById('ppcChart').getContext('2d'), {
   data: {
     labels: CD.dates,
     datasets: [{
-      label: 'PPC Spend',
-      data: CD.ppc,
+      label: 'PPC Spend', data: CD.ppc,
       backgroundColor: 'rgba(255,153,0,.6)',
-      borderColor: '#FF9900',
-      borderWidth: 1,
-      borderRadius: 2,
+      borderColor: '#FF9900', borderWidth: 1, borderRadius: 2,
     }]
   },
   options: baseOpts
@@ -402,45 +485,112 @@ function toggleDataset(chart, idx, btnId) {
   chart.update();
   const btn = document.getElementById(btnId);
   if (meta.hidden) {
-    btn.style.background = '#F3F4F5';
-    btn.style.color      = '#8A8A8A';
-    btn.style.borderColor= '#D5D9D9';
+    btn.style.background = '#F3F4F5'; btn.style.color = '#8A8A8A'; btn.style.borderColor = '#D5D9D9';
   } else {
-    btn.style.background = '#EDF6F8';
-    btn.style.color      = '#007185';
-    btn.style.borderColor= '#B0D9E3';
+    btn.style.background = '#EDF6F8'; btn.style.color = '#007185'; btn.style.borderColor = '#B0D9E3';
   }
 }
 
-// ── Populate demo table rows from chart data ──────────────────────────────────
-if (!hasSPData && CD.dates && CD.dates.length) {
-  const tbody = document.getElementById('metricsTableBody');
-  tbody.innerHTML = '';
-  for (let i = CD.dates.length - 1; i >= 0; i--) {
-    const rev   = CD.revenue[i] || 0;
-    const units = CD.units[i]   || 0;
-    const ppc   = CD.ppc[i]     || 0;
-    const tacos = CD.tacos[i]   || 0;
-    const gm    = CD.gm_pct[i]  || 0;
-    const d     = new Date(CD.dates[i]);
-    const label = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+// ── Product Line Analysis ─────────────────────────────────────────────────────
+const fmt  = v => '$' + Number(v || 0).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+const fmtD = v => '$' + Number(v || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+const pct  = v => Number(v || 0).toFixed(2) + '%';
+const num  = v => Number(v || 0).toLocaleString('en-US');
 
-    const tacosColor = tacos < 15 ? '#067D62' : tacos > 20 ? '#C40000' : '#555555';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px;color:#0F1111">${label}</td>
-      <td style="font-weight:600">$${Math.round(rev).toLocaleString()}</td>
-      <td>${units.toLocaleString()}</td>
-      <td>${Math.round(units * 0.93).toLocaleString()}</td>
-      <td>$${Math.round(ppc).toLocaleString()}</td>
-      <td style="color:${tacosColor};font-weight:600">${tacos.toFixed(1)}%</td>
-      <td>${(ppc > 0 && rev > 0 ? (ppc / (rev * 0.55) * 100) : 11.4).toFixed(1)}%</td>
-      <td style="color:${gm > 14 ? '#067D62' : '#555555'}">${gm.toFixed(1)}%</td>
-      <td>${Math.round(units * 14.2).toLocaleString()}</td>
-      <td>${(units > 0 ? (units / (units * 14.2) * 100) : 7.1).toFixed(2)}%</td>
-    `;
-    tbody.appendChild(tr);
+function loadProductLines() {
+  const btn    = document.getElementById('loadPLBtn');
+  const status = document.getElementById('plStatus');
+  const tbl    = document.getElementById('plTable');
+  btn.disabled = true;
+  btn.textContent = '⏳ Loading…';
+  status.style.display = 'block';
+  tbl.style.display    = 'none';
+
+  fetch(`/dashboard/product-line/?mp=${MP}&start=${PERIOD_START}&end=${PERIOD_END}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      renderPLTable(data.groups);
+      status.style.display = 'none';
+      tbl.style.display    = '';
+      btn.textContent = '↺ Refresh';
+      btn.disabled    = false;
+    })
+    .catch(err => {
+      status.textContent = '✗ Failed: ' + err.message;
+      btn.disabled = false;
+      btn.textContent = '↺ Retry';
+    });
+}
+
+function renderPLTable(groups) {
+  const tbody = document.getElementById('plBody');
+  if (!groups || !groups.length) {
+    tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;padding:20px;color:#8A8A8A">No data</td></tr>';
+    return;
   }
+
+  let totQty=0,totRev=0,totCgs=0,totAmz=0,totFba=0,totCm=0,totPpc=0,totGm=0,totTar=0;
+  let rows = '';
+  for (const g of groups) {
+    totQty += g.qty; totRev += g.revenue; totCgs += g.cgs; totAmz += g.amzFee;
+    totFba += g.fulfill; totCm += g.cm; totPpc += g.ppcSpend; totGm += g.grossMargin;
+    totTar += g.tarGmDay;
+
+    const gmCol   = g.gmPct > 15 ? 'color:#067D62;font-weight:600'
+                  : g.gmPct < 0  ? 'color:#C40000;font-weight:600' : '';
+    const tarCol  = !g.tarGmDay ? 'color:#8A8A8A' : '';
+    const diffCol = g.gmMinusTar >= 0 ? 'color:#067D62;font-weight:600' : 'color:#C40000;font-weight:600';
+
+    rows += `<tr style="border-bottom:1px solid #EAEDED">
+      <td style="text-align:left;padding:6px 10px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;color:#232F3E;white-space:nowrap">${g.group}</td>
+      <td style="text-align:left;padding:6px 8px;font-size:11px;color:#555">${g.groupName}</td>
+      <td style="padding:6px;text-align:right">${num(g.qty)}</td>
+      <td style="padding:6px;text-align:right;font-weight:600">${fmt(g.revenue)}</td>
+      <td style="padding:6px;text-align:right">${fmt(g.cgs)}</td>
+      <td style="padding:6px;text-align:right">${fmt(g.amzFee)}</td>
+      <td style="padding:6px;text-align:right">${fmt(g.fulfill)}</td>
+      <td style="padding:6px;text-align:right">${fmt(g.cm)}</td>
+      <td style="padding:6px;text-align:right">${pct(g.cmPct)}</td>
+      <td style="padding:6px;text-align:right">${fmtD(g.arpu)}</td>
+      <td style="padding:6px;text-align:right;background:#FFFBF2">${fmt(g.ppcSpend)}</td>
+      <td style="padding:6px;text-align:right;font-weight:600">${fmt(g.grossMargin)}</td>
+      <td style="padding:6px;text-align:right">${fmtD(g.gmPerUnit)}</td>
+      <td style="padding:6px;text-align:right;${gmCol}">${pct(g.gmPct)}</td>
+      <td style="padding:6px;text-align:right">${fmtD(g.cpa)}</td>
+      <td style="padding:6px;text-align:right">${pct(g.tacos)}</td>
+      <td style="padding:6px;text-align:right;background:#F0FFF4;${tarCol}">${g.tarGmDay ? fmt(g.tarGmDay) : '—'}</td>
+      <td style="padding:6px;text-align:right;background:#F0FFF4;${g.tarGmDay ? diffCol : 'color:#8A8A8A'}">${g.tarGmDay ? fmt(g.gmMinusTar) : '—'}</td>
+    </tr>`;
+  }
+
+  // Totals
+  const totGmPct  = totRev ? (totGm / totRev * 100) : 0;
+  const totTacos  = totRev ? (totPpc / totRev * 100) : 0;
+  const totDiff   = totTar ? totGm - totTar : 0;
+  const totDiffCl = totDiff >= 0 ? 'color:#067D62' : 'color:#C40000';
+
+  rows += `<tr style="background:#F3F4F5;font-weight:700;border-top:2px solid #232F3E">
+    <td style="text-align:left;padding:7px 10px" colspan="2">TOTAL</td>
+    <td style="text-align:right;padding:7px 6px">${num(totQty)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmt(totRev)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmt(totCgs)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmt(totAmz)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmt(totFba)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmt(totCm)}</td>
+    <td style="text-align:right;padding:7px 6px">${pct(totRev ? totCm/totRev*100 : 0)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmtD(totQty ? totRev/totQty : 0)}</td>
+    <td style="text-align:right;padding:7px 6px;background:#FFFBF2">${fmt(totPpc)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmt(totGm)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmtD(totQty ? totGm/totQty : 0)}</td>
+    <td style="text-align:right;padding:7px 6px">${pct(totGmPct)}</td>
+    <td style="text-align:right;padding:7px 6px">${fmtD(totQty ? totPpc/totQty : 0)}</td>
+    <td style="text-align:right;padding:7px 6px">${pct(totTacos)}</td>
+    <td style="text-align:right;padding:7px 6px;background:#F0FFF4">${totTar ? fmt(totTar) : '—'}</td>
+    <td style="text-align:right;padding:7px 6px;background:#F0FFF4;${totTar ? totDiffCl : ''}">${totTar ? fmt(totDiff) : '—'}</td>
+  </tr>`;
+
+  tbody.innerHTML = rows;
 }
 </script>
 {% endblock %}

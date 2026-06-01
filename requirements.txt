@@ -6,3 +6,4 @@ django-crispy-forms==2.3
 crispy-bootstrap5==2024.2
 gunicorn==22.0.0
 python-dotenv==1.0.1
+openpyxl==3.1.5

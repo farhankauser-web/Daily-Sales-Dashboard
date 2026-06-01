@@ -72,6 +72,27 @@
   </div>
 </div>
 
+<!-- Excel upload / template download for annual product targets -->
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FFFBF2;border:1px solid #FCDBA0;border-radius:8px;padding:12px 14px;margin-bottom:14px">
+  <div style="flex:1;min-width:240px">
+    <div style="font-size:13px;font-weight:600;color:#805500">📥 Bulk-upload annual targets from Excel</div>
+    <div style="font-size:11px;color:#805500;margin-top:2px">
+      Headers: <code>ProductType, PackSize, Marketplace, 2026-01, 2026-02, …</code>
+      (or month names like <code>Jan</code>). Marketplace defaults to <b>{{ active_mp|upper }}</b> if blank.
+    </div>
+  </div>
+  <a href="{% url 'dashboard:targets_template' %}?mp={{ active_mp }}"
+     class="btn btn-secondary btn-sm">↓ Download template</a>
+  <form method="post" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="upload_targets_xlsx">
+    <input type="hidden" name="bulk_marketplace" value="{{ active_mp }}">
+    <input type="file" name="targets_xlsx" accept=".xlsx" required
+           style="font-size:11px;border:1px solid #D5D9D9;border-radius:4px;padding:3px;background:#fff">
+    <button type="submit" class="btn btn-primary btn-sm">↑ Upload</button>
+  </form>
+</div>
+
 <!-- Annual bulk-save form -->
 <form method="post" id="annualForm">
   {% csrf_token %}

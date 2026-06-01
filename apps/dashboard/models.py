@@ -102,6 +102,42 @@ class COGSEntry(models.Model):
                 float(self.duties_cost) + float(self.prep_cost) + float(self.other_cost))
 
 
+# ── FBA FEE RATES ─────────────────────────────────────────────────────────────
+class FBAFeeRate(models.Model):
+    """
+    Per-SKU FBA fulfilment fee with an effective date.
+
+    Lookup at sync time: for an order on date D, pick the most-recent FBAFeeRate
+    where effective_from <= D. Falls back to COGSEntry.shipping_cost if no rate
+    exists for the order's date — so users who don't track Amazon's peak/off-peak
+    cycle separately keep the previous behaviour.
+
+    Typical use: 2 rows per product per year (peak start ~ Oct 15, peak end ~ Jan 15).
+    """
+    product          = models.ForeignKey(Product, on_delete=models.CASCADE,
+                                         related_name='fba_fee_rates')
+    effective_from   = models.DateField(
+        help_text='First day this rate applies (inclusive). Stays in effect '
+                  'until a later FBAFeeRate row for the same product takes over.'
+    )
+    fba_fee_per_unit = models.DecimalField(max_digits=10, decimal_places=4,
+                                           help_text='USD per unit')
+    notes            = models.TextField(blank=True)
+    uploaded_by      = models.ForeignKey(settings.AUTH_USER_MODEL,
+                                         on_delete=models.SET_NULL, null=True)
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table        = 'ix_fba_fee_rates'
+        unique_together = [['product', 'effective_from']]
+        ordering        = ['product', '-effective_from']
+        indexes         = [models.Index(fields=['product', 'effective_from'])]
+
+    def __str__(self):
+        return f'{self.product.sku or self.product.asin} from {self.effective_from} → ${self.fba_fee_per_unit}'
+
+
 # ── MONTHLY TARGETS ───────────────────────────────────────────────────────────
 class MonthlyTarget(models.Model):
     MARKETPLACE_CHOICES = [
@@ -211,7 +247,15 @@ class DailyMetric(models.Model):
     acos            = models.DecimalField(max_digits=6, decimal_places=4, default=0)
     roas            = models.DecimalField(max_digits=8, decimal_places=4, default=0)
 
-    # Derived (computed on save from COGS)
+    # Cost breakdown (frozen at sync time so historical reports are stable)
+    cgs             = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                          help_text='Sum of COGS unit_cost × qty across all orders this day')
+    amazon_fee      = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                          help_text='Amazon referral fee — typically revenue × 15%')
+    fba_fee         = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                          help_text='Amazon FBA fulfilment fee — from COGS shipping_cost × qty')
+
+    # Derived
     tacos           = models.DecimalField(max_digits=6, decimal_places=4, default=0)
     gross_margin    = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     gm_pct          = models.DecimalField(max_digits=6, decimal_places=4, default=0)
@@ -344,6 +388,43 @@ class PPCCampaignSnapshot(models.Model):
         acos_s = max(0, 1 - float(self.acos))
         cvr_s  = min(1, float(self.cvr) * 10)
         return round((acos_s * 0.6 + cvr_s * 0.4) * 100, 1)
+
+
+# ── PER-ASIN PPC SNAPSHOT ─────────────────────────────────────────────────────
+class PPCProductSnapshot(models.Model):
+    """
+    Daily per-ASIN Sponsored Products spend, sourced from the
+    Ads API v3 spAdvertisedProduct report.
+    """
+    CAMPAIGN_TYPES = [('sp', 'Sponsored Products'), ('sd', 'Sponsored Display'), ('sb', 'Sponsored Brands')]
+
+    marketplace   = models.CharField(max_length=8)
+    date          = models.DateField()
+    asin          = models.CharField(max_length=16)
+    sku           = models.CharField(max_length=64, blank=True)
+    campaign_type = models.CharField(max_length=4, choices=CAMPAIGN_TYPES, default='sp')
+
+    impressions   = models.IntegerField(default=0)
+    clicks        = models.IntegerField(default=0)
+    spend         = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    sales_7d      = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    orders_7d     = models.IntegerField(default=0)
+    units_7d      = models.IntegerField(default=0)
+
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table        = 'ix_ppc_product_snapshots'
+        unique_together = [['marketplace', 'date', 'asin', 'campaign_type']]
+        ordering        = ['-date', '-spend']
+        indexes = [
+            models.Index(fields=['marketplace', 'date']),
+            models.Index(fields=['asin']),
+            models.Index(fields=['sku']),
+        ]
+
+    def __str__(self):
+        return f'{self.asin} ({self.sku}) — {self.date} — ${self.spend}'
 
 
 # ── OPERATIONAL ALERTS ────────────────────────────────────────────────────────

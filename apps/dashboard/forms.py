@@ -21,6 +21,23 @@ class COGSBulkUploadForm(forms.Form):
     )
 
 
+class FBARateBulkUploadForm(forms.Form):
+    """CSV/Excel upload for FBA fulfilment fees with effective dates."""
+    file = forms.FileField(
+        label='File',
+        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': '.csv,.xlsx'}),
+        help_text='Columns: SKU, ASIN, Region, EffectiveFrom (YYYY-MM-DD), FBAFee. '
+                  'One row per (SKU, EffectiveFrom). Each rate stays in effect until the next '
+                  'effective date for the same SKU.'
+    )
+    overwrite = forms.BooleanField(
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        label='Overwrite existing rate for the same (SKU, EffectiveFrom)'
+    )
+
+
 class COGSEntryForm(forms.ModelForm):
     class Meta:
         model = COGSEntry

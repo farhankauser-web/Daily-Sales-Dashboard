@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'apps.users',
     'apps.dashboard',
     'apps.amazon_api',
+    'apps.sqp',
 ]
 
 MIDDLEWARE = [

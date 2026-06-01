@@ -81,36 +81,121 @@
   {% endif %}
 </div>
 
-<!-- ANTHROPIC CONFIG -->
+<!-- AI PROVIDERS -->
 <div class="divider"></div>
 <div style="margin-top:20px">
-  <div class="section-title" style="margin-bottom:12px">Claude AI (Anthropic)</div>
-  <div class="card" style="max-width:500px">
-    <div class="card-header">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div style="width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,#f59e0b,#f97316);display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>
-        <div class="card-title">Anthropic API Key</div>
+  <div class="section-title" style="margin-bottom:12px">AI Providers</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
+
+    <!-- Anthropic (Claude) -->
+    {% with ap=ai_providers.anthropic %}
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,#f59e0b,#f97316);display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>
+          <div>
+            <div class="card-title">Anthropic</div>
+            <div style="font-size:10px;color:var(--text3)">Claude · Executive Summaries</div>
+          </div>
+        </div>
+        {% if ap %}
+          <span class="badge badge-green">✓ Configured</span>
+        {% elif legacy_anthropic %}
+          <span class="badge badge-green">✓ Configured</span>
+        {% else %}
+          <span class="badge badge-red">Not Set</span>
+        {% endif %}
       </div>
-      {% if anthropic %}
-      <span class="badge badge-green">✓ Configured</span>
-      {% else %}
-      <span class="badge badge-red">Not Set</span>
-      {% endif %}
-    </div>
-    <div class="card-body">
-      {% if anthropic %}
-      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
-        Model: <span class="mono">{{ anthropic.model }}</span> · Label: {{ anthropic.label }}
+      <div class="card-body">
+        {% if ap %}
+          <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+            Model: <span class="mono">{{ ap.model }}</span>
+          </div>
+        {% elif legacy_anthropic %}
+          <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+            Model: <span class="mono">{{ legacy_anthropic.model }}</span>
+            <span style="color:var(--text4)"> · (legacy)</span>
+          </div>
+        {% else %}
+          <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+            Enables AI-powered executive summaries on the dashboard.
+          </p>
+        {% endif %}
+        <a href="{% url 'amazon_api:ai_provider' 'anthropic' %}" class="btn btn-ghost btn-sm">
+          {% if ap or legacy_anthropic %}Update Key{% else %}Configure{% endif %}
+        </a>
       </div>
-      {% else %}
-      <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
-        Configure to enable AI-powered executive summaries on the dashboard.
-      </p>
-      {% endif %}
-      <a href="{% url 'amazon_api:anthropic' %}" class="btn btn-ghost btn-sm">
-        {% if anthropic %}Update Key{% else %}Configure{% endif %}
-      </a>
     </div>
+    {% endwith %}
+
+    <!-- OpenAI (ChatGPT) -->
+    {% with ap=ai_providers.openai %}
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,#10b981,#059669);display:flex;align-items:center;justify-content:center;font-size:14px">🤖</div>
+          <div>
+            <div class="card-title">OpenAI</div>
+            <div style="font-size:10px;color:var(--text3)">ChatGPT · GPT-4o</div>
+          </div>
+        </div>
+        {% if ap %}
+          <span class="badge badge-green">✓ Configured</span>
+        {% else %}
+          <span class="badge" style="background:#F3F4F5;color:#8A8A8A">Not Set</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if ap %}
+          <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+            Model: <span class="mono">{{ ap.model }}</span>
+          </div>
+        {% else %}
+          <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+            Store your OpenAI API key for GPT-powered features.
+          </p>
+        {% endif %}
+        <a href="{% url 'amazon_api:ai_provider' 'openai' %}" class="btn btn-ghost btn-sm">
+          {% if ap %}Update Key{% else %}Configure{% endif %}
+        </a>
+      </div>
+    </div>
+    {% endwith %}
+
+    <!-- Google Gemini -->
+    {% with ap=ai_providers.gemini %}
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px">💎</div>
+          <div>
+            <div class="card-title">Google</div>
+            <div style="font-size:10px;color:var(--text3)">Gemini · gemini-2.0-flash</div>
+          </div>
+        </div>
+        {% if ap %}
+          <span class="badge badge-green">✓ Configured</span>
+        {% else %}
+          <span class="badge" style="background:#F3F4F5;color:#8A8A8A">Not Set</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if ap %}
+          <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+            Model: <span class="mono">{{ ap.model }}</span>
+          </div>
+        {% else %}
+          <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+            Store your Google AI Studio key for Gemini-powered features.
+          </p>
+        {% endif %}
+        <a href="{% url 'amazon_api:ai_provider' 'gemini' %}" class="btn btn-ghost btn-sm">
+          {% if ap %}Update Key{% else %}Configure{% endif %}
+        </a>
+      </div>
+    </div>
+    {% endwith %}
+
   </div>
 </div>
 

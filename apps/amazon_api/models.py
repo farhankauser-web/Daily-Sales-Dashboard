@@ -127,11 +127,11 @@ class AmazonAPIConfig(models.Model):
         return bool(self.ads_client_id and self.ads_client_secret and self.ads_refresh_token)
 
 
-# ── ANTHROPIC CONFIG ──────────────────────────────────────────────────────────
+# ── ANTHROPIC CONFIG (legacy — kept for backward compat with summary_stream) ──
 class AnthropicConfig(models.Model):
     """
-    Stores Anthropic API key in the DB (encrypted).
-    Only one active row is used; falls back to settings.ANTHROPIC_API_KEY.
+    Legacy model. New code should use AIProviderConfig(provider='anthropic').
+    Kept so existing rows and the summary_stream fallback path continue to work.
     """
     label      = models.CharField(max_length=64, default='Primary')
     api_key    = EncryptedField(help_text='Anthropic API Key (sk-ant-...)')
@@ -149,6 +149,75 @@ class AnthropicConfig(models.Model):
     @classmethod
     def get_active(cls):
         return cls.objects.filter(is_active=True).first()
+
+
+# ── AI PROVIDER CONFIG (Anthropic / OpenAI / Gemini) ─────────────────────────
+class AIProviderConfig(models.Model):
+    """
+    Unified storage for all AI provider API keys.
+    One row per provider; encrypted at rest via EncryptedField.
+    """
+    PROVIDER_CHOICES = [
+        ('anthropic', 'Anthropic (Claude)'),
+        ('openai',    'OpenAI (ChatGPT)'),
+        ('gemini',    'Google (Gemini)'),
+    ]
+    DEFAULT_MODELS = {
+        'anthropic': 'claude-sonnet-4-20250514',
+        'openai':    'gpt-4o',
+        'gemini':    'gemini-2.0-flash',
+    }
+    PROVIDER_META = {
+        'anthropic': {
+            'icon': '✨',
+            'color': 'linear-gradient(135deg,#f59e0b,#f97316)',
+            'hint': 'Starts with sk-ant-api03-…',
+            'docs_url': 'https://console.anthropic.com',
+            'docs_label': 'console.anthropic.com',
+            'purpose': 'Powers AI Executive Summaries on the dashboard.',
+        },
+        'openai': {
+            'icon': '🤖',
+            'color': 'linear-gradient(135deg,#10b981,#059669)',
+            'hint': 'Starts with sk-proj-… or sk-…',
+            'docs_url': 'https://platform.openai.com/api-keys',
+            'docs_label': 'platform.openai.com',
+            'purpose': 'OpenAI GPT models for future AI features.',
+        },
+        'gemini': {
+            'icon': '💎',
+            'color': 'linear-gradient(135deg,#3b82f6,#8b5cf6)',
+            'hint': 'Starts with AIza…',
+            'docs_url': 'https://aistudio.google.com/app/apikey',
+            'docs_label': 'aistudio.google.com',
+            'purpose': 'Google Gemini models for future AI features.',
+        },
+    }
+
+    provider   = models.CharField(max_length=16, choices=PROVIDER_CHOICES, unique=True)
+    label      = models.CharField(max_length=64, default='Primary')
+    api_key    = EncryptedField(help_text='API Key (encrypted at rest)')
+    model      = models.CharField(max_length=64, default='')
+    is_active  = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ix_ai_provider_config'
+
+    def __str__(self):
+        return f'{self.get_provider_display()} — {self.model or "no model set"}'
+
+    @classmethod
+    def get_for(cls, provider: str):
+        """Return the active config for a given provider, or None."""
+        return cls.objects.filter(provider=provider, is_active=True).first()
+
+    def get_model(self):
+        return self.model or self.DEFAULT_MODELS.get(self.provider, '')
+
+    def meta(self):
+        return self.PROVIDER_META.get(self.provider, {})
 
 
 # ── SYNC LOG ──────────────────────────────────────────────────────────────────
