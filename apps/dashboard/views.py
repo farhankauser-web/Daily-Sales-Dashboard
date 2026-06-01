@@ -473,8 +473,9 @@ def product_line_analysis(request):
         if asin: g['_asin_set'].add(asin.upper())
 
     # ── 5. Merge PPC from DB snapshots ───────────────────────────────────────
-    # PPCProductSnapshot only captures ~10% of real spend (product attribution).
-    # We use it for proportional allocation, then scale to the campaign total.
+    # PPCProductSnapshot is SP-only (~10% of real spend, product-attributed).
+    # Scale it to the SP campaign total — NOT the SP+SB+SD total, which would
+    # inflate every SKU's per-product spend by the SB/SD portion.
     from apps.dashboard.models import PPCCampaignSnapshot
     asin_ppc = defaultdict(float)
     sku_ppc  = defaultdict(float)
@@ -484,16 +485,15 @@ def product_line_analysis(request):
         if snap['asin']: asin_ppc[snap['asin'].upper()] += float(snap['spend'] or 0)
         if snap['sku']:  sku_ppc[snap['sku'].upper()]   += float(snap['spend'] or 0)
 
-    # True total from campaign snapshots
-    camp_total_ppc = sum(
+    # SP-only campaign total — the correct denominator for product scaling
+    sp_camp_total_ppc = sum(
         float(v or 0) for v in
         PPCCampaignSnapshot.objects.filter(
-            marketplace=marketplace, date__gte=s_d, date__lte=e_d,
+            marketplace=marketplace, date__gte=s_d, date__lte=e_d, campaign_type='sp',
         ).values_list('spend', flat=True)
     )
-    # Scale proportions up to match campaign total
     prod_total_ppc = sum(asin_ppc.values()) or 0
-    ppc_scale = (camp_total_ppc / prod_total_ppc) if prod_total_ppc and camp_total_ppc > prod_total_ppc else 1.0
+    ppc_scale = (sp_camp_total_ppc / prod_total_ppc) if prod_total_ppc and sp_camp_total_ppc > prod_total_ppc else 1.0
     if ppc_scale > 1.0:
         asin_ppc = defaultdict(float, {k: v * ppc_scale for k, v in asin_ppc.items()})
         sku_ppc  = defaultdict(float, {k: v * ppc_scale for k, v in sku_ppc.items()})

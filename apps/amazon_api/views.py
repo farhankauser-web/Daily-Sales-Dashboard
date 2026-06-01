@@ -701,10 +701,15 @@ def fetch_dashboard_data(request):
                         cost = float(p.get('cost') or 0)
                         if asin: asin_spend[asin] = asin_spend.get(asin, 0) + cost
                         if sku:  sku_spend[sku]   = sku_spend.get(sku,  0) + cost
-                    # Scale per-ASIN proportions to match the accurate campaign total
+                    # Scale per-ASIN proportions to the SP-only campaign total.
+                    # The advertised-product report is SP-only, so we must NOT scale
+                    # by the full SP+SB+SD total — that would inflate every product's
+                    # SP spend by the SB/SD portion.
+                    _sp_only_total = float(raw_all.get('sp_spend', 0) or 0)
                     prod_total_live = sum(asin_spend.values()) or 0
-                    if prod_total_live and _camp_total and _camp_total > prod_total_live:
-                        _scale = _camp_total / prod_total_live
+                    _scale_base = _sp_only_total if _sp_only_total else _camp_total
+                    if prod_total_live and _scale_base and _scale_base > prod_total_live:
+                        _scale = _scale_base / prod_total_live
                         asin_spend = {k: round(v * _scale, 2) for k, v in asin_spend.items()}
                         sku_spend  = {k: round(v * _scale, 2) for k, v in sku_spend.items()}
                 else:
@@ -720,8 +725,12 @@ def fetch_dashboard_data(request):
                         marketplace=marketplace)
 
                     def _load_snaps(d_from, d_to):
-                        """Returns (asin_spend, sku_spend, camp_total)."""
-                        # Per-ASIN proportions from product snapshots
+                        """Returns (asin_spend, sku_spend, camp_total).
+                        camp_total = SP+SB+SD (used for the overall PPC metric).
+                        Product proportions are scaled to SP-only campaign total so
+                        that SB/SD spend doesn't inflate per-product SP figures.
+                        """
+                        # Per-ASIN proportions from product snapshots (SP-only data)
                         prod_rows = _PPCSnap.objects.filter(
                             marketplace=marketplace,
                             date__gte=d_from, date__lte=d_to,
@@ -735,17 +744,29 @@ def fetch_dashboard_data(request):
                             if asin_: a[asin_] = a.get(asin_, 0) + cost_
                             if sku_:  k[sku_]  = k.get(sku_,  0) + cost_
 
-                        # True total from campaign snapshots (much more accurate)
-                        camp_total = _CampSnap.objects.filter(
-                            marketplace=marketplace,
-                            date__gte=d_from, date__lte=d_to,
-                        ).values_list('spend', flat=True)
-                        camp_total = round(sum(float(v or 0) for v in camp_total), 2)
+                        # SP-only campaign total — used for product proportion scaling.
+                        # Must NOT use SP+SB+SD here: product snapshots are SP-only so
+                        # scaling by the full total would inflate every SKU's SP spend.
+                        sp_camp_total = round(sum(
+                            float(v or 0) for v in _CampSnap.objects.filter(
+                                marketplace=marketplace,
+                                date__gte=d_from, date__lte=d_to,
+                                campaign_type='sp',
+                            ).values_list('spend', flat=True)
+                        ), 2)
 
-                        # Scale per-ASIN proportions to match campaign total
+                        # Full SP+SB+SD total — returned so the KPI tile is accurate
+                        camp_total = round(sum(
+                            float(v or 0) for v in _CampSnap.objects.filter(
+                                marketplace=marketplace,
+                                date__gte=d_from, date__lte=d_to,
+                            ).values_list('spend', flat=True)
+                        ), 2)
+
+                        # Scale SP product proportions to SP campaign total only
                         prod_total = sum(a.values()) or 0
-                        if prod_total and camp_total and camp_total > prod_total:
-                            scale = camp_total / prod_total
+                        if prod_total and sp_camp_total and sp_camp_total > prod_total:
+                            scale = sp_camp_total / prod_total
                             a = {k_: round(v_ * scale, 2) for k_, v_ in a.items()}
                             k = {k_: round(v_ * scale, 2) for k_, v_ in k.items()}
 
