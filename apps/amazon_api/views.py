@@ -170,77 +170,57 @@ _CAMP_PREFIX_GROUP = {
 }
 
 
-def _alloc_sb_sd_to_top_sku(marketplace, s_d, e_d, rev_by_sku, rev_by_asin,
-                             sb_sd_campaigns=None):
+def _compute_sb_sd_by_group(marketplace, s_d, e_d, sb_sd_campaigns=None):
     """
-    For each SB/SD campaign, match the campaign-name prefix to a product group
-    and credit 100% of that spend to the highest-revenue SKU in the group.
+    Match each SB/SD campaign name prefix to a product group and return
+    the spend broken down by ad type per group.
 
     sb_sd_campaigns: list of campaign dicts from live API (with '_adType' key).
-                     When None, data is read from PPCCampaignSnapshot for [s_d, e_d].
-    Returns dict {sku_upper: spend_to_add}
+                     When None, reads from PPCCampaignSnapshot for [s_d, e_d].
+
+    Returns {(product_type, pack_size): {'sb': float, 'sd': float}}
+    These amounts are applied at the GROUP ROW level (sbSpend / sdSpend columns),
+    NOT added to the per-SKU SP spend — so SP, SB, SD columns stay separate.
     """
-    from apps.dashboard.models import PPCCampaignSnapshot as _CS, Product as _Prod
+    from apps.dashboard.models import PPCCampaignSnapshot as _CS
     from django.db.models import Sum as _Sum
 
     def _prefix(name):
         return (name or '').split('-')[0].strip().upper()
 
-    # Gather SB+SD spend per campaign name
+    # Collect SB/SD spend keyed by (campaign_name, ad_type)
     if sb_sd_campaigns is not None:
-        camp_spend = {}
+        camp_rows = {}
         for c in (sb_sd_campaigns or []):
-            if c.get('_adType') not in ('sb', 'sd'):
+            ad_type = c.get('_adType', '')
+            if ad_type not in ('sb', 'sd'):
                 continue
             name = (c.get('campaignName') or '')
-            camp_spend[name] = camp_spend.get(name, 0) + float(c.get('cost') or 0)
+            key = (name, ad_type)
+            camp_rows[key] = camp_rows.get(key, 0) + float(c.get('cost') or 0)
     else:
-        rows = (
+        qs = (
             _CS.objects
             .filter(marketplace=marketplace, date__gte=s_d, date__lte=e_d,
                     campaign_type__in=['sb', 'sd'])
-            .values('campaign_name')
+            .values('campaign_name', 'campaign_type')
             .annotate(spend=_Sum('spend'))
         )
-        camp_spend = {r['campaign_name']: float(r['spend'] or 0) for r in rows}
+        camp_rows = {
+            (r['campaign_name'], r['campaign_type']): float(r['spend'] or 0)
+            for r in qs
+        }
 
-    # Aggregate per product group
-    group_spend = {}
-    for name, spend in camp_spend.items():
+    # Aggregate by product group and ad type
+    result = {}
+    for (name, ad_type), spend in camp_rows.items():
         if spend <= 0:
             continue
         group = _CAMP_PREFIX_GROUP.get(_prefix(name))
         if group:
-            group_spend[group] = group_spend.get(group, 0) + spend
-
-    if not group_spend:
-        return {}
-
-    # Build product group → [(sku_upper, asin_upper), ...] from catalog
-    def _split(title):
-        parts = [p.strip() for p in (title or '').split(' - ') if p.strip()]
-        return (parts[0] if parts else ''), (parts[1] if len(parts) > 1 else '—')
-
-    group_products = {}
-    for p in _Prod.objects.filter(marketplace=marketplace).only('sku', 'asin', 'title'):
-        pt, pack = _split(p.title)
-        group_products.setdefault((pt, pack), []).append(
-            ((p.sku or '').upper(), (p.asin or '').upper())
-        )
-
-    # Allocate 100% of each group's SB/SD spend to its top-revenue SKU
-    result = {}
-    for group, spend in group_spend.items():
-        candidates = group_products.get(group, [])
-        if not candidates:
-            continue
-        best_key, best_rev = None, -1.0
-        for sku, asin in candidates:
-            rev = rev_by_sku.get(sku, 0) or rev_by_asin.get(asin, 0)
-            if rev > best_rev:
-                best_rev, best_key = rev, (sku if sku else asin)
-        if best_key and best_rev > 0:
-            result[best_key] = result.get(best_key, 0) + spend
+            if group not in result:
+                result[group] = {'sb': 0.0, 'sd': 0.0}
+            result[group][ad_type] = result[group].get(ad_type, 0.0) + spend
 
     return result
 
@@ -598,6 +578,8 @@ def fetch_dashboard_data(request):
                 grouped[gk] = {
                     'group': f'{r["_pt"]}-{r["_pack"]}'.upper().replace(' ', '-')[:12].rstrip('-'),
                     'groupName': f'{r["_pt"]} · {r["_pack"]}' if r['_pack'] != '—' else r['_pt'],
+                    '_pt': r['_pt'],    # kept for SB/SD group lookup — stripped before JSON
+                    '_pack': r['_pack'],
                     'qty': 0, 'revenue': 0.0,
                     'cgs': 0.0, 'amzFee': 0.0, 'fulfill': 0.0, 'cm': 0.0,
                     'spSpend': 0, 'sdSpend': 0, 'sbSpend': 0, 'totalPpc': 0,
@@ -729,6 +711,9 @@ def fetch_dashboard_data(request):
                 # includes SP + SB + SD). When live report is ready use that total;
                 # when using DB cache, use stored campaign snapshots total.
                 _camp_total: float = total_spend if camp_ok else 0.0
+                # SB/SD spend per product group — applied at GROUP ROW level so that
+                # SP / SB / SD columns stay separate in the table.
+                _sb_sd_by_group: dict = {}
 
                 # ── Persist live campaign data to PPCCampaignSnapshot ─────────
                 if camp_ok:
@@ -801,17 +786,11 @@ def fetch_dashboard_data(request):
                         _scale = _scale_base / prod_total_live
                         asin_spend = {k: round(v * _scale, 2) for k, v in asin_spend.items()}
                         sku_spend  = {k: round(v * _scale, 2) for k, v in sku_spend.items()}
-                    # Allocate SB/SD spend: campaign-name prefix → top-revenue SKU
-                    _rev_by_sku  = {(m.get('sku') or '').upper(): m.get('revenue', 0)
-                                    for m in agg.values() if m.get('sku')}
-                    _rev_by_asin = {(m.get('asin') or '').upper(): m.get('revenue', 0)
-                                    for m in agg.values() if m.get('asin')}
-                    for _sk, _sv in _alloc_sb_sd_to_top_sku(
-                        marketplace, None, None, _rev_by_sku, _rev_by_asin,
+                    # Compute SB/SD by product group (applied at group row level below)
+                    _sb_sd_by_group = _compute_sb_sd_by_group(
+                        marketplace, None, None,
                         sb_sd_campaigns=raw_all.get('campaigns', []),
-                    ).items():
-                        sku_spend[_sk]  = sku_spend.get(_sk, 0) + _sv
-                        asin_spend[_sk] = asin_spend.get(_sk, 0) + _sv
+                    )
                 else:
                     # Fall back to DB snapshots for the requested period.
                     # Two sources:
@@ -887,16 +866,8 @@ def fetch_dashboard_data(request):
                         if asin_spend or camp_total:
                             ppc_note = f'Estimated from {_yest:%b %d} — today\'s report processing'
 
-                    # Allocate SB/SD spend: campaign-name prefix → top-revenue SKU per group
-                    _rev_by_sku  = {(m.get('sku') or '').upper(): m.get('revenue', 0)
-                                    for m in agg.values() if m.get('sku')}
-                    _rev_by_asin = {(m.get('asin') or '').upper(): m.get('revenue', 0)
-                                    for m in agg.values() if m.get('asin')}
-                    for _sk, _sv in _alloc_sb_sd_to_top_sku(
-                        marketplace, _eff_s, _eff_e, _rev_by_sku, _rev_by_asin
-                    ).items():
-                        sku_spend[_sk]  = sku_spend.get(_sk, 0) + _sv
-                        asin_spend[_sk] = asin_spend.get(_sk, 0) + _sv
+                    # Compute SB/SD by product group (applied at group row level below)
+                    _sb_sd_by_group = _compute_sb_sd_by_group(marketplace, _eff_s, _eff_e)
 
                     if asin_spend or camp_total:
                         db_ppc_used = True
@@ -947,33 +918,43 @@ def fetch_dashboard_data(request):
                             }
 
                 # Patch variant and group rows
-                if asin_spend or sku_spend:
+                if asin_spend or sku_spend or _sb_sd_by_group:
                     for grp in data.get('skus', []):
                         grp_sp = 0.0
                         for variant in grp.get('variants', []):
                             v_sku  = (variant.get('sku') or '').upper()
                             v_asin = (variant.get('asin') or '').upper()
+                            # SP only — SB/SD handled at group level
                             sp = sku_spend.get(v_sku) or asin_spend.get(v_asin) or 0.0
                             v_cm  = variant.get('cm', 0)
                             v_rev = variant.get('revenue', 0)
                             variant['spSpend']     = round(sp, 2)
+                            variant['sdSpend']     = 0
+                            variant['sbSpend']     = 0
                             variant['totalPpc']    = round(sp, 2)
                             variant['tacos']       = round((sp / v_rev * 100) if v_rev else 0, 2)
-                            # ── GM = CM − PPC ──────────────────────────────
                             variant['grossMargin'] = round(v_cm - sp, 2)
                             variant['gmPct']       = round(((v_cm - sp) / v_rev * 100) if v_rev else 0, 2)
                             grp_sp += sp
-                        grp['spSpend']  = round(grp_sp, 2)
-                        grp['totalPpc'] = round(grp_sp, 2)
+
+                        # SB/SD applied at group row level — separate columns
+                        _gk     = (grp.get('_pt', ''), grp.get('_pack', ''))
+                        _grp_sb = _sb_sd_by_group.get(_gk, {}).get('sb', 0.0)
+                        _grp_sd = _sb_sd_by_group.get(_gk, {}).get('sd', 0.0)
+                        _grp_total = grp_sp + _grp_sb + _grp_sd
                         grp_rev = grp.get('revenue', 0)
                         grp_cm  = grp.get('cm', 0)
-                        grp['tacos']       = round((grp_sp / grp_rev * 100) if grp_rev else 0, 2)
-                        # ── GM = CM − PPC at group level ───────────────────
-                        grp['grossMargin'] = round(grp_cm - grp_sp, 2)
-                        grp['gmPct']       = round(((grp_cm - grp_sp) / grp_rev * 100) if grp_rev else 0, 2)
+                        grp['spSpend']     = round(grp_sp, 2)
+                        grp['sbSpend']     = round(_grp_sb, 2)
+                        grp['sdSpend']     = round(_grp_sd, 2)
+                        grp['totalPpc']    = round(_grp_total, 2)
+                        grp['tacos']       = round((_grp_total / grp_rev * 100) if grp_rev else 0, 2)
+                        grp['grossMargin'] = round(grp_cm - _grp_total, 2)
+                        grp['gmPct']       = round(((grp_cm - _grp_total) / grp_rev * 100) if grp_rev else 0, 2)
 
-                    # ── Patch overall metrics GM = CM − total PPC ─────────
-                    # Prefer campaign-level total (accurate); fall back to scaled asin sum
+                    # ── Patch overall metrics — use authoritative campaign total ──
+                    # _camp_total = full SP+SB+SD from live API or DB snapshots,
+                    # so this matches the top KPI tile exactly.
                     total_ppc = _camp_total if _camp_total else round(sum(asin_spend.values()), 2)
                     total_cm_val  = data['metrics'].get('cm', 0)
                     total_rev_val = data['metrics'].get('ordered_revenue', 0)

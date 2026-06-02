@@ -498,7 +498,7 @@ def product_line_analysis(request):
         asin_ppc = defaultdict(float, {k: v * ppc_scale for k, v in asin_ppc.items()})
         sku_ppc  = defaultdict(float, {k: v * ppc_scale for k, v in sku_ppc.items()})
 
-    # ── Allocate SB/SD spend: campaign-name prefix → top-revenue SKU ─────────
+    # ── Allocate SB/SD spend at product-group level ───────────────────────────
     _CAMP_PREFIX_GROUP = {
         '8BTH':    ('Bath Towels', '8-Pack'),
         '4BTH':    ('Bath Towels', '4-Pack'),
@@ -515,42 +515,34 @@ def product_line_analysis(request):
         PPCCampaignSnapshot.objects
         .filter(marketplace=marketplace, date__gte=s_d, date__lte=e_d,
                 campaign_type__in=['sb', 'sd'])
-        .values('campaign_name')
+        .values('campaign_name', 'campaign_type')
         .annotate(spend=Sum('spend'))
     )
-    # Group SB/SD spend by product group
+    # Group SB/SD spend by (product_group, ad_type)
     _sb_sd_by_group = {}
     for _r in sb_sd_rows:
         _pfx   = (_r['campaign_name'] or '').split('-')[0].strip().upper()
         _group = _CAMP_PREFIX_GROUP.get(_pfx)
         if _group:
-            _sb_sd_by_group[_group] = _sb_sd_by_group.get(_group, 0) + float(_r['spend'] or 0)
+            if _group not in _sb_sd_by_group:
+                _sb_sd_by_group[_group] = {'sb': 0.0, 'sd': 0.0}
+            _ad_type = _r['campaign_type']
+            _sb_sd_by_group[_group][_ad_type] = (
+                _sb_sd_by_group[_group].get(_ad_type, 0.0) + float(_r['spend'] or 0)
+            )
 
-    # Revenue per SKU from the order report (for top-SKU selection)
-    _rev_by_sku = {(v.get('sku') or '').upper(): v.get('revenue', 0)
-                   for v in agg.values() if v.get('sku')}
-
-    # For each product group assign all SB/SD spend to the top-revenue SKU
     for (pt, pack), g in grouped.items():
-        _sb_sd = _sb_sd_by_group.get((pt, pack), 0)
-        if _sb_sd <= 0:
-            continue
-        best_sku, best_rev = None, -1.0
-        for _sku in g['_sku_set']:
-            _r = _rev_by_sku.get(_sku, 0)
-            if _r > best_rev:
-                best_rev, best_sku = _r, _sku
-        if best_sku and best_rev > 0:
-            sku_ppc[best_sku] += _sb_sd
-
-    for g in grouped.values():
         sp = 0.0
         for sku_ in g['_sku_set']:
             sp += sku_ppc.get(sku_, 0)
         if not sp:
             for asin_ in g['_asin_set']:
                 sp += asin_ppc.get(asin_, 0)
-        g['ppc'] = sp
+        _grp_sb_sd = _sb_sd_by_group.get((pt, pack), {})
+        g['ppc']    = sp + _grp_sb_sd.get('sb', 0) + _grp_sb_sd.get('sd', 0)
+        g['ppc_sp'] = sp
+        g['ppc_sb'] = _grp_sb_sd.get('sb', 0)
+        g['ppc_sd'] = _grp_sb_sd.get('sd', 0)
 
     # ── 6. Load targets ───────────────────────────────────────────────────────
     def _norm_key(pt, pack):
@@ -571,9 +563,12 @@ def product_line_analysis(request):
     # ── 7. Finalise rows ──────────────────────────────────────────────────────
     out = []
     for (pt, pack), g in sorted(grouped.items(), key=lambda x: -x[1]['revenue']):
-        rev  = g['revenue']
-        cm   = g['cm']
-        ppc  = g['ppc']
+        rev    = g['revenue']
+        cm     = g['cm']
+        ppc    = g['ppc']       # SP + SB + SD total
+        ppc_sp = g.get('ppc_sp', ppc)
+        ppc_sb = g.get('ppc_sb', 0)
+        ppc_sd = g.get('ppc_sd', 0)
         qty  = g['qty']
         gm   = cm - ppc
         tar  = tar_by_key.get(_norm_key(pt, pack), 0)
@@ -589,6 +584,9 @@ def product_line_analysis(request):
             'cmPct':      round((cm / rev * 100) if rev else 0, 2),
             'arpu':       round((rev / qty) if qty else 0, 2),
             'ppcSpend':   round(ppc, 2),
+            'spSpend':    round(ppc_sp, 2),
+            'sbSpend':    round(ppc_sb, 2),
+            'sdSpend':    round(ppc_sd, 2),
             'grossMargin': round(gm, 2),
             'gmPerUnit':  round((gm / qty) if qty else 0, 2),
             'gmPct':      round((gm / rev * 100) if rev else 0, 2),
