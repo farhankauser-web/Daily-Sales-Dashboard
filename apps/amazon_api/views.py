@@ -869,31 +869,54 @@ def fetch_dashboard_data(request):
                         ((total_cm_val - total_ppc) / total_rev_val * 100) if total_rev_val else 0, 2)
                     data['metrics']['ppc_spend'] = total_ppc
 
-                    # Persist live data to PPCProductSnapshot (only when fresh from API)
+                    # Persist live data to PPCProductSnapshot (only when fresh from API).
+                    # Pre-aggregate by ASIN across campaigns before bulk_create —
+                    # the same ASIN can appear in multiple rows (one per campaign) and
+                    # update_conflicts replaces rather than sums, so row-by-row would
+                    # keep only the last campaign's spend.
                     if prod_ok:
                         try:
                             from apps.dashboard.models import PPCProductSnapshot
                             _s_d2, _e_d2, _ = SPAPIClient._resolve_local_dates(
                                 date_range, marketplace=marketplace)
                             snap_date = _e_d2
-                            objs = []
+                            agg = {}
                             for p in raw_prod.get('products', []):
                                 asin = (p.get('advertisedAsin') or '').upper()
                                 if not asin:
                                     continue
-                                objs.append(PPCProductSnapshot(
-                                    marketplace=marketplace,
-                                    date=snap_date,
-                                    asin=asin,
-                                    sku=(p.get('advertisedSku') or '').upper(),
-                                    campaign_type='sp',
-                                    impressions=int(p.get('impressions') or 0),
-                                    clicks=int(p.get('clicks') or 0),
-                                    spend=round(float(p.get('cost') or 0), 2),
-                                    sales_7d=round(float(p.get('sales7d') or 0), 2),
-                                    orders_7d=int(p.get('purchases7d') or 0),
-                                    units_7d=int(p.get('unitsSoldClicks7d') or 0),
-                                ))
+                                if asin not in agg:
+                                    agg[asin] = {
+                                        'sku':         (p.get('advertisedSku') or '').upper(),
+                                        'impressions': 0, 'clicks': 0,
+                                        'spend':       0.0, 'sales_7d': 0.0,
+                                        'orders_7d':   0,   'units_7d': 0,
+                                    }
+                                a = agg[asin]
+                                if not a['sku']:
+                                    a['sku'] = (p.get('advertisedSku') or '').upper()
+                                a['impressions'] += int(p.get('impressions') or 0)
+                                a['clicks']      += int(p.get('clicks') or 0)
+                                a['spend']       += float(p.get('cost') or 0)
+                                a['sales_7d']    += float(p.get('sales7d') or 0)
+                                a['orders_7d']   += int(p.get('purchases7d') or 0)
+                                a['units_7d']    += int(p.get('unitsSoldClicks7d') or 0)
+                            objs = [
+                                PPCProductSnapshot(
+                                    marketplace   = marketplace,
+                                    date          = snap_date,
+                                    asin          = asin,
+                                    sku           = a['sku'],
+                                    campaign_type = 'sp',
+                                    impressions   = a['impressions'],
+                                    clicks        = a['clicks'],
+                                    spend         = round(a['spend'], 2),
+                                    sales_7d      = round(a['sales_7d'], 2),
+                                    orders_7d     = a['orders_7d'],
+                                    units_7d      = a['units_7d'],
+                                )
+                                for asin, a in agg.items()
+                            ]
                             if objs:
                                 PPCProductSnapshot.objects.bulk_create(
                                     objs,

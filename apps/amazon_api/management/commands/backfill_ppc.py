@@ -361,8 +361,14 @@ class Command(BaseCommand):
 
     def _save_product_data(self, rows, marketplace, start_d, end_d):
         from apps.dashboard.models import PPCProductSnapshot
-        objs = []
+
+        # The advertised-product report returns ONE ROW PER CAMPAIGN for each
+        # ASIN.  bulk_create with update_conflicts=True replaces rather than
+        # sums, so iterating row-by-row discards every campaign except the last.
+        # Fix: pre-aggregate all campaigns for the same (date, asin) first.
+        agg = {}   # key: (snap_date, asin) → metric dict
         skipped = 0
+
         for r in rows:
             d_str = r.get('date') or r.get('reportDate') or r.get('startDate') or ''
             if not d_str:
@@ -376,19 +382,44 @@ class Command(BaseCommand):
             asin = (r.get('advertisedAsin') or '').upper()
             if not asin:
                 skipped += 1; continue
-            objs.append(PPCProductSnapshot(
+
+            key = (snap_date, asin)
+            if key not in agg:
+                agg[key] = {
+                    'sku':        (r.get('advertisedSku') or '').upper(),
+                    'spend':      Decimal('0'),
+                    'impressions': 0,
+                    'clicks':     0,
+                    'sales_7d':   Decimal('0'),
+                    'orders_7d':  0,
+                    'units_7d':   0,
+                }
+            a = agg[key]
+            if not a['sku']:
+                a['sku'] = (r.get('advertisedSku') or '').upper()
+            a['spend']       += Decimal(str(r.get('cost') or 0))
+            a['impressions'] += int(r.get('impressions') or 0)
+            a['clicks']      += int(r.get('clicks') or 0)
+            a['sales_7d']    += Decimal(str(r.get('sales7d') or 0))
+            a['orders_7d']   += int(r.get('purchases7d') or 0)
+            a['units_7d']    += int(r.get('unitsSoldClicks7d') or 0)
+
+        objs = [
+            PPCProductSnapshot(
                 marketplace   = marketplace,
                 date          = snap_date,
                 asin          = asin,
-                sku           = (r.get('advertisedSku') or '').upper(),
+                sku           = a['sku'],
                 campaign_type = 'sp',
-                impressions   = int(r.get('impressions') or 0),
-                clicks        = int(r.get('clicks') or 0),
-                spend         = Decimal(str(r.get('cost') or 0)),
-                sales_7d      = Decimal(str(r.get('sales7d') or 0)),
-                orders_7d     = int(r.get('purchases7d') or 0),
-                units_7d      = int(r.get('unitsSoldClicks7d') or 0),
-            ))
+                impressions   = a['impressions'],
+                clicks        = a['clicks'],
+                spend         = a['spend'],
+                sales_7d      = a['sales_7d'],
+                orders_7d     = a['orders_7d'],
+                units_7d      = a['units_7d'],
+            )
+            for (snap_date, asin), a in agg.items()
+        ]
 
         if objs:
             PPCProductSnapshot.objects.bulk_create(
@@ -399,7 +430,8 @@ class Command(BaseCommand):
                 unique_fields=['marketplace', 'date', 'asin', 'campaign_type'],
             )
         self.stdout.write(self.style.SUCCESS(
-            f'  ✓ Product snapshots:  {len(objs)} saved, {skipped} skipped'
+            f'  ✓ Product snapshots: {len(objs)} unique ASINs saved '
+            f'({len(rows) - skipped} raw rows aggregated, {skipped} skipped)'
         ))
 
     def _update_daily_metrics(self, camp_rows, marketplace):
