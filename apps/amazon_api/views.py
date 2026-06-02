@@ -153,6 +153,98 @@ def ai_provider_config(request, provider):
     })
 
 
+# ── SB/SD SPEND ALLOCATION BY CAMPAIGN NAME ──────────────────────────────────
+# Maps the leading code in campaign names to (product_type, pack_size) exactly
+# as they appear in Product.title (split by " - ").
+_CAMP_PREFIX_GROUP = {
+    '8BTH':    ('Bath Towels', '8-Pack'),
+    '4BTH':    ('Bath Towels', '4-Pack'),
+    '2BTH':    ('Bath Towels', '2-Pack'),
+    '2BS':     ('Bath Sheet',  '2-Pack'),
+    '1BS':     ('Bath Sheet',  '1-Pack'),
+    '2BM':     ('Bath Mat',    '2-Pack'),
+    '6HNDTWL': ('Hand Towel',  '6-Pack'),
+    '6KTH':    ('Kitchen Towel', '6-Pack'),
+    '12WCPK':  ('Wash Cloth',  '12-Pack'),
+    '4WCPK':   ('Wash Cloth',  '4-Pack'),
+}
+
+
+def _alloc_sb_sd_to_top_sku(marketplace, s_d, e_d, rev_by_sku, rev_by_asin,
+                             sb_sd_campaigns=None):
+    """
+    For each SB/SD campaign, match the campaign-name prefix to a product group
+    and credit 100% of that spend to the highest-revenue SKU in the group.
+
+    sb_sd_campaigns: list of campaign dicts from live API (with '_adType' key).
+                     When None, data is read from PPCCampaignSnapshot for [s_d, e_d].
+    Returns dict {sku_upper: spend_to_add}
+    """
+    from apps.dashboard.models import PPCCampaignSnapshot as _CS, Product as _Prod
+    from django.db.models import Sum as _Sum
+
+    def _prefix(name):
+        return (name or '').split('-')[0].strip().upper()
+
+    # Gather SB+SD spend per campaign name
+    if sb_sd_campaigns is not None:
+        camp_spend = {}
+        for c in (sb_sd_campaigns or []):
+            if c.get('_adType') not in ('sb', 'sd'):
+                continue
+            name = (c.get('campaignName') or '')
+            camp_spend[name] = camp_spend.get(name, 0) + float(c.get('cost') or 0)
+    else:
+        rows = (
+            _CS.objects
+            .filter(marketplace=marketplace, date__gte=s_d, date__lte=e_d,
+                    campaign_type__in=['sb', 'sd'])
+            .values('campaign_name')
+            .annotate(spend=_Sum('spend'))
+        )
+        camp_spend = {r['campaign_name']: float(r['spend'] or 0) for r in rows}
+
+    # Aggregate per product group
+    group_spend = {}
+    for name, spend in camp_spend.items():
+        if spend <= 0:
+            continue
+        group = _CAMP_PREFIX_GROUP.get(_prefix(name))
+        if group:
+            group_spend[group] = group_spend.get(group, 0) + spend
+
+    if not group_spend:
+        return {}
+
+    # Build product group → [(sku_upper, asin_upper), ...] from catalog
+    def _split(title):
+        parts = [p.strip() for p in (title or '').split(' - ') if p.strip()]
+        return (parts[0] if parts else ''), (parts[1] if len(parts) > 1 else '—')
+
+    group_products = {}
+    for p in _Prod.objects.filter(marketplace=marketplace).only('sku', 'asin', 'title'):
+        pt, pack = _split(p.title)
+        group_products.setdefault((pt, pack), []).append(
+            ((p.sku or '').upper(), (p.asin or '').upper())
+        )
+
+    # Allocate 100% of each group's SB/SD spend to its top-revenue SKU
+    result = {}
+    for group, spend in group_spend.items():
+        candidates = group_products.get(group, [])
+        if not candidates:
+            continue
+        best_key, best_rev = None, -1.0
+        for sku, asin in candidates:
+            rev = rev_by_sku.get(sku, 0) or rev_by_asin.get(asin, 0)
+            if rev > best_rev:
+                best_rev, best_key = rev, (sku if sku else asin)
+        if best_key and best_rev > 0:
+            result[best_key] = result.get(best_key, 0) + spend
+
+    return result
+
+
 # ── AJAX: ADS REPORT STATUS POLLING ──────────────────────────────────────────
 @login_required
 def ads_report_status(request, report_id: str):
@@ -702,9 +794,6 @@ def fetch_dashboard_data(request):
                         if asin: asin_spend[asin] = asin_spend.get(asin, 0) + cost
                         if sku:  sku_spend[sku]   = sku_spend.get(sku,  0) + cost
                     # Scale per-ASIN proportions to the SP-only campaign total.
-                    # The advertised-product report is SP-only, so we must NOT scale
-                    # by the full SP+SB+SD total — that would inflate every product's
-                    # SP spend by the SB/SD portion.
                     _sp_only_total = float(raw_all.get('sp_spend', 0) or 0)
                     prod_total_live = sum(asin_spend.values()) or 0
                     _scale_base = _sp_only_total if _sp_only_total else _camp_total
@@ -712,6 +801,17 @@ def fetch_dashboard_data(request):
                         _scale = _scale_base / prod_total_live
                         asin_spend = {k: round(v * _scale, 2) for k, v in asin_spend.items()}
                         sku_spend  = {k: round(v * _scale, 2) for k, v in sku_spend.items()}
+                    # Allocate SB/SD spend: campaign-name prefix → top-revenue SKU
+                    _rev_by_sku  = {(m.get('sku') or '').upper(): m.get('revenue', 0)
+                                    for m in agg.values() if m.get('sku')}
+                    _rev_by_asin = {(m.get('asin') or '').upper(): m.get('revenue', 0)
+                                    for m in agg.values() if m.get('asin')}
+                    for _sk, _sv in _alloc_sb_sd_to_top_sku(
+                        marketplace, None, None, _rev_by_sku, _rev_by_asin,
+                        sb_sd_campaigns=raw_all.get('campaigns', []),
+                    ).items():
+                        sku_spend[_sk]  = sku_spend.get(_sk, 0) + _sv
+                        asin_spend[_sk] = asin_spend.get(_sk, 0) + _sv
                 else:
                     # Fall back to DB snapshots for the requested period.
                     # Two sources:
@@ -774,6 +874,7 @@ def fetch_dashboard_data(request):
 
                     asin_spend, sku_spend, camp_total = _load_snaps(s_d, e_d)
                     ppc_note = None
+                    _eff_s, _eff_e = s_d, e_d   # track effective date range for SB/SD query
 
                     # If the range is exactly today and we got nothing,
                     # fall back to yesterday as an estimate
@@ -782,8 +883,20 @@ def fetch_dashboard_data(request):
                     if not asin_spend and s_d == _today and e_d == _today:
                         _yest = _today - _td(days=1)
                         asin_spend, sku_spend, camp_total = _load_snaps(_yest, _yest)
+                        _eff_s, _eff_e = _yest, _yest
                         if asin_spend or camp_total:
                             ppc_note = f'Estimated from {_yest:%b %d} — today\'s report processing'
+
+                    # Allocate SB/SD spend: campaign-name prefix → top-revenue SKU per group
+                    _rev_by_sku  = {(m.get('sku') or '').upper(): m.get('revenue', 0)
+                                    for m in agg.values() if m.get('sku')}
+                    _rev_by_asin = {(m.get('asin') or '').upper(): m.get('revenue', 0)
+                                    for m in agg.values() if m.get('asin')}
+                    for _sk, _sv in _alloc_sb_sd_to_top_sku(
+                        marketplace, _eff_s, _eff_e, _rev_by_sku, _rev_by_asin
+                    ).items():
+                        sku_spend[_sk]  = sku_spend.get(_sk, 0) + _sv
+                        asin_spend[_sk] = asin_spend.get(_sk, 0) + _sv
 
                     if asin_spend or camp_total:
                         db_ppc_used = True

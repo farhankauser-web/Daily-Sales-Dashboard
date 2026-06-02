@@ -498,6 +498,51 @@ def product_line_analysis(request):
         asin_ppc = defaultdict(float, {k: v * ppc_scale for k, v in asin_ppc.items()})
         sku_ppc  = defaultdict(float, {k: v * ppc_scale for k, v in sku_ppc.items()})
 
+    # ── Allocate SB/SD spend: campaign-name prefix → top-revenue SKU ─────────
+    _CAMP_PREFIX_GROUP = {
+        '8BTH':    ('Bath Towels', '8-Pack'),
+        '4BTH':    ('Bath Towels', '4-Pack'),
+        '2BTH':    ('Bath Towels', '2-Pack'),
+        '2BS':     ('Bath Sheet',  '2-Pack'),
+        '1BS':     ('Bath Sheet',  '1-Pack'),
+        '2BM':     ('Bath Mat',    '2-Pack'),
+        '6HNDTWL': ('Hand Towel',  '6-Pack'),
+        '6KTH':    ('Kitchen Towel', '6-Pack'),
+        '12WCPK':  ('Wash Cloth',  '12-Pack'),
+        '4WCPK':   ('Wash Cloth',  '4-Pack'),
+    }
+    sb_sd_rows = (
+        PPCCampaignSnapshot.objects
+        .filter(marketplace=marketplace, date__gte=s_d, date__lte=e_d,
+                campaign_type__in=['sb', 'sd'])
+        .values('campaign_name')
+        .annotate(spend=Sum('spend'))
+    )
+    # Group SB/SD spend by product group
+    _sb_sd_by_group = {}
+    for _r in sb_sd_rows:
+        _pfx   = (_r['campaign_name'] or '').split('-')[0].strip().upper()
+        _group = _CAMP_PREFIX_GROUP.get(_pfx)
+        if _group:
+            _sb_sd_by_group[_group] = _sb_sd_by_group.get(_group, 0) + float(_r['spend'] or 0)
+
+    # Revenue per SKU from the order report (for top-SKU selection)
+    _rev_by_sku = {(v.get('sku') or '').upper(): v.get('revenue', 0)
+                   for v in agg.values() if v.get('sku')}
+
+    # For each product group assign all SB/SD spend to the top-revenue SKU
+    for (pt, pack), g in grouped.items():
+        _sb_sd = _sb_sd_by_group.get((pt, pack), 0)
+        if _sb_sd <= 0:
+            continue
+        best_sku, best_rev = None, -1.0
+        for _sku in g['_sku_set']:
+            _r = _rev_by_sku.get(_sku, 0)
+            if _r > best_rev:
+                best_rev, best_sku = _r, _sku
+        if best_sku and best_rev > 0:
+            sku_ppc[best_sku] += _sb_sd
+
     for g in grouped.values():
         sp = 0.0
         for sku_ in g['_sku_set']:
