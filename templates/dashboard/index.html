@@ -380,12 +380,15 @@ function initCharts(){
 }
 
 // ── LOAD DATA ─────────────────────────────────────────────────────────────────
+let _forceLive = false;  // set to true by Refresh button to bypass cache
+
 async function loadData(){
   try{
     let url = `/api-config/data/?marketplace=${currentMP}&range=${currentRange}`;
     if(currentRange === 'custom' && customStartDate && customEndDate){
       url += `&start=${customStartDate}&end=${customEndDate}`;
     }
+    if(_forceLive){ url += '&force_live=1'; _forceLive = false; }
     if(window._adsSpReportId)   url += `&ads_sp_report_id=${window._adsSpReportId}`;
     if(window._adsSbReportId)   url += `&ads_sb_report_id=${window._adsSbReportId}`;
     if(window._adsSdReportId)   url += `&ads_sd_report_id=${window._adsSdReportId}`;
@@ -401,7 +404,13 @@ async function loadData(){
     renderCharts(d.sales);
     allSkuData = d.sales?.skus || [];
     renderSKUTable(allSkuData, targetData);
-    document.getElementById('spStatus').textContent = 'Live';
+    // Show cache status or live
+    if(d.cached){
+      document.getElementById('spStatus').textContent = `Cached ${d.cached_at}`;
+      document.getElementById('spStatus').title = 'Data from last hourly sync. Click Refresh for live.';
+    } else {
+      document.getElementById('spStatus').textContent = 'Live';
+    }
     // ── Ads API status badge ──────────────────────────────────────────────
     const adsDot = document.getElementById('adsDot');
     const adsSt  = document.getElementById('adsStatus');
@@ -777,6 +786,7 @@ function applyCustomRange(){
   loadData();
 }
 function doRefresh(){
+  _forceLive = true;   // bypass cache — fetch fresh from Amazon
   const btn = document.querySelector('button.btn.btn-primary[onclick="doRefresh()"]');
   if (btn){
     btn.disabled = true;

@@ -27,6 +27,9 @@ class Command(BaseCommand):
         parser.add_argument('--marketplace', help='Single marketplace code (defaults to all active)')
         parser.add_argument('--max-wait', type=int, default=90,
                             help='Max seconds to poll Amazon for the report (default 90)')
+        parser.add_argument('--include-today', action='store_true', default=False,
+                            help='Also sync today (in addition to yesterday). Used by hourly cron '
+                                 'so the daily dashboard can show cached data without connecting live.')
 
     def handle(self, *args, **opts):
         mps = [opts['marketplace']] if opts['marketplace'] else configured_marketplaces()
@@ -38,12 +41,15 @@ class Command(BaseCommand):
             tz_name = settings.AMAZON_MARKETPLACES.get(mp, {}).get('timezone', settings.TIME_ZONE)
             today = datetime.now(tz=ZoneInfo(tz_name)).date()
             if opts['date']:
-                day = datetime.strptime(opts['date'], '%Y-%m-%d').date()
+                days_to_sync = [datetime.strptime(opts['date'], '%Y-%m-%d').date()]
             else:
-                day = today - timedelta(days=1)
+                days_to_sync = [today - timedelta(days=1)]
+                if opts['include_today']:
+                    days_to_sync.append(today)
 
-            self.stdout.write(f'[{mp}] syncing {day} …')
-            res = sync_window(mp, day, day, max_wait_seconds=opts['max_wait'])
-            self.stdout.write(self.style.SUCCESS(
-                f'[{mp}] {day}  status={res["status"]}  rows={res["rows"]}  days={res["days_written"]}'
-            ))
+            for day in days_to_sync:
+                self.stdout.write(f'[{mp}] syncing {day} …')
+                res = sync_window(mp, day, day, max_wait_seconds=opts['max_wait'])
+                self.stdout.write(self.style.SUCCESS(
+                    f'[{mp}] {day}  status={res["status"]}  rows={res["rows"]}  days={res["days_written"]}'
+                ))

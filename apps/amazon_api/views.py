@@ -325,6 +325,78 @@ def fetch_dashboard_data(request):
             'targets': _build_targets_payload(),
         }, status=200)
 
+    # ── CACHE-FIRST: for "today" serve DailyMetric cached by the hourly cron ─
+    # The cron (sync_daily_metrics --include-today) stores today's data every
+    # hour so the dashboard loads instantly without waiting for Amazon.
+    # Pass ?force_live=1 (Refresh button) to bypass the cache.
+    force_live = request.GET.get('force_live') == '1'
+    if date_range == 'today' and not force_live:
+        try:
+            from django.utils import timezone as _tz
+            from apps.dashboard.models import DailyMetric as _DM, PPCCampaignSnapshot as _CS
+            from django.db.models import Sum as _Sum
+
+            _mp_tz  = settings.AMAZON_MARKETPLACES.get(marketplace, {}).get('timezone', settings.TIME_ZONE)
+            _today  = datetime.now(tz=ZoneInfo(_mp_tz)).date()
+            _dm     = _DM.objects.filter(marketplace=marketplace, date=_today).first()
+
+            if _dm and _dm.revenue > 0 and _dm.synced_at:
+                _age_sec = (_tz.now() - _dm.synced_at).total_seconds()
+                if _age_sec < 7200:          # cache valid for up to 2 hours
+                    # PPC breakdown by type
+                    _camp = dict(
+                        _CS.objects
+                        .filter(marketplace=marketplace, date=_today)
+                        .values('campaign_type')
+                        .annotate(t=_Sum('spend'))
+                        .values_list('campaign_type', 't')
+                    )
+                    _sp   = float(_camp.get('sp', 0) or 0)
+                    _sb   = float(_camp.get('sb', 0) or 0)
+                    _sd   = float(_camp.get('sd', 0) or 0)
+                    _ppc  = float(_dm.ppc_spend or 0) or (_sp + _sb + _sd)
+                    _rev  = float(_dm.revenue or 0)
+                    _cm   = float(_dm.contribution_margin or 0)
+                    _gm   = float(_dm.gross_margin or 0)
+                    _cached_at = _dm.synced_at.astimezone(
+                        ZoneInfo(_mp_tz)).strftime('%-I:%M %p %Z')
+                    return JsonResponse({
+                        'success':  True,
+                        'cached':   True,
+                        'cached_at': _cached_at,
+                        'sales': {
+                            'metrics': {
+                                'ordered_revenue': _rev,
+                                'ordered_units':   _dm.units,
+                                'total_orders':    _dm.orders,
+                                'cgs':      float(_dm.cgs or 0),
+                                'amz_fee':  float(_dm.amazon_fee or 0),
+                                'fulfill':  float(_dm.fba_fee or 0),
+                                'cm':       _cm,
+                                'cm_pct':   round(float(_dm.cm_pct or 0) * 100, 2),
+                                'ppc_spend': _ppc,
+                                'gross_margin': _gm,
+                                'gm_pct':   round(float(_dm.gm_pct or 0) * 100, 2),
+                                'arpu':     round(_rev / _dm.units, 2) if _dm.units else 0,
+                            },
+                            'daily_breakdown': [{'date': str(_today), 'revenue': _rev, 'units': _dm.units}],
+                            'skus':  [],
+                            'debug': {'source': 'dailymetric_cache', 'cached_at': str(_dm.synced_at)},
+                        },
+                        'ads': {
+                            'status':      'ok',
+                            'source':      'db_cache',
+                            'total_spend': _ppc,
+                            'sp':          _sp,
+                            'sb':          _sb,
+                            'sd':          _sd,
+                            'acos':        round(float(_dm.acos or 0) * 100, 2),
+                        },
+                        'targets': _build_targets_payload(),
+                    })
+        except Exception as _cache_err:
+            logger.warning('Cache-first path failed, falling through to live: %s', _cache_err)
+
     try:
         from collections import defaultdict
         from apps.dashboard.models import Product, COGSEntry
