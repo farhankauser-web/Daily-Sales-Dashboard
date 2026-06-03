@@ -360,6 +360,18 @@ def fetch_dashboard_data(request):
                     _gm   = float(_dm.gross_margin or 0)
                     _cached_at = _dm.synced_at.astimezone(
                         ZoneInfo(_mp_tz)).strftime('%-I:%M %p %Z')
+
+                    # Last 7 days for the Revenue Trend chart
+                    _hist = _DM.objects.filter(
+                        marketplace=marketplace,
+                        date__gte=_today - timedelta(days=6),
+                        date__lte=_today,
+                    ).order_by('date')
+                    _daily_breakdown = [
+                        {'date': str(r.date), 'revenue': float(r.revenue), 'units': r.units}
+                        for r in _hist
+                    ]
+
                     return JsonResponse({
                         'success':  True,
                         'cached':   True,
@@ -379,7 +391,7 @@ def fetch_dashboard_data(request):
                                 'gm_pct':   round(float(_dm.gm_pct or 0) * 100, 2),
                                 'arpu':     round(_rev / _dm.units, 2) if _dm.units else 0,
                             },
-                            'daily_breakdown': [{'date': str(_today), 'revenue': _rev, 'units': _dm.units}],
+                            'daily_breakdown': _daily_breakdown,
                             'skus':  [],
                             'debug': {'source': 'dailymetric_cache', 'cached_at': str(_dm.synced_at)},
                         },

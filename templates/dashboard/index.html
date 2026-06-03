@@ -382,6 +382,56 @@ function initCharts(){
 // ── LOAD DATA ─────────────────────────────────────────────────────────────────
 let _forceLive = false;  // set to true by Refresh button to bypass cache
 
+function loadProductsBackground(){
+  // Fetch per-SKU product breakdown from the product-line endpoint (live Amazon call).
+  // Runs automatically when the main response is served from cache so the
+  // Product Performance table still populates (just a minute or two later).
+  const tbody = document.getElementById('skuTableBody');
+  if(tbody) tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;padding:32px;color:#8A8A8A">
+    <span class="spin">⟳</span> Loading product data from Amazon…
+  </td></tr>`;
+  document.getElementById('plTable') && (document.getElementById('plTable').style.display='none');
+
+  const today = new Date().toISOString().slice(0,10);
+  fetch(`/dashboard/product-line/?mp=${currentMP}&start=${today}&end=${today}`)
+    .then(r => r.json())
+    .then(data => {
+      if(data.error || !data.groups) {
+        if(tbody) tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;padding:24px;color:#8A8A8A">
+          Product data unavailable — click <b>Refresh</b> to load live.</td></tr>`;
+        return;
+      }
+      // Map product-line format → SKU table groups format and render
+      const groups = data.groups.map(g => ({
+        group:       g.group,
+        groupName:   g.groupName,
+        qty:         g.qty,
+        revenue:     g.revenue,
+        cgs:         g.cgs,
+        amzFee:      g.amzFee,
+        fulfill:     g.fulfill,
+        cm:          g.cm,
+        cmPct:       g.cmPct,
+        arpu:        g.arpu,
+        spSpend:     g.spSpend  || 0,
+        sdSpend:     g.sdSpend  || 0,
+        sbSpend:     g.sbSpend  || 0,
+        totalPpc:    g.ppcSpend || 0,
+        grossMargin: g.grossMargin,
+        gmPct:       g.gmPct,
+        cpa:         g.cpa,
+        tacos:       g.tacos,
+        variants:    [],   // no variant breakdown from product-line endpoint
+      }));
+      allSkuData = groups;
+      renderSKUTable(groups, targetData || {});
+    })
+    .catch(() => {
+      if(tbody) tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;padding:24px;color:#8A8A8A">
+        Product data unavailable — click <b>Refresh</b> to load live.</td></tr>`;
+    });
+}
+
 async function loadData(){
   try{
     let url = `/api-config/data/?marketplace=${currentMP}&range=${currentRange}`;
@@ -408,6 +458,8 @@ async function loadData(){
     if(d.cached){
       document.getElementById('spStatus').textContent = `Cached ${d.cached_at}`;
       document.getElementById('spStatus').title = 'Data from last hourly sync. Click Refresh for live.';
+      // Auto-load product performance in background (cached response has no SKU data)
+      loadProductsBackground();
     } else {
       document.getElementById('spStatus').textContent = 'Live';
     }
