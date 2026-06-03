@@ -258,6 +258,89 @@ def upsert_daily_metrics(marketplace: str, by_day: dict, full_window: tuple[date
     return written
 
 
+def aggregate_rows_by_sku(rows, marketplace: str, day_start: date_cls, day_end: date_cls):
+    """
+    Bucket order-report rows into per-SKU metrics with COGS for [day_start, day_end].
+    Returns dict: { sku_upper: {asin, qty, revenue, cgs, amz_fee, fulfill, cm} }
+    """
+    local_zone = _local_zone(marketplace)
+    cogs_by_month_sku, cogs_by_month_asin = _load_cogs_index(
+        marketplace, day_start.replace(day=1), day_end.replace(day=1)
+    )
+    fba_rates = _load_fba_rate_index(marketplace, day_end)
+
+    prod_id_by_sku, prod_id_by_asin = {}, {}
+    for pid, sku_db, asin_db in (
+        Product.objects.filter(marketplace=marketplace)
+        .values_list('id', 'sku', 'asin')
+    ):
+        if sku_db: prod_id_by_sku[sku_db.upper()]  = pid
+        if asin_db: prod_id_by_asin[asin_db.upper()] = pid
+
+    buckets: dict = {}
+    for d, sku, asin, qty, rev, oid in _iter_clean_rows(rows, local_zone):
+        if d < day_start or d > day_end:
+            continue
+        purchase_month = d.replace(day=1)
+        cogs = _lookup_cogs_with_fallback(
+            cogs_by_month_sku, cogs_by_month_asin, purchase_month, sku, asin
+        )
+        cgs_unit = (float(cogs.unit_cost or 0) + float(cogs.duties_cost or 0)
+                    + float(cogs.prep_cost or 0) + float(cogs.other_cost or 0)) if cogs else 0.0
+        pid = prod_id_by_sku.get(sku) or prod_id_by_asin.get(asin)
+        fba_unit = _lookup_fba_rate(fba_rates.get(pid, []), d) if pid else None
+        if fba_unit is None:
+            fba_unit = float(cogs.shipping_cost or 0) if cogs else 0.0
+
+        key = sku or asin
+        if not key:
+            continue
+        if key not in buckets:
+            buckets[key] = {'asin': asin, 'qty': 0, 'revenue': 0.0,
+                            'cgs': 0.0, 'amz_fee': 0.0, 'fulfill': 0.0}
+        b = buckets[key]
+        b['asin']    = b['asin'] or asin
+        b['qty']     += qty
+        b['revenue'] += rev
+        b['cgs']     += cgs_unit * qty
+        b['amz_fee'] += rev * 0.15
+        b['fulfill'] += fba_unit * qty
+
+    for b in buckets.values():
+        b['cm'] = b['revenue'] - b['cgs'] - b['amz_fee'] - b['fulfill']
+    return buckets
+
+
+def upsert_sku_snapshots(marketplace: str, by_sku: dict, date: date_cls) -> int:
+    """
+    Persist per-SKU metrics into DailySkuSnapshot for a single date.
+    Returns number of rows written.
+    """
+    from .models import DailySkuSnapshot
+    objs = []
+    for sku, b in by_sku.items():
+        objs.append(DailySkuSnapshot(
+            marketplace = marketplace,
+            date        = date,
+            sku         = sku,
+            asin        = b.get('asin', ''),
+            qty         = int(b['qty']),
+            revenue     = Decimal(f'{b["revenue"]:.2f}'),
+            cgs         = Decimal(f'{b["cgs"]:.2f}'),
+            amz_fee     = Decimal(f'{b["amz_fee"]:.2f}'),
+            fulfill     = Decimal(f'{b["fulfill"]:.2f}'),
+            cm          = Decimal(f'{b["cm"]:.2f}'),
+        ))
+    if objs:
+        DailySkuSnapshot.objects.bulk_create(
+            objs,
+            update_conflicts=True,
+            update_fields=['asin', 'qty', 'revenue', 'cgs', 'amz_fee', 'fulfill', 'cm', 'synced_at'],
+            unique_fields=['marketplace', 'date', 'sku'],
+        )
+    return len(objs)
+
+
 def sync_window(marketplace: str, start: date_cls, end: date_cls,
                 max_wait_seconds: int = 90, progress_cb=None) -> dict:
     """
@@ -288,6 +371,13 @@ def sync_window(marketplace: str, start: date_cls, end: date_cls,
 
     by_day = aggregate_rows_by_day(rows, marketplace, start, end)
     written = upsert_daily_metrics(marketplace, by_day, full_window=(start, end))
+
+    # Also cache per-SKU breakdown for every day in the window so the
+    # "Today" dashboard can show Product Performance from cache.
+    for day in by_day:
+        by_sku = aggregate_rows_by_sku(rows, marketplace, day, day)
+        upsert_sku_snapshots(marketplace, by_sku, day)
+
     return {
         'status':       result.get('status', 'OK'),
         'rows':         len(rows),

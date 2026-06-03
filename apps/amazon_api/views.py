@@ -245,6 +245,134 @@ def ads_report_status(request, report_id: str):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float, sd_total: float) -> list:
+    """
+    Build the 'skus' list for the cache response using DailySkuSnapshot + PPC snapshots.
+    Returns the same group-level JSON structure that fetch_dashboard_data produces.
+    """
+    try:
+        from apps.dashboard.models import DailySkuSnapshot as _SkuSnap, Product as _Prod
+        from apps.dashboard.models import PPCProductSnapshot as _ProdSnap, PPCCampaignSnapshot as _CampSnap
+        from django.db.models import Sum as _Sum
+        import re as _re
+
+        def _split(title):
+            parts = [p.strip() for p in (title or '').split(' - ') if p.strip()]
+            return (parts[0] if parts else ''), (parts[1] if len(parts) > 1 else '—'), (parts[2] if len(parts) > 2 else '')
+
+        # Load product catalog
+        prod_by_sku, prod_by_asin = {}, {}
+        for p in _Prod.objects.filter(marketplace=marketplace):
+            if p.sku:  prod_by_sku[p.sku.upper()]   = p
+            if p.asin: prod_by_asin[p.asin.upper()]  = p
+
+        # Load SP product spend (from PPCProductSnapshot)
+        sp_prod_total = 0.0
+        sku_sp_spend, asin_sp_spend = {}, {}
+        for s in _ProdSnap.objects.filter(marketplace=marketplace, date=date, campaign_type='sp').values('sku', 'asin', 'spend'):
+            sku_  = (s['sku']  or '').upper()
+            asin_ = (s['asin'] or '').upper()
+            cost  = float(s['spend'] or 0)
+            if sku_:  sku_sp_spend[sku_]   = sku_sp_spend.get(sku_,   0) + cost
+            if asin_: asin_sp_spend[asin_] = asin_sp_spend.get(asin_, 0) + cost
+            sp_prod_total += cost
+        # Scale SP product proportions to SP campaign total
+        if sp_prod_total and sp_total and sp_total > sp_prod_total:
+            _sc = sp_total / sp_prod_total
+            sku_sp_spend  = {k: round(v * _sc, 2) for k, v in sku_sp_spend.items()}
+            asin_sp_spend = {k: round(v * _sc, 2) for k, v in asin_sp_spend.items()}
+
+        # SB/SD by product group
+        _sb_sd_grp = _compute_sb_sd_by_group(marketplace, date, date)
+
+        # Aggregate SKU snapshots into product groups
+        grouped = {}
+        for snap in _SkuSnap.objects.filter(marketplace=marketplace, date=date):
+            sku  = snap.sku.upper()
+            asin = (snap.asin or '').upper()
+            prod = prod_by_sku.get(sku) or prod_by_asin.get(asin)
+            if prod and prod.title:
+                pt, pack, var = _split(prod.title)
+            else:
+                pt, pack, var = sku[:30], '—', ''
+
+            gk = (pt, pack)
+            if gk not in grouped:
+                grouped[gk] = {
+                    'group':     f'{pt}-{pack}'.upper().replace(' ', '-')[:12].rstrip('-'),
+                    'groupName': f'{pt} · {pack}' if pack != '—' else pt,
+                    '_pt': pt, '_pack': pack,
+                    'qty': 0, 'revenue': 0.0, 'cgs': 0.0, 'amzFee': 0.0,
+                    'fulfill': 0.0, 'cm': 0.0, 'spSpend': 0.0,
+                    'variants': [],
+                }
+            g = grouped[gk]
+            _rev = float(snap.revenue)
+            _cm  = float(snap.cm)
+            _sp  = sku_sp_spend.get(sku) or asin_sp_spend.get(asin) or 0.0
+            g['qty']     += snap.qty
+            g['revenue'] += _rev
+            g['cgs']     += float(snap.cgs)
+            g['amzFee']  += float(snap.amz_fee)
+            g['fulfill'] += float(snap.fulfill)
+            g['cm']      += _cm
+            g['spSpend'] += _sp
+            g['variants'].append({
+                'sku': sku, 'asin': asin,
+                'name': var or sku,
+                'qty': snap.qty, 'revenue': round(_rev, 2),
+                'cgs': round(float(snap.cgs), 2),
+                'amzFee': round(float(snap.amz_fee), 2),
+                'fulfill': round(float(snap.fulfill), 2),
+                'cm': round(_cm, 2),
+                'cmPct': round((_cm / _rev * 100) if _rev else 0, 2),
+                'arpu': round(_rev / snap.qty, 2) if snap.qty else 0,
+                'spSpend': round(_sp, 2), 'sdSpend': 0, 'sbSpend': 0,
+                'totalPpc': round(_sp, 2),
+                'grossMargin': round(_cm - _sp, 2),
+                'gmPct': round(((_cm - _sp) / _rev * 100) if _rev else 0, 2),
+                'tacos': round((_sp / _rev * 100) if _rev else 0, 2),
+                'cpa': 0,
+            })
+
+        out = []
+        for (pt, pack), g in sorted(grouped.items(), key=lambda x: -x[1]['revenue']):
+            rev = g['revenue']
+            cm  = g['cm']
+            sp  = g['spSpend']
+            _gk  = (pt, pack)
+            grp_sb = _sb_sd_grp.get(_gk, {}).get('sb', 0.0)
+            grp_sd = _sb_sd_grp.get(_gk, {}).get('sd', 0.0)
+            total  = round(sp + grp_sb + grp_sd, 2)
+            gm     = round(cm - total, 2)
+            out.append({
+                'group':       g['group'],
+                'groupName':   g['groupName'],
+                '_pt': pt, '_pack': pack,
+                'qty':         g['qty'],
+                'revenue':     round(rev, 2),
+                'cgs':         round(g['cgs'], 2),
+                'amzFee':      round(g['amzFee'], 2),
+                'fulfill':     round(g['fulfill'], 2),
+                'cm':          round(cm, 2),
+                'cmPct':       round((cm / rev * 100) if rev else 0, 2),
+                'arpu':        round(rev / g['qty'], 2) if g['qty'] else 0,
+                'spSpend':     round(sp, 2),
+                'sdSpend':     round(grp_sd, 2),
+                'sbSpend':     round(grp_sb, 2),
+                'totalPpc':    total,
+                'grossMargin': gm,
+                'gmPct':       round((gm / rev * 100) if rev else 0, 2),
+                'tacos':       round((total / rev * 100) if rev else 0, 2),
+                'cpa':         0,
+                'variants':    g['variants'],
+            })
+        return out
+    except Exception as _err:
+        logger.warning('_build_cached_skus failed: %s', _err)
+        return []
+
+
 # ── AJAX: FETCH DASHBOARD DATA ────────────────────────────────────────────────
 @login_required
 def fetch_dashboard_data(request):
@@ -392,7 +520,7 @@ def fetch_dashboard_data(request):
                                 'arpu':     round(_rev / _dm.units, 2) if _dm.units else 0,
                             },
                             'daily_breakdown': _daily_breakdown,
-                            'skus':  [],
+                            'skus':  _build_cached_skus(marketplace, _today, _sp, _sb, _sd),
                             'debug': {'source': 'dailymetric_cache', 'cached_at': str(_dm.synced_at)},
                         },
                         'ads': {

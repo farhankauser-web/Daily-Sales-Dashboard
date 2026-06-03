@@ -285,6 +285,35 @@ class DailyMetric(models.Model):
         return float(self.acos) * 100
 
 
+# ── DAILY SKU SNAPSHOT ────────────────────────────────────────────────────────
+class DailySkuSnapshot(models.Model):
+    """
+    Per-SKU revenue / cost breakdown for one day.
+    Populated by sync_daily_metrics (and its --include-today flag) so the
+    daily dashboard can show the Product Performance table from cache
+    without waiting for a live Amazon report.
+    """
+    marketplace = models.CharField(max_length=8, db_index=True)
+    date        = models.DateField(db_index=True)
+    sku         = models.CharField(max_length=64)
+    asin        = models.CharField(max_length=16, blank=True)
+    qty         = models.IntegerField(default=0)
+    revenue     = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    cgs         = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    amz_fee     = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    fulfill     = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    cm          = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    synced_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ix_daily_sku_snapshot'
+        unique_together = [['marketplace', 'date', 'sku']]
+        indexes = [models.Index(fields=['marketplace', 'date'])]
+
+    def __str__(self):
+        return f'{self.marketplace.upper()} {self.date} {self.sku} ${self.revenue}'
+
+
 # ── INVENTORY SNAPSHOT ────────────────────────────────────────────────────────
 class InventorySnapshot(models.Model):
     """

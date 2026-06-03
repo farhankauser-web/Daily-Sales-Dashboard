@@ -458,8 +458,6 @@ async function loadData(){
     if(d.cached){
       document.getElementById('spStatus').textContent = `Cached ${d.cached_at}`;
       document.getElementById('spStatus').title = 'Data from last hourly sync. Click Refresh for live.';
-      // Auto-load product performance in background (cached response has no SKU data)
-      loadProductsBackground();
     } else {
       document.getElementById('spStatus').textContent = 'Live';
     }
