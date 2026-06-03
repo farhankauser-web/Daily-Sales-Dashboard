@@ -485,7 +485,7 @@ def fetch_dashboard_data(request):
                     _ppc  = float(_dm.ppc_spend or 0) or (_sp + _sb + _sd)
                     _rev  = float(_dm.revenue or 0)
                     _cm   = float(_dm.contribution_margin or 0)
-                    _gm   = float(_dm.gross_margin or 0)
+                    _gm   = round(_cm - _ppc, 2)   # always GM = CM − PPC
                     _cached_at = _dm.synced_at.astimezone(
                         ZoneInfo(_mp_tz)).strftime('%-I:%M %p %Z')
 
@@ -516,7 +516,7 @@ def fetch_dashboard_data(request):
                                 'cm_pct':   round(float(_dm.cm_pct or 0) * 100, 2),
                                 'ppc_spend': _ppc,
                                 'gross_margin': _gm,
-                                'gm_pct':   round(float(_dm.gm_pct or 0) * 100, 2),
+                                'gm_pct':   round((_gm / _rev * 100) if _rev else 0, 2),
                                 'arpu':     round(_rev / _dm.units, 2) if _dm.units else 0,
                             },
                             'daily_breakdown': _daily_breakdown,
