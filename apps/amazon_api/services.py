@@ -318,6 +318,95 @@ class SPAPIClient:
                     'age_seconds': int(time.time() - cached[0])}
         return {'rows': None, 'status': f'PENDING ({last_status})', 'report_id': report_id}
 
+    # Sentinel exception so the ingest layer can react to quota exhaustion
+    # without parsing error-string substrings.
+    class BAQuotaExceeded(RuntimeError):
+        pass
+
+    # ── REPORTS API: Brand-Analytics generic submit/poll ────────────────────
+    def submit_ba_report(
+        self,
+        report_type: str,
+        period_start: str,
+        period_end:   str,
+        period_type:  str = 'WEEK',
+        asin:         str = None,
+    ) -> str:
+        """
+        Submit any Brand Analytics report (SQP / Item Comparison / Market
+        Basket). Returns reportId.
+
+        Amazon's BA reports require:
+          • reportPeriod ∈ {WEEK,MONTH,QUARTER} — passed as reportOptions
+          • asin — required for SQP / Item Comparison / Market Basket; the
+            brand-aggregate variant has been retired
+          • dataStartTime must be a Sunday for WEEK reports (Sun-Sat windows)
+
+        Quota: Amazon documents 0.0167 req/sec (≈ 1/min) with burst 15 for BA
+        createReport endpoints. We retry once on 429 after a 65s sleep — that
+        gives the bucket time to refill. If we hit 429 a second time we raise
+        BAQuotaExceeded so the caller can mark the slot 'pending' and resume
+        on the next cron sweep rather than failing the whole run.
+        """
+        report_options = {'reportPeriod': period_type}
+        if asin:
+            report_options['asin'] = asin
+        body = {
+            'reportType':     report_type,
+            'marketplaceIds': [self.mp_id],
+            'dataStartTime':  f'{period_start}T00:00:00Z',
+            'dataEndTime':    f'{period_end}T23:59:59Z',
+            'reportOptions':  report_options,
+        }
+
+        for attempt in (1, 2):
+            resp = requests.post(
+                f'{self.endpoint}/reports/2021-06-30/reports',
+                headers=self._headers(),
+                json=body,
+                timeout=20,
+            )
+            if resp.status_code != 429:
+                break
+            if attempt == 1:
+                time.sleep(65)   # one bucket refill at 1/min
+                continue
+
+        if resp.status_code == 429:
+            raise SPAPIClient.BAQuotaExceeded(
+                f'createReport({report_type}) quota exceeded after retry — '
+                f'try again later'
+            )
+        if not resp.ok:
+            raise RuntimeError(
+                f'createReport({report_type}) failed: {_extract_http_error_detail(resp)}'
+            )
+        return resp.json()['reportId']
+
+    def download_ba_report(self, document_id: str) -> dict:
+        """Download + decompress + parse any Brand Analytics report (JSON)."""
+        meta = self.get_report_document_meta(document_id)
+        url  = meta['url']
+        comp = meta.get('compressionAlgorithm') or ''
+        r = requests.get(url, timeout=90)
+        r.raise_for_status()
+        body = self._decompress_if_needed(r.content, comp)
+        return json.loads(body.decode('utf-8-sig', errors='replace'))
+
+    def download_ba_report_or_error(self, document_id: str) -> tuple[str, dict]:
+        """
+        Returns ('ok', parsed_payload) on success or ('error', {'message': ...})
+        when Amazon's document is actually an error payload. (FATAL reports
+        still write a documentId; the document body holds errorDetails.)
+        """
+        try:
+            data = self.download_ba_report(document_id)
+        except Exception as e:
+            return 'error', {'message': f'download failed: {e}'}
+        if isinstance(data, dict) and data.get('errorDetails'):
+            return 'error', {'message': data['errorDetails']}
+        return 'ok', data
+
     # ── REPORTS API: Brand-Analytics Search Query Performance ────────────────
     REPORT_TYPE_SQP = 'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT'
 
@@ -575,6 +664,134 @@ class AdsAPIClient:
         """Poll an in-flight report and download it once COMPLETED."""
         return self._check_and_download(report_id, self._headers())
 
+    # ------------------------------------------------------------------ DETAIL REPORTS
+    def submit_detail_report(
+        self,
+        report_kind: str,
+        start_date,
+        end_date=None,
+        existing_report_id: str | None = None,
+        short_poll_seconds: int = 15,
+    ) -> dict:
+        """
+        Generic submitter for Phase 1 detail reports (search-term, targeting,
+        advertised-product, placement, ad-group across SP/SB/SD).
+
+        See `apps.amazon_api.ads_detail_reports.REPORT_CONFIGS` for the full list
+        of supported `report_kind` values.
+
+        Returns:
+            {
+              'status':      'ok' | 'pending' | 'error',
+              'report_id':   str,
+              'rows':        list[dict],   # only when status='ok'
+              'error':       str,          # only when status='error'
+              'report_kind': str,
+              'start':       'YYYY-MM-DD',
+              'end':         'YYYY-MM-DD',
+            }
+
+        Mirrors the resume semantics of `get_campaign_summary`: pass an
+        `existing_report_id` to poll/download instead of submitting again.
+        """
+        from apps.amazon_api.ads_detail_reports import REPORT_CONFIGS
+
+        if report_kind not in REPORT_CONFIGS:
+            raise ValueError(
+                f'Unknown report_kind {report_kind!r}; valid: {sorted(REPORT_CONFIGS)}'
+            )
+        cfg = REPORT_CONFIGS[report_kind]
+        end_date = end_date or start_date
+        headers  = self._headers()
+
+        # Resume mode — poll an in-flight report rather than re-submitting.
+        if existing_report_id:
+            result = self._check_and_download(existing_report_id, headers)
+            return self._wrap_detail_result(result, report_kind, start_date, end_date)
+
+        # ── Submit a new report ─────────────────────────────────────────────
+        body = {
+            'name': f'{report_kind} {end_date}',
+            'startDate': str(start_date),
+            'endDate':   str(end_date),
+            'configuration': {
+                'adProduct':    cfg['adProduct'],
+                'reportTypeId': cfg['reportTypeId'],
+                'groupBy':      cfg['groupBy'],
+                'columns':      cfg['columns'],
+                'timeUnit':     'DAILY',
+                'format':       'GZIP_JSON',
+            },
+        }
+
+        # Single retry on 429 throttling. Amazon's burst limit on the
+        # /reporting/reports endpoint is roughly 25/sec but trips well below
+        # that under sustained load; a 5-second backoff is enough in practice.
+        for attempt in (1, 2):
+            create_resp = requests.post(
+                f'{self.ADS_ENDPOINT}/reporting/reports',
+                headers=headers,
+                json=body,
+                timeout=20,
+            )
+            if create_resp.status_code != 429:
+                break
+            if attempt == 1:
+                time.sleep(5)
+                continue
+
+        if not create_resp.ok:
+            # 425 Too Early — Amazon dedup: the same report (same window + config)
+            # was already submitted recently. Extract the existing report_id and
+            # resume polling against it rather than failing.
+            if create_resp.status_code == 425:
+                detail = (create_resp.json() or {}).get('detail', '') or ''
+                report_id = detail.split(':')[-1].strip()
+                if not report_id:
+                    raise RuntimeError(
+                        f'Submit {report_kind} 425 but no report_id in detail: {detail!r}'
+                    )
+            else:
+                raise RuntimeError(
+                    f'Submit {report_kind} failed: {_extract_http_error_detail(create_resp)}'
+                )
+        else:
+            report_id = create_resp.json().get('reportId')
+            if not report_id:
+                raise RuntimeError(
+                    f'Submit {report_kind} returned no reportId: {create_resp.json()!r}'
+                )
+
+        # ── Short poll — return pending if not done within short_poll_seconds ──
+        elapsed = 0
+        while elapsed < short_poll_seconds:
+            time.sleep(5)
+            elapsed += 5
+            result = self._check_and_download(report_id, headers)
+            if result['status'] in ('ok', 'error'):
+                return self._wrap_detail_result(result, report_kind, start_date, end_date)
+
+        return {
+            'status':      'pending',
+            'report_id':   report_id,
+            'rows':        [],
+            'report_kind': report_kind,
+            'start':       str(start_date),
+            'end':         str(end_date),
+        }
+
+    @staticmethod
+    def _wrap_detail_result(result: dict, report_kind, start_date, end_date) -> dict:
+        """Internal: map the legacy {'campaigns': ...} key to {'rows': ...}
+        and stamp report_kind / start / end so the ingest layer has full context."""
+        rows = result.pop('campaigns', None)
+        if rows is not None:
+            result['rows'] = rows
+        result['report_kind'] = report_kind
+        result['start']       = str(start_date)
+        result['end']         = str(end_date)
+        return result
+
     def _check_and_download(self, report_id: str, headers: dict) -> dict:
         """Internal: check one report and download if COMPLETED."""
         status_resp = requests.get(
@@ -596,6 +813,145 @@ class AdsAPIClient:
             return {'status': 'error', 'report_id': report_id,
                     'error': data.get('failureReason', state), 'campaigns': []}
         return {'status': 'pending', 'report_id': report_id, 'campaigns': []}
+
+    # ------------------------------------------------------------------ SP HOURLY
+    def submit_sp_hourly_campaigns_report(
+        self,
+        start_date,
+        end_date=None,
+        existing_report_id: str = None,
+    ) -> dict:
+        """
+        Submit (or resume) a Sponsored Products HOURLY campaigns report.
+
+        Amazon Ads API v3 supports timeUnit=HOURLY for SP campaigns. The report
+        returns one row per (campaignId, hour-of-day). Data is retained for 30
+        days even though the GUI only exposes 14 — so this works for T-1 / T-2
+        catch-up.
+
+        Args:
+            start_date:           date (inclusive) — usually yesterday
+            end_date:             date (inclusive) — defaults to start_date
+            existing_report_id:   poll/download instead of submitting
+
+        Returns:
+            {
+              'status':    'ok' | 'pending' | 'error',
+              'report_id': str,
+              'rows':      list[dict],  # only when status='ok'
+              'error':     str,         # only when status='error'
+              'start':     'YYYY-MM-DD',
+              'end':       'YYYY-MM-DD',
+            }
+
+        Notes:
+          • SP hourly returns rows keyed by `date` (the hour boundary). Some
+            accounts also expose a `hour` column directly. The caller (ingest
+            command) is responsible for normalising both shapes into (date,hour).
+          • This method ONLY submits and short-polls (30 s). If still PENDING,
+            it returns status='pending' with the report_id so the caller can
+            store it and poll again later.
+          • SB and SD do NOT support timeUnit=HOURLY. Do not call this with
+            adProduct=SPONSORED_BRANDS or SPONSORED_DISPLAY.
+        """
+        headers = self._headers()
+
+        # Resume mode — caller already submitted, just download
+        if existing_report_id:
+            result = self._check_and_download(existing_report_id, headers)
+            # _check_and_download returns 'campaigns' for the field name; rename
+            return {
+                **result,
+                'rows': result.get('campaigns', []),
+            }
+
+        if end_date is None:
+            end_date = start_date
+        start_str = str(start_date)
+        end_str   = str(end_date)
+
+        # SP hourly columns. Amazon Ads API v3 restrictions for timeUnit=HOURLY:
+        #   • `date` MUST be in columns (it carries the hour boundary).
+        #   • 7-day / 14-day attribution columns are REJECTED (the window can't
+        #     close inside one hour) — must use 1-day attribution variants:
+        #     purchases1d / sales1d / unitsSoldClicks1d.
+        #   • Anything else returns: "timeUnit is not supported for this report type."
+        SP_HOURLY_COLS = [
+            'date',
+            'campaignId', 'campaignName',
+            'impressions', 'clicks', 'cost',
+            'purchases1d', 'sales1d', 'unitsSoldClicks1d',
+        ]
+
+        create_resp = requests.post(
+            f'{self.ADS_ENDPOINT}/reporting/reports',
+            headers=headers,
+            json={
+                'name': f'SP Campaigns HOURLY {start_str}_{end_str}',
+                'startDate': start_str,
+                'endDate':   end_str,
+                'configuration': {
+                    'adProduct':    'SPONSORED_PRODUCTS',
+                    'groupBy':      ['campaign'],
+                    'columns':      SP_HOURLY_COLS,
+                    'reportTypeId': 'spCampaigns',
+                    'timeUnit':     'HOURLY',
+                    'format':       'GZIP_JSON',
+                },
+            },
+            timeout=20,
+        )
+
+        if not create_resp.ok:
+            # 425 = Amazon deduplication → re-use the in-flight reportId
+            if create_resp.status_code == 425:
+                report_id = create_resp.json().get('detail', '').split(': ')[-1].strip()
+            else:
+                detail = _extract_http_error_detail(create_resp)
+                logger.error('SP hourly report submission failed: %s', detail)
+                return {
+                    'status': 'error', 'report_id': '', 'error': detail,
+                    'rows': [], 'start': start_str, 'end': end_str,
+                }
+        else:
+            report_id = create_resp.json()['reportId']
+
+        # Short poll (30s) — return rows immediately if Amazon was fast
+        for _ in range(6):
+            time.sleep(5)
+            try:
+                result = self._check_and_download(report_id, headers)
+            except Exception as e:
+                logger.warning('SP hourly poll error (report_id=%s): %s', report_id, e)
+                continue
+            state = result.get('status')
+            if state == 'ok':
+                return {
+                    'status':    'ok',
+                    'report_id': report_id,
+                    'rows':      result.get('campaigns', []),
+                    'start':     start_str,
+                    'end':       end_str,
+                }
+            if state == 'error':
+                return {
+                    'status':    'error',
+                    'report_id': report_id,
+                    'error':     result.get('error', 'unknown'),
+                    'rows':      [],
+                    'start':     start_str,
+                    'end':       end_str,
+                }
+
+        # Still PENDING — caller stores report_id and resumes later
+        logger.info('SP hourly report submitted, processing (report_id=%s).', report_id)
+        return {
+            'status':    'pending',
+            'report_id': report_id,
+            'rows':      [],
+            'start':     start_str,
+            'end':       end_str,
+        }
 
     def get_all_campaigns_summary(self, date_range: str = 'today',
                                    existing_sp_id: str = None,
@@ -817,3 +1173,229 @@ class AdsAPIClient:
 
         logger.info('SP AdvertisedProduct report pending (report_id=%s)', report_id)
         return {'status': 'pending', 'report_id': report_id, 'products': []}
+
+
+# ── CREDENTIAL PROBE ──────────────────────────────────────────────────────────
+# Live end-to-end test of an AmazonAPIConfig that returns *actionable* error
+# diagnosis instead of a raw HTTP status. Used by /api-config/<pk>/test/ and
+# auto-invoked after the config_form save.
+
+# Ads-API regional endpoints (the AdsAPIClient hardcodes NA — this is for the
+# probe only so we test against the right region for each marketplace).
+_ADS_ENDPOINT_BY_MP = {
+    'usa': 'https://advertising-api.amazon.com',
+    'ca':  'https://advertising-api.amazon.com',
+    'uk':  'https://advertising-api-eu.amazon.com',
+    'de':  'https://advertising-api-eu.amazon.com',
+    'ae':  'https://advertising-api-eu.amazon.com',
+    'sa':  'https://advertising-api-eu.amazon.com',
+}
+
+# Seller Central URL per marketplace (used in the actionable hint shown to user)
+_SELLER_CENTRAL_BY_MP = {
+    'usa': 'sellercentral.amazon.com',
+    'ca':  'sellercentral.amazon.ca',
+    'uk':  'sellercentral.amazon.co.uk',
+    'de':  'sellercentral.amazon.de',
+    'ae':  'sellercentral.amazon.ae',
+    'sa':  'sellercentral.amazon.sa',
+}
+
+
+def _probe_sp_api(cfg) -> dict:
+    """Returns {'status', 'detail', 'hint'} for the SP-API leg of the probe."""
+    if not cfg.has_sp_api_credentials():
+        return {'status': 'skipped',
+                'detail': 'No SP-API credentials saved.',
+                'hint':   ''}
+
+    # Step 1 — LWA token exchange
+    try:
+        token = LWATokenManager.get_access_token(cfg)
+    except Exception as exc:
+        return {
+            'status': 'lwa_failed',
+            'detail': str(exc),
+            'hint':   ('LWA token exchange failed. Check lwa_client_id, '
+                       'lwa_client_secret, and refresh_token — one is malformed, '
+                       'revoked, or copied incorrectly.'),
+        }
+
+    # Step 2 — live SP-API call against this marketplace's regional endpoint
+    mp_info  = settings.AMAZON_MARKETPLACES.get(cfg.marketplace, {})
+    endpoint = mp_info.get('endpoint', 'https://sellingpartnerapi-na.amazon.com')
+    expected_mp_id = cfg.marketplace_id or mp_info.get('id', '')
+    sc_host  = _SELLER_CENTRAL_BY_MP.get(cfg.marketplace, 'sellercentral.amazon.com')
+
+    try:
+        r = requests.get(
+            f'{endpoint}/sellers/v1/marketplaceParticipations',
+            headers={'x-amz-access-token': token, 'Content-Type': 'application/json'},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        return {'status': 'network_error', 'detail': str(exc),
+                'hint':   'Could not reach Amazon. Check internet connection.'}
+
+    if r.status_code == 200:
+        try:
+            body = r.json()
+        except Exception:
+            return {'status': 'parse_error', 'detail': r.text[:200], 'hint': ''}
+
+        participations  = body.get('payload') or []
+        authorized_ids  = {
+            (p.get('marketplace') or {}).get('id')
+            for p in participations
+            if (p.get('marketplace') or {}).get('id')
+        }
+        authorized_names = sorted({
+            (p.get('marketplace') or {}).get('name', '?')
+            for p in participations
+        })
+
+        if expected_mp_id and expected_mp_id not in authorized_ids:
+            return {
+                'status': 'marketplace_mismatch',
+                'detail': (f'refresh_token authorizes {", ".join(sorted(authorized_ids))} '
+                           f'({", ".join(authorized_names)}) — but this config row is set '
+                           f'to {expected_mp_id} ({cfg.marketplace.upper()}).'),
+                'hint':   (f'Either fix the Marketplace ID on this row, or generate a new '
+                           f'refresh_token by re-authorizing the developer app inside '
+                           f'{sc_host} as the {cfg.marketplace.upper()} seller account.'),
+            }
+        return {
+            'status': 'ok',
+            'detail': f'Verified — {len(participations)} marketplace(s): {", ".join(authorized_names)}',
+            'hint':   '',
+        }
+
+    if r.status_code == 403:
+        return {
+            'status': 'wrong_marketplace_token',
+            'detail': f'HTTP 403 {r.headers.get("x-amzn-ErrorType", "AccessDenied")}: '
+                      f'{r.text[:200]}',
+            'hint':   (f'Amazon refused the call. The most common cause is that the '
+                       f'refresh_token was issued for a different Seller Central region '
+                       f'(e.g. USA token reused for UK). Log into {sc_host} as the '
+                       f'{cfg.marketplace.upper()} seller, re-authorize the developer app '
+                       f'(same Client ID), and paste only the new refresh_token here.'),
+        }
+
+    if r.status_code == 401:
+        return {
+            'status': 'token_invalid',
+            'detail': f'HTTP 401: {r.text[:200]}',
+            'hint':   'Access token was rejected — the refresh_token may have been revoked. '
+                      'Re-authorize the developer app to get a fresh one.',
+        }
+
+    return {
+        'status': 'error',
+        'detail': f'HTTP {r.status_code}: {r.text[:300]}',
+        'hint':   '',
+    }
+
+
+def _probe_ads_api(cfg) -> dict:
+    """Returns {'status', 'detail', 'hint'} for the Ads-API leg."""
+    if not cfg.has_ads_credentials():
+        return {'status': 'skipped',
+                'detail': 'No Ads API credentials saved.', 'hint': ''}
+
+    # Step 1 — Ads LWA token
+    try:
+        ads = AdsAPIClient(cfg)
+        token = ads._get_ads_token()
+    except Exception as exc:
+        return {
+            'status': 'lwa_failed',
+            'detail': str(exc),
+            'hint':   'Ads LWA token exchange failed. Check ads_client_id, '
+                      'ads_client_secret, and ads_refresh_token.',
+        }
+
+    # Step 2 — list profiles on the correct regional endpoint
+    endpoint = _ADS_ENDPOINT_BY_MP.get(cfg.marketplace, 'https://advertising-api.amazon.com')
+    try:
+        r = requests.get(
+            f'{endpoint}/v2/profiles',
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Amazon-Advertising-API-ClientId': cfg.ads_client_id,
+                'Content-Type': 'application/json',
+            },
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        return {'status': 'network_error', 'detail': str(exc), 'hint': ''}
+
+    if r.status_code != 200:
+        return {
+            'status': 'error',
+            'detail': f'HTTP {r.status_code}: {r.text[:300]}',
+            'hint':   ('Ads /v2/profiles rejected the token. Re-authorize the Ads API '
+                       'developer app in Amazon Ads console for the correct region.'),
+        }
+
+    try:
+        profiles = r.json() or []
+    except Exception:
+        return {'status': 'parse_error', 'detail': r.text[:200], 'hint': ''}
+
+    profile_ids = {str(p.get('profileId')) for p in profiles if p.get('profileId')}
+    cfg_profile = str(cfg.ads_profile_id or '').strip()
+
+    if cfg_profile and cfg_profile not in profile_ids:
+        country_codes = sorted({p.get('countryCode', '?') for p in profiles})
+        return {
+            'status': 'profile_mismatch',
+            'detail': (f'ads_profile_id={cfg_profile} is NOT in this token\'s '
+                       f'authorized profiles. Token grants access to: '
+                       f'{", ".join(sorted(profile_ids)) or "(none)"} '
+                       f'(countries: {", ".join(country_codes)}).'),
+            'hint':   (f'Either set ads_profile_id to one of the values above, or '
+                       f'authorize the Ads app for the {cfg.marketplace.upper()} '
+                       f'account that owns the desired profile.'),
+        }
+
+    matched = next((p for p in profiles if str(p.get('profileId')) == cfg_profile), None)
+    if matched:
+        return {
+            'status': 'ok',
+            'detail': f'Verified — profile {cfg_profile} ({matched.get("countryCode")}) '
+                      f'· {matched.get("accountInfo", {}).get("name", "")}',
+            'hint':   '',
+        }
+    return {
+        'status': 'ok',
+        'detail': f'Verified — {len(profiles)} profile(s) available (set ads_profile_id to pick one)',
+        'hint':   '' if profile_ids else 'No Ads profiles attached to this token.',
+    }
+
+
+def probe_marketplace_credentials(cfg) -> dict:
+    """
+    Full credential probe for an AmazonAPIConfig row.
+    Returns:
+        {
+            'sp_api':  {'status', 'detail', 'hint'},
+            'ads_api': {'status', 'detail', 'hint'},
+            'overall': 'ok' | 'partial' | 'failed',
+        }
+    `overall` is 'ok' when every non-skipped leg passes,
+                 'partial' when at least one passes and another fails,
+                 'failed' when nothing passes.
+    """
+    sp  = _probe_sp_api(cfg)
+    ads = _probe_ads_api(cfg)
+
+    def _passed(leg): return leg['status'] in ('ok', 'skipped')
+    sp_pass, ads_pass = _passed(sp), _passed(ads)
+    if sp_pass and ads_pass:
+        overall = 'ok'
+    elif sp_pass or ads_pass:
+        overall = 'partial'
+    else:
+        overall = 'failed'
+    return {'sp_api': sp, 'ads_api': ads, 'overall': overall}

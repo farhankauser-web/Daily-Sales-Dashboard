@@ -1,0 +1,381 @@
+{% extends "base/base.html" %}
+{% block title %}Leaderboards{% endblock %}
+{% block nav_leaderboards %}active{% endblock %}
+{% block page_title %}Leaderboards{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+<select id="limitFilter" class="form-control"
+        style="margin-left:8px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setLimit(this.value)">
+  <option value="10">Top 10</option>
+  <option value="25">Top 25</option>
+  <option value="50">Top 50</option>
+</select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .lb-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                padding:8px 12px; border-radius:6px; margin-bottom:10px;
+                font-size:12px; }
+
+  .lb-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  .lb-card { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+              overflow:hidden; display:flex; flex-direction:column; }
+  .lb-card .head { padding:10px 14px; border-bottom:1px solid #EAEDED;
+                    display:flex; justify-content:space-between; align-items:center; }
+  .lb-card .head .ttl { font-size:13px; font-weight:700; color:#0F1111; }
+  .lb-card .head .ttl .icon { margin-right:6px; }
+  .lb-card .head .meta { font-size:11px; color:#777; }
+  .lb-card .head .meta .pill { display:inline-block; padding:2px 8px;
+                                background:#F3F4F5; border-radius:10px;
+                                font-weight:600; color:#555; }
+  .lb-card .body { max-height:calc(100vh - 320px); overflow:auto; }
+
+  .lb-card.profit  .head { border-left:4px solid #067D62; }
+  .lb-card.loss    .head { border-left:4px solid #C40000; }
+  .lb-card.margin  .head { border-left:4px solid #7A5400; }
+  .lb-card.revenue .head { border-left:4px solid #1B4A75; }
+  .lb-card.terms   .head { border-left:4px solid #4A2080; }
+  .lb-card.waste   .head { border-left:4px solid #9C3431; }
+
+  .lb-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .lb-table thead th { background:#F8F9FA; padding:6px 8px; text-align:right;
+                        font-size:10px; font-weight:600; color:#555;
+                        position:sticky; top:0; z-index:1; }
+  .lb-table thead th.text-left { text-align:left; }
+  .lb-table tbody td { padding:6px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .lb-table tbody td.text-left { text-align:left; font-family:inherit;
+                                  font-weight:600; max-width:260px;
+                                  white-space:nowrap; overflow:hidden;
+                                  text-overflow:ellipsis; }
+  .lb-table tbody td.text-left a { color:#0F1111; text-decoration:none; }
+  .lb-table tbody td.text-left a:hover { color:#067D62; text-decoration:underline; }
+  .lb-table tbody tr:hover { background:#F8F9FA; }
+  .lb-table tbody td.profit-pos { color:#067D62; font-weight:600; }
+  .lb-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .lb-table tbody td.rank { color:#A0A5AA; font-weight:700; width:24px; padding-left:10px; }
+  .lb-table tbody tr:first-child td.rank { color:#FFB300; }
+  .lb-table tbody tr:nth-child(2) td.rank { color:#A0A5AA; }
+  .lb-table tbody tr:nth-child(3) td.rank { color:#CD7F32; }
+
+  .type-badge { display:inline-block; padding:1px 5px; border-radius:3px;
+                 font-size:9px; font-weight:600; margin-left:4px;
+                 vertical-align:middle; }
+  .type-badge.sp { background:#E1EFFA; color:#1B4A75; }
+  .type-badge.sb { background:#EDE3F7; color:#4A2080; }
+  .type-badge.sd { background:#FDF1DC; color:#7A5400; }
+
+  .lb-empty { padding:20px; text-align:center; color:#8A8A8A; font-size:12px; }
+
+  @media (max-width: 1000px) {
+    .lb-grid { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="cmWarning" class="lb-banner" style="display:none"></div>
+
+<div id="metaBar" style="background:#FFFFFF;border:1px solid #D5D9D9;
+                          border-radius:6px;padding:8px 12px;margin-bottom:10px;
+                          font-size:11px;color:#555">
+  <span id="metaText">Loading…</span>
+</div>
+
+<div class="lb-grid">
+  <!-- Most Profitable Campaigns -->
+  <div class="lb-card profit">
+    <div class="head">
+      <div class="ttl"><span class="icon">🏆</span>Most Profitable Campaigns</div>
+      <div class="meta"><span class="pill" id="meta-mpc">—</span></div>
+    </div>
+    <div class="body">
+      <table class="lb-table">
+        <thead><tr>
+          <th></th>
+          <th class="text-left">Campaign</th>
+          <th>Profit</th><th>Margin %</th><th>Revenue</th><th>Spend</th>
+        </tr></thead>
+        <tbody id="board-most_profitable_campaigns"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Most Profitable Search Terms -->
+  <div class="lb-card terms">
+    <div class="head">
+      <div class="ttl"><span class="icon">🔍</span>Most Profitable Search Terms</div>
+      <div class="meta"><span class="pill" id="meta-mpst">—</span></div>
+    </div>
+    <div class="body">
+      <table class="lb-table">
+        <thead><tr>
+          <th></th>
+          <th class="text-left">Search Term</th>
+          <th>Est. Profit</th><th>Spend</th><th>Sales</th><th>Orders</th>
+        </tr></thead>
+        <tbody id="board-most_profitable_search_terms"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Highest Margin Campaigns -->
+  <div class="lb-card margin">
+    <div class="head">
+      <div class="ttl"><span class="icon">📈</span>Highest Margin Campaigns</div>
+      <div class="meta">
+        <span class="pill" id="meta-hmc">—</span>
+        <span style="margin-left:6px;font-size:10px;color:#777">min spend $50</span>
+      </div>
+    </div>
+    <div class="body">
+      <table class="lb-table">
+        <thead><tr>
+          <th></th>
+          <th class="text-left">Campaign</th>
+          <th>Margin %</th><th>Profit</th><th>Revenue</th><th>Spend</th>
+        </tr></thead>
+        <tbody id="board-highest_margin_campaigns"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Highest Revenue Campaigns -->
+  <div class="lb-card revenue">
+    <div class="head">
+      <div class="ttl"><span class="icon">💰</span>Highest Revenue Campaigns</div>
+      <div class="meta"><span class="pill" id="meta-hrc">—</span></div>
+    </div>
+    <div class="body">
+      <table class="lb-table">
+        <thead><tr>
+          <th></th>
+          <th class="text-left">Campaign</th>
+          <th>Revenue</th><th>Profit</th><th>Margin %</th><th>Spend</th>
+        </tr></thead>
+        <tbody id="board-highest_revenue_campaigns"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Biggest Money Losers -->
+  <div class="lb-card loss">
+    <div class="head">
+      <div class="ttl"><span class="icon">⚠️</span>Biggest Money Losers</div>
+      <div class="meta"><span class="pill" id="meta-bml">—</span></div>
+    </div>
+    <div class="body">
+      <table class="lb-table">
+        <thead><tr>
+          <th></th>
+          <th class="text-left">Campaign</th>
+          <th>Loss</th><th>Margin %</th><th>Revenue</th><th>Spend</th>
+        </tr></thead>
+        <tbody id="board-biggest_money_losers"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Highest Spend No Sales Terms -->
+  <div class="lb-card waste">
+    <div class="head">
+      <div class="ttl"><span class="icon">💸</span>Highest Spend No Sales Terms</div>
+      <div class="meta"><span class="pill" id="meta-hsns">—</span></div>
+    </div>
+    <div class="body">
+      <table class="lb-table">
+        <thead><tr>
+          <th></th>
+          <th class="text-left">Search Term</th>
+          <th>Wasted Spend</th><th>Clicks</th><th>Impr.</th><th>Campaigns</th>
+        </tr></thead>
+        <tbody id="board-highest_spend_no_sales_terms"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="footnote" style="margin-top:10px;font-size:11px;color:#777"></div>
+
+<script>
+let currentMP     = '{{ marketplace }}';
+let currentPeriod = '7d';
+let currentLimit  = 10;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setLimit(v) { currentLimit = parseInt(v, 10) || 10; loadData(); }
+
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+
+function campaignCell(r) {
+  const badge = `<span class="type-badge ${r.campaign_type}">${r.campaign_type.toUpperCase()}</span>`;
+  return `<td class="text-left" title="${r.campaign_name}">
+    <a href="/dashboard/campaigns/${encodeURIComponent(r.campaign_id)}/?mp=${currentMP}">
+      ${r.campaign_name}
+    </a> ${badge}
+  </td>`;
+}
+
+function termCell(r) {
+  return `<td class="text-left" title="${r.search_term || ''}">${r.search_term || '—'}</td>`;
+}
+
+function renderCampaignBoard(boardId, rows, metricKey, opts) {
+  const tbody = document.getElementById('board-' + boardId);
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="lb-empty">No campaigns in this window.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map((r, i) => {
+    const profClass = r.gross_profit > 0 ? 'profit-pos' : (r.gross_profit < 0 ? 'profit-neg' : '');
+    return `<tr>
+      <td class="rank">#${i+1}</td>
+      ${campaignCell(r)}
+      ${opts.metric === 'gross_profit'
+        ? `<td class="${profClass}">${fmtCurrency(r.gross_profit)}</td>
+           <td>${fmtPct(r.margin_pct)}</td>
+           <td>${fmtCurrency(r.ad_revenue)}</td>
+           <td>${fmtCurrency(r.spend)}</td>`
+        : opts.metric === 'margin_pct'
+        ? `<td>${fmtPct(r.margin_pct)}</td>
+           <td class="${profClass}">${fmtCurrency(r.gross_profit)}</td>
+           <td>${fmtCurrency(r.ad_revenue)}</td>
+           <td>${fmtCurrency(r.spend)}</td>`
+        : opts.metric === 'ad_revenue'
+        ? `<td>${fmtCurrency(r.ad_revenue)}</td>
+           <td class="${profClass}">${fmtCurrency(r.gross_profit)}</td>
+           <td>${fmtPct(r.margin_pct)}</td>
+           <td>${fmtCurrency(r.spend)}</td>`
+        : /* losses */
+          `<td class="profit-neg">${fmtCurrency(r.gross_profit)}</td>
+           <td>${fmtPct(r.margin_pct)}</td>
+           <td>${fmtCurrency(r.ad_revenue)}</td>
+           <td>${fmtCurrency(r.spend)}</td>`
+      }
+    </tr>`;
+  }).join('');
+}
+
+function renderTermsBoard(boardId, rows, mode) {
+  const tbody = document.getElementById('board-' + boardId);
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="lb-empty">${
+      mode === 'no_sales' ? 'No search terms with $5+ spend and zero orders.' :
+                            'No search terms in this window.'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r, i) => {
+    if (mode === 'profit') {
+      const profClass = r.estimated_profit > 0 ? 'profit-pos' :
+                        (r.estimated_profit < 0 ? 'profit-neg' : '');
+      return `<tr>
+        <td class="rank">#${i+1}</td>
+        ${termCell(r)}
+        <td class="${profClass}">${fmtCurrency(r.estimated_profit)}</td>
+        <td>${fmtCurrency(r.spend)}</td>
+        <td>${fmtCurrency(r.sales)}</td>
+        <td>${fmtInt(r.orders)}</td>
+      </tr>`;
+    } else {
+      // no_sales
+      return `<tr>
+        <td class="rank">#${i+1}</td>
+        ${termCell(r)}
+        <td class="profit-neg">${fmtCurrency(r.spend)}</td>
+        <td>${fmtInt(r.clicks)}</td>
+        <td>${fmtInt(r.impressions)}</td>
+        <td>${fmtInt(r.campaign_count)}</td>
+      </tr>`;
+    }
+  }).join('');
+}
+
+async function loadData() {
+  document.querySelectorAll('[id^="board-"]').forEach(el => {
+    el.innerHTML = '<tr><td colspan="6" class="lb-empty">Loading…</td></tr>';
+  });
+  try {
+    const r = await fetch(`/dashboard/api/leaderboards/?mp=${currentMP}&period=${currentPeriod}&limit=${currentLimit}`);
+    const d = await r.json();
+
+    const warn = document.getElementById('cmWarning');
+    if (d.cm_not_ready_warning) { warn.textContent = d.cm_not_ready_warning; warn.style.display = 'block'; }
+    else                         { warn.style.display = 'none'; }
+
+    document.getElementById('metaText').innerHTML =
+      `<strong>${d.period.start}</strong> → <strong>${d.period.end}</strong>  ·  ` +
+      `${d.meta.campaigns_evaluated} campaigns evaluated  ·  ` +
+      `${d.meta.search_terms_evaluated.toLocaleString()} search terms evaluated`;
+
+    // Per-card sub-meta (count actually shown)
+    const setMeta = (id, n) => { document.getElementById(id).textContent = `${n} shown`; };
+    setMeta('meta-mpc',  d.boards.most_profitable_campaigns.length);
+    setMeta('meta-mpst', d.boards.most_profitable_search_terms.length);
+    setMeta('meta-hmc',  d.boards.highest_margin_campaigns.length);
+    setMeta('meta-hrc',  d.boards.highest_revenue_campaigns.length);
+    setMeta('meta-bml',  d.boards.biggest_money_losers.length);
+    setMeta('meta-hsns', d.boards.highest_spend_no_sales_terms.length);
+
+    renderCampaignBoard('most_profitable_campaigns',  d.boards.most_profitable_campaigns,  null, {metric:'gross_profit'});
+    renderCampaignBoard('highest_margin_campaigns',   d.boards.highest_margin_campaigns,   null, {metric:'margin_pct'});
+    renderCampaignBoard('highest_revenue_campaigns',  d.boards.highest_revenue_campaigns,  null, {metric:'ad_revenue'});
+    renderCampaignBoard('biggest_money_losers',       d.boards.biggest_money_losers,       null, {metric:'loss'});
+    renderTermsBoard('most_profitable_search_terms',  d.boards.most_profitable_search_terms, 'profit');
+    renderTermsBoard('highest_spend_no_sales_terms',  d.boards.highest_spend_no_sales_terms, 'no_sales');
+
+    document.getElementById('footnote').textContent =
+      'Profit-based boards rely on CampaignProfitDaily. Search-term profit uses the campaign-margin proxy.';
+  } catch (e) {
+    console.error('leaderboards fetch failed', e);
+    document.querySelectorAll('[id^="board-"]').forEach(el => {
+      el.innerHTML = `<tr><td colspan="6" class="lb-empty">Failed: ${e.message}</td></tr>`;
+    });
+  }
+}
+
+loadData();
+</script>
+{% endblock %}

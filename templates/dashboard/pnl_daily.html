@@ -1,0 +1,308 @@
+{% extends "base/base.html" %}
+{% block title %}Daily P&L{% endblock %}
+{% block nav_pnl %}active{% endblock %}
+{% block page_title %}Daily P&L{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pnl-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
+                    margin-bottom:14px; }
+  .pnl-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+              padding:12px 14px; }
+  .pnl-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .pnl-kpi .val { font-size:22px; font-weight:700; color:#0F1111;
+                   font-family:'DM Mono',monospace; margin-top:2px; }
+  .pnl-kpi .delta { font-size:11px; margin-top:4px; font-family:'DM Mono',monospace; }
+  .pnl-kpi .delta.up  { color:#067D62; }
+  .pnl-kpi .delta.down { color:#C40000; }
+  .pnl-kpi .prev { font-size:10px; color:#8A8A8A; margin-top:2px; }
+  .pnl-kpi.profit { border-left:4px solid #067D62; }
+  .pnl-kpi.cost   { border-left:4px solid #C40000; }
+
+  .pnl-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+                  padding:14px 18px; margin-bottom:14px; }
+  .pnl-section h3 { margin:0 0 12px; font-size:14px; font-weight:700; color:#0F1111; }
+  .pnl-section .subtitle { font-size:11px; color:#777; margin-top:-8px; margin-bottom:10px; }
+
+  /* Waterfall */
+  .wf-grid { display:grid; gap:8px; }
+  .wf-row { display:grid; grid-template-columns: 130px 1fr 110px; align-items:center;
+             gap:10px; min-height:28px; }
+  .wf-row .lbl { font-size:12px; font-weight:600; color:#0F1111; }
+  .wf-row .bar-track { position:relative; height:22px; background:#F8F9FA;
+                        border-radius:4px; overflow:hidden; }
+  .wf-row .bar { position:absolute; top:0; bottom:0; border-radius:3px; }
+  .wf-row .bar.start  { background:#1B4A75; }
+  .wf-row .bar.minus  { background:#C40000; opacity:0.78; }
+  .wf-row .bar.end    { background:#067D62; }
+  .wf-row .bar.end.neg{ background:#C40000; }
+  .wf-row .amount { font-family:'DM Mono',monospace; font-size:12px; font-weight:700;
+                     text-align:right; }
+  .wf-row .amount.minus { color:#C40000; }
+  .wf-row .amount.end   { color:#067D62; font-size:13px; }
+  .wf-row .amount.end.neg { color:#C40000; }
+
+  .wf-summary { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:14px;
+                 padding-top:12px; border-top:1px solid #EAEDED; }
+  .wf-summary .cell { font-size:12px; }
+  .wf-summary .cell .lbl { color:#777; }
+  .wf-summary .cell .val { font-family:'DM Mono',monospace; font-weight:700;
+                            font-size:14px; color:#0F1111; }
+
+  /* Trend chart */
+  .trend-wrap { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+                 padding:10px 14px; }
+  .trend-head { display:flex; justify-content:space-between; align-items:center;
+                 margin-bottom:8px; }
+  .trend-head .lbl { font-size:13px; font-weight:700; color:#0F1111; }
+  .trend-head select { padding:3px 8px; font-size:11px; border-radius:4px;
+                        border:1px solid #D5D9D9; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ── Headline KPI strip ──────────────────────────────────────────── -->
+<div class="pnl-kpi-strip">
+  <div class="pnl-kpi"><div class="lbl">Revenue</div>
+    <div class="val" id="kpi-revenue">—</div>
+    <div class="delta" id="delta-revenue"></div>
+    <div class="prev" id="prev-revenue"></div></div>
+  <div class="pnl-kpi profit"><div class="lbl">Gross Profit</div>
+    <div class="val" id="kpi-profit">—</div>
+    <div class="delta" id="delta-profit"></div>
+    <div class="prev" id="prev-profit"></div></div>
+  <div class="pnl-kpi"><div class="lbl">Margin %</div>
+    <div class="val" id="kpi-margin">—</div>
+    <div class="delta" id="delta-margin"></div>
+    <div class="prev" id="prev-margin"></div></div>
+  <div class="pnl-kpi"><div class="lbl">TACoS</div>
+    <div class="val" id="kpi-tacos">—</div>
+    <div class="delta" id="delta-tacos"></div>
+    <div class="prev" id="prev-tacos"></div></div>
+  <div class="pnl-kpi"><div class="lbl">Orders</div>
+    <div class="val" id="kpi-orders">—</div>
+    <div class="delta" id="delta-orders"></div>
+    <div class="prev" id="prev-orders"></div></div>
+</div>
+
+<!-- ── Cost-row strip ─────────────────────────────────────────────── -->
+<div class="pnl-kpi-strip">
+  <div class="pnl-kpi cost"><div class="lbl">PPC Spend</div>
+    <div class="val" id="kpi-ppc">—</div>
+    <div class="delta" id="delta-ppc"></div></div>
+  <div class="pnl-kpi cost"><div class="lbl">Referral Fees</div>
+    <div class="val" id="kpi-ref">—</div>
+    <div class="delta" id="delta-ref"></div></div>
+  <div class="pnl-kpi cost"><div class="lbl">FBA Fees</div>
+    <div class="val" id="kpi-fba">—</div>
+    <div class="delta" id="delta-fba"></div></div>
+  <div class="pnl-kpi cost"><div class="lbl">COGS</div>
+    <div class="val" id="kpi-cogs">—</div>
+    <div class="delta" id="delta-cogs"></div></div>
+  <div class="pnl-kpi"><div class="lbl">Units Sold</div>
+    <div class="val" id="kpi-units">—</div>
+    <div class="delta" id="delta-units"></div></div>
+</div>
+
+<!-- ── P&L Waterfall ──────────────────────────────────────────────── -->
+<div class="pnl-section">
+  <h3>P&L Waterfall</h3>
+  <div class="subtitle">Revenue minus each cost layer, ending at Gross Profit.</div>
+  <div class="wf-grid" id="waterfall"></div>
+  <div class="wf-summary" id="wfSummary"></div>
+</div>
+
+<!-- ── Daily trend chart ──────────────────────────────────────────── -->
+<div class="trend-wrap">
+  <div class="trend-head">
+    <div class="lbl" id="trendTitle">Daily trend</div>
+    <select id="trendMetric" onchange="renderTrend()">
+      <option value="gross_profit" selected>Gross Profit</option>
+      <option value="revenue">Revenue</option>
+      <option value="ppc_spend">PPC Spend</option>
+      <option value="net_margin_pct">Margin %</option>
+      <option value="tacos">TACoS</option>
+      <option value="orders">Orders</option>
+    </select>
+  </div>
+  <canvas id="trendChart" height="80"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+let currentMP     = '{{ marketplace }}';
+let currentPeriod = '7d';
+let lastData      = null;
+let chart         = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+
+function fmtCurrency(v, full) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (full) return sign + '$' + a.toLocaleString(undefined, {maximumFractionDigits: 0});
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+
+function renderKpi(id, kpi, opts) {
+  opts = opts || {};
+  const isCost = opts.cost;
+  const fmt = kpi.fmt === 'percent' ? fmtPct
+            : kpi.fmt === 'int'     ? fmtInt
+            : (v => fmtCurrency(v, false));
+  document.getElementById('kpi-' + id).textContent = fmt(kpi.current);
+  const delta = kpi.delta;
+  const pct = kpi.delta_pct;
+  const deltaEl = document.getElementById('delta-' + id);
+  if (deltaEl) {
+    // For cost rows, higher is bad; for profit/revenue, higher is good
+    const positive = isCost ? (delta < 0) : (delta > 0);
+    deltaEl.className = 'delta ' + (delta === 0 ? '' : (positive ? 'up' : 'down'));
+    const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '—');
+    deltaEl.textContent = `${arrow} ${fmt(Math.abs(delta))}  (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
+  }
+  const prevEl = document.getElementById('prev-' + id);
+  if (prevEl) prevEl.textContent = `Prev: ${fmt(kpi.previous)}`;
+}
+
+function renderKPIs(d) {
+  renderKpi('revenue', d.kpi.revenue);
+  renderKpi('profit',  d.kpi.gross_profit);
+  renderKpi('margin',  d.kpi.net_margin_pct);
+  renderKpi('tacos',   d.kpi.tacos);
+  renderKpi('orders',  d.kpi.orders);
+
+  renderKpi('ppc',   d.kpi.ppc_spend,    {cost:true});
+  renderKpi('ref',   d.kpi.referral_fee, {cost:true});
+  renderKpi('fba',   d.kpi.fba_fee,      {cost:true});
+  renderKpi('cogs',  d.kpi.cogs,         {cost:true});
+  renderKpi('units', d.kpi.units);
+}
+
+function renderWaterfall(d) {
+  const wf = d.waterfall;
+  const max = Math.max(...wf.map(r => Math.abs(r.running)));
+  if (max === 0) {
+    document.getElementById('waterfall').innerHTML =
+      '<div style="color:#8A8A8A;font-size:12px;padding:12px">No data for this window.</div>';
+    return;
+  }
+  const html = wf.map(r => {
+    const wPct = Math.min(100, Math.abs(r.running) / max * 100);
+    const cls = r.type;
+    const profitNeg = (r.type === 'end' && r.value < 0) ? ' neg' : '';
+    return `<div class="wf-row">
+      <div class="lbl">${r.label}</div>
+      <div class="bar-track">
+        <div class="bar ${cls}${profitNeg}" style="left:0;width:${wPct}%"></div>
+      </div>
+      <div class="amount ${cls}${profitNeg}">${
+        r.type === 'minus' ? '−' + fmtCurrency(Math.abs(r.value), true)
+        : (r.type === 'end' ? (r.value >= 0 ? '' : '−') + fmtCurrency(Math.abs(r.value), true)
+                            : fmtCurrency(r.value, true))
+      }</div>
+    </div>`;
+  }).join('');
+  document.getElementById('waterfall').innerHTML = html;
+
+  const profit = wf[wf.length - 1].value;
+  const revenue = wf[0].value;
+  const margin = revenue > 0 ? profit / revenue * 100 : 0;
+  document.getElementById('wfSummary').innerHTML = `
+    <div class="cell"><div class="lbl">Gross Profit</div>
+      <div class="val" style="color:${profit >= 0 ? '#067D62' : '#C40000'}">${fmtCurrency(profit, true)}</div></div>
+    <div class="cell"><div class="lbl">Net Margin %</div>
+      <div class="val" style="color:${margin >= 0 ? '#067D62' : '#C40000'}">${fmtPct(margin)}</div></div>
+  `;
+}
+
+function renderTrend() {
+  if (!lastData) return;
+  const metric = document.getElementById('trendMetric').value;
+  const labels = lastData.trend.map(t => t.date.slice(5));
+  const data   = lastData.trend.map(t => t[metric]);
+
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: metric,
+        data,
+        backgroundColor: data.map(v => v == null ? '#D5D9D9' :
+                                   (v < 0 ? '#FBE2E0' : '#E0F2EC')),
+        borderColor:     data.map(v => v == null ? '#A0A5AA' :
+                                   (v < 0 ? '#C40000' : '#067D62')),
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { font: { size: 10 } } },
+        x: { ticks: { font: { size: 9 } } },
+      },
+    },
+  });
+}
+
+async function loadData() {
+  try {
+    const r = await fetch(`/dashboard/api/pnl/?mp=${currentMP}&period=${currentPeriod}`);
+    const d = await r.json();
+    lastData = d;
+    renderKPIs(d);
+    renderWaterfall(d);
+    renderTrend();
+    document.getElementById('trendTitle').textContent =
+      `Daily trend — ${d.period.start} → ${d.period.end}  (${d.period.days} day${d.period.days===1?'':'s'} vs ${d.prev_period.start} → ${d.prev_period.end})`;
+  } catch (e) {
+    console.error('pnl fetch failed', e);
+  }
+}
+
+loadData();
+</script>
+{% endblock %}

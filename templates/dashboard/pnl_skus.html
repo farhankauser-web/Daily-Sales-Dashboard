@@ -1,0 +1,319 @@
+{% extends "base/base.html" %}
+{% block title %}SKU Profitability{% endblock %}
+{% block nav_pnl %}active{% endblock %}
+{% block page_title %}SKU Profitability{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+<select id="brandFilter" class="form-control"
+        style="margin-left:8px;padding:5px 10px;font-size:11px;width:auto;max-width:200px"
+        onchange="setBrand(this.value)">
+  <option value="">All brands</option>
+</select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .sk-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .sk-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:10px 14px; }
+  .sk-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .sk-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .sk-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .sk-kpi.profit { border-left:4px solid #067D62; }
+
+  .sk-tag-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+                 padding:8px 12px; margin-bottom:10px;
+                 display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .sk-tag-bar .lbl { font-size:11px; color:#8A8A8A; margin-right:4px; }
+  .sk-tag-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+                  padding:4px 10px; border-radius:14px; cursor:pointer;
+                  font-size:11px; font-weight:600; user-select:none; }
+  .sk-tag-pill:hover { background:#EAEDED; }
+  .sk-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:#067D62; }
+  .sk-tag-pill .count { background:rgba(0,0,0,0.12); color:inherit;
+                        margin-left:6px; padding:1px 6px; border-radius:8px;
+                        font-size:10px; }
+  .sk-tag-pill.active .count { background:rgba(255,255,255,0.25); }
+
+  .sk-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .sk-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555;
+                        position:sticky; top:0; z-index:1; cursor:pointer;
+                        user-select:none; }
+  .sk-table thead th.text-left { text-align:left; }
+  .sk-table thead th.sorted { color:#0F1111; }
+  .sk-table tbody td { padding:6px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .sk-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
+                                  max-width:280px; white-space:nowrap;
+                                  overflow:hidden; text-overflow:ellipsis; }
+  .sk-table tbody td.tags-cell { text-align:left; font-family:inherit; }
+  .sk-table tbody tr:hover { background:#F8F9FA; }
+  .sk-table tbody td.profit-pos { color:#067D62; font-weight:600; }
+  .sk-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .sk-table tbody td.contrib-cell {
+    background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
+    text-align:left; padding-left:8px;
+  }
+
+  .sk-row-tag { display:inline-block; padding:1px 6px; border-radius:3px;
+                 font-size:9px; font-weight:600; margin-right:2px; }
+  .sk-row-tag.negative_margin         { background:#FBE2E0; color:#9C3431; }
+  .sk-row-tag.high_revenue_low_profit { background:#FFF1ED; color:#9C5331; }
+  .sk-row-tag.profitable              { background:#E0F2EC; color:#067D62; }
+  .sk-row-tag.ad_dependent            { background:#E1EFFA; color:#1B4A75; }
+
+  .sk-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sk-kpi-strip">
+  <div class="sk-kpi"><div class="lbl">SKUs in Window</div>
+    <div class="val" id="kpi-count">—</div>
+    <div class="sub" id="kpi-count-sub"></div></div>
+  <div class="sk-kpi"><div class="lbl">Revenue</div>
+    <div class="val" id="kpi-revenue">—</div>
+    <div class="sub" id="kpi-revenue-sub"></div></div>
+  <div class="sk-kpi profit"><div class="lbl">Gross Profit</div>
+    <div class="val" id="kpi-profit">—</div>
+    <div class="sub" id="kpi-profit-sub"></div></div>
+  <div class="sk-kpi"><div class="lbl">PPC Spend</div>
+    <div class="val" id="kpi-ppc">—</div>
+    <div class="sub" id="kpi-ppc-sub"></div></div>
+</div>
+
+<div class="sk-tag-bar">
+  <span class="lbl">Filter by tag:</span>
+  <span class="sk-tag-pill" data-tag="profitable" onclick="toggleTag('profitable', this)">
+    Profitable <span class="count" id="tag-count-profitable">0</span>
+  </span>
+  <span class="sk-tag-pill" data-tag="negative_margin" onclick="toggleTag('negative_margin', this)">
+    Negative Margin <span class="count" id="tag-count-negative_margin">0</span>
+  </span>
+  <span class="sk-tag-pill" data-tag="high_revenue_low_profit" onclick="toggleTag('high_revenue_low_profit', this)">
+    High Revenue, Low Profit <span class="count" id="tag-count-high_revenue_low_profit">0</span>
+  </span>
+  <span class="sk-tag-pill" data-tag="ad_dependent" onclick="toggleTag('ad_dependent', this)">
+    Ad-Dependent (TACoS >30%) <span class="count" id="tag-count-ad_dependent">0</span>
+  </span>
+</div>
+
+<div id="emptyState" class="sk-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">📦</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No SKU data</div>
+  <div id="emptyMsg">No DailySkuSnapshot rows for the selected window.</div>
+</div>
+
+<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+            padding:8px;overflow:auto;max-height:calc(100vh - 340px)">
+  <table class="sk-table" id="skTable">
+    <thead><tr>
+      <th class="text-left" data-sort="product_name">Product</th>
+      <th class="text-left" data-sort="sku">SKU</th>
+      <th class="text-left" data-sort="brand">Brand</th>
+      <th data-sort="gross_profit" class="sorted">Profit</th>
+      <th data-sort="margin_pct">Margin %</th>
+      <th data-sort="revenue">Revenue</th>
+      <th data-sort="units">Units</th>
+      <th data-sort="ppc_spend">PPC</th>
+      <th data-sort="cogs">COGS</th>
+      <th data-sort="referral_fee">Referral</th>
+      <th data-sort="fba_fee">FBA</th>
+      <th data-sort="tacos">TACoS</th>
+      <th data-sort="acos">ACoS</th>
+      <th data-sort="roas">ROAS</th>
+      <th class="text-left" data-sort="contribution_pct">Contribution %</th>
+      <th class="text-left" data-sort="tags">Tags</th>
+    </tr></thead>
+    <tbody id="skBody"><tr><td colspan="16" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+
+<script>
+let currentMP     = '{{ marketplace }}';
+let currentPeriod = '7d';
+let currentBrand  = '';
+let activeTags    = new Set();
+let currentSort   = {key:'gross_profit', dir:-1};
+let lastData      = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setBrand(b) { currentBrand = b; loadData(); }
+
+function toggleTag(tag, el) {
+  if (activeTags.has(tag)) { activeTags.delete(tag); el.classList.remove('active'); }
+  else                     { activeTags.add(tag);    el.classList.add('active'); }
+  loadData();
+}
+
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtDec(v) { return v == null ? '—' : Number(v).toFixed(2); }
+
+function renderKPI(d) {
+  const k = d.kpi;
+  const setText = (id, v) => { document.getElementById(id).textContent = v; };
+  setText('kpi-count',  fmtInt(k.sku_count));
+  setText('kpi-count-sub', `${k.shown} shown${k.truncated ? ' (truncated)' : ''}`);
+  setText('kpi-revenue', fmtCurrency(k.revenue));
+  setText('kpi-revenue-sub', `${d.period.start} → ${d.period.end}`);
+  setText('kpi-profit', fmtCurrency(k.gross_profit));
+  setText('kpi-profit-sub', k.revenue > 0 ? `Margin ${(k.gross_profit / k.revenue * 100).toFixed(1)}%` : '');
+  setText('kpi-ppc', fmtCurrency(k.ppc_spend));
+  setText('kpi-ppc-sub', k.revenue > 0 ? `TACoS ${(k.ppc_spend / k.revenue * 100).toFixed(1)}%` : '');
+
+  Object.entries(k.tag_counts).forEach(([t, n]) => {
+    const el = document.getElementById('tag-count-' + t);
+    if (el) el.textContent = n;
+  });
+}
+
+function renderTable(d) {
+  const tbody = document.getElementById('skBody');
+  const empty = document.getElementById('emptyState');
+  if (!d.rows || d.rows.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    document.getElementById('emptyMsg').textContent =
+      activeTags.size > 0 ? 'No SKUs match the active tag filter.' :
+      'No DailySkuSnapshot rows for the selected window.';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const sorted = d.rows.slice().sort((a, b) => {
+    const av = a[currentSort.key], bv = b[currentSort.key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; if (bv == null) return -1;
+    if (typeof av === 'string') return currentSort.dir * av.localeCompare(bv);
+    return currentSort.dir * (av - bv);
+  });
+
+  const maxContrib = Math.max(0, ...sorted.map(r => r.contribution_pct));
+
+  tbody.innerHTML = sorted.map(r => {
+    const profClass = r.gross_profit > 0 ? 'profit-pos' : (r.gross_profit < 0 ? 'profit-neg' : '');
+    const barWidth = maxContrib > 0 ? (r.contribution_pct / maxContrib * 100) : 0;
+    const tags = (r.tags || []).map(t =>
+      `<span class="sk-row-tag ${t}" title="${t.replace(/_/g,' ')}">${t.replace(/_/g,' ')}</span>`
+    ).join('');
+    return `<tr>
+      <td class="text-left" title="${r.product_name}">${r.product_name || '—'}</td>
+      <td class="text-left" style="color:#555">${r.sku || '—'}</td>
+      <td class="text-left" style="color:#555">${r.brand || '—'}</td>
+      <td class="${profClass}">${fmtCurrency(r.gross_profit)}</td>
+      <td>${fmtPct(r.margin_pct)}</td>
+      <td>${fmtCurrency(r.revenue)}</td>
+      <td>${fmtInt(r.units)}</td>
+      <td>${fmtCurrency(r.ppc_spend)}</td>
+      <td>${fmtCurrency(r.cogs)}</td>
+      <td>${fmtCurrency(r.referral_fee)}</td>
+      <td>${fmtCurrency(r.fba_fee)}</td>
+      <td>${r.tacos == null ? '—' : fmtPct(r.tacos)}</td>
+      <td>${r.acos  == null ? '—' : fmtPct(r.acos)}</td>
+      <td>${r.roas  == null ? '—' : fmtDec(r.roas)}</td>
+      <td class="contrib-cell" style="--bar:${barWidth}%">${fmtPct(r.contribution_pct)}</td>
+      <td class="tags-cell">${tags || '<span style="color:#C0C5CA">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('#skTable thead th').forEach(th => {
+    th.classList.remove('sorted');
+    if (th.dataset.sort === currentSort.key) th.classList.add('sorted');
+  });
+
+  document.getElementById('footnote').innerHTML =
+    `<strong>${d.kpi.shown}</strong> of <strong>${d.kpi.sku_count}</strong> SKUs shown. ` +
+    'PPC spend comes from SkuPpcAllocation (per-SKU allocation engine). ' +
+    'Contribution % uses positive-profit base — sums to ≤ 100%.';
+}
+
+function updateBrandDropdown(d) {
+  const sel = document.getElementById('brandFilter');
+  // Only repopulate if brands changed (cheap shortcut: count + first)
+  const expected = ['', ...d.brands.filter(b => b)];
+  const have = Array.from(sel.options).map(o => o.value);
+  if (expected.length === have.length) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All brands</option>' +
+    d.brands.filter(b => b).map(b => `<option value="${b}">${b}</option>`).join('');
+  sel.value = cur;
+}
+
+document.querySelectorAll('#skTable thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (!key) return;
+    if (currentSort.key === key) currentSort.dir *= -1;
+    else                          currentSort = {key, dir:-1};
+    if (lastData) renderTable(lastData);
+  });
+});
+
+async function loadData() {
+  const params = new URLSearchParams({mp: currentMP, period: currentPeriod});
+  if (currentBrand)        params.set('brand', currentBrand);
+  if (activeTags.size > 0) params.set('tags', [...activeTags].join(','));
+  try {
+    const r = await fetch(`/dashboard/api/pnl/skus/?${params}`);
+    const d = await r.json();
+    lastData = d;
+    updateBrandDropdown(d);
+    renderKPI(d);
+    renderTable(d);
+  } catch (e) {
+    console.error('skus fetch failed', e);
+    document.getElementById('emptyMsg').textContent = 'Failed to load: ' + e.message;
+    document.getElementById('emptyState').style.display = 'block';
+  }
+}
+
+loadData();
+</script>
+{% endblock %}

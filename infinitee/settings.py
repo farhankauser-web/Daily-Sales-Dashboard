@@ -121,6 +121,24 @@ AMAZON_MARKETPLACES = {
     'sa':  {'id': 'A17E79C6D8DWNP', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Asia/Riyadh'},
 }
 
+# ── Amazon Marketing Stream (AMS) — S3 destination per marketplace ─────────
+# Firehose for each marketplace writes its events into a region-specific bucket.
+# AWS region MUST match Amazon's published regions for the Ads region:
+#   NA advertisers → us-east-1
+#   EU advertisers → eu-west-1
+#   FE advertisers → us-west-2
+AMS_S3 = {
+    'usa': {'region': 'us-east-1', 'bucket': 'amzn-usa-data-stream-bucket',
+            'prefix': ''},
+    # add 'ca', 'uk', 'de', 'ae', 'sa' here as their buckets come online
+}
+
+# ── AWS credentials (read-only S3 access used by ingest_ams_s3) ────────────
+# Set in environment, never commit. The IAM user behind this only needs:
+#   s3:GetObject + s3:ListBucket on the AMS buckets above.
+AWS_ACCESS_KEY_ID     = os.environ.get('AWS_ACCESS_KEY_ID',     '')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
+
 CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 
 LOGS_DIR = BASE_DIR / 'logs'

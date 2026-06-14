@@ -126,33 +126,58 @@
 </div>
 <div id="dataDebug" style="margin:6px 0 10px;padding:6px 10px;background:#FEF9EE;border:1px solid #FCDBA0;border-radius:4px;font-size:11px;color:#805500;display:none"></div>
 
+<!-- "As of" badge — populated server-side from latest HourlyMetricSnapshot.synced_at -->
+<div id="asOfBar" style="margin:0 0 10px;padding:6px 12px;background:#F3F4F5;border-left:3px solid #232F3E;border-radius:3px;font-size:11px;color:#555">
+  {% if initial_today.has_data %}
+    📦 <b>Data as of {{ initial_today.as_of }}</b> · auto-refreshes hourly · Click <b>Refresh</b> for live SP-API pull.
+  {% else %}
+    ⏳ No hourly snapshot for today yet. Loading…
+  {% endif %}
+</div>
+
 <!-- KPI STRIP -->
 <div class="kpi-grid" style="margin-bottom:16px">
   <div class="kpi-card blue">
     <div class="kpi-label">Revenue</div>
-    <div class="kpi-val" id="k-rev">–</div>
-    <div class="kpi-sub">ARPU <span id="k-arpu">–</span></div>
+    <div class="kpi-val" id="k-rev">{% if initial_today.has_data %}${{ initial_today.revenue|floatformat:"0" }}{% else %}–{% endif %}</div>
+    <div class="kpi-sub">ARPU <span id="k-arpu">{% if initial_today.has_data %}${{ initial_today.arpu|floatformat:"2" }}{% else %}–{% endif %}</span></div>
+    {% if initial_today.has_data %}
+    <div class="kpi-sub" style="margin-top:4px;font-size:10.5px;color:#067D62">
+      <b id="k-lh-rev">+${{ initial_today.last_hour_revenue|floatformat:"0" }}</b> last hour
+      <span id="k-lh-vs" style="color:{% if initial_today.vs_yesterday_pct == None %}#8A8A8A{% elif initial_today.vs_yesterday_pct >= 0 %}#067D62{% else %}#C40000{% endif %}">
+        {% if initial_today.vs_yesterday_pct == None %}· no comparison yet{% else %}· vs yest. same hour {% if initial_today.vs_yesterday_pct >= 0 %}+{% endif %}{{ initial_today.vs_yesterday_pct }}%{% endif %}
+      </span>
+    </div>
+    {% else %}
+    <div class="kpi-sub" id="k-lh-line" style="margin-top:4px;font-size:10.5px;color:#8A8A8A">last hour: –</div>
+    {% endif %}
   </div>
   <div class="kpi-card navy">
     <div class="kpi-label">Units Sold</div>
-    <div class="kpi-val" id="k-qty">–</div>
-    <div class="kpi-sub">Orders <span id="k-orders">–</span></div>
+    <div class="kpi-val" id="k-qty">{% if initial_today.has_data %}{{ initial_today.units }}{% else %}–{% endif %}</div>
+    <div class="kpi-sub">Orders <span id="k-orders">{% if initial_today.has_data %}{{ initial_today.orders }}{% else %}–{% endif %}</span></div>
   </div>
   <div class="kpi-card gold">
-    <div class="kpi-label">Total PPC Spend</div>
-    <div class="kpi-val" id="k-ppc">–</div>
-    <div class="kpi-sub">TACoS <span id="k-tacos">–</span></div>
+    <div class="kpi-label">Total PPC Spend
+      <span id="k-ppc-state" style="margin-left:6px;font-size:9px;font-weight:700;
+            padding:1px 6px;border-radius:8px;display:none"></span>
+    </div>
+    <div class="kpi-val" id="k-ppc">{% if initial_today.has_data %}${{ initial_today.ppc_spend|floatformat:"0" }}{% else %}–{% endif %}</div>
+    <div class="kpi-sub">
+      TACoS <span id="k-tacos">{% if initial_today.has_data %}{{ initial_today.tacos }}%{% else %}–{% endif %}</span>
+      <span id="k-ppc-refreshed" style="margin-left:8px;color:#888;font-size:10px"></span>
+    </div>
   </div>
   {% if show_financials %}
   <div class="kpi-card green">
     <div class="kpi-label">Gross Margin</div>
-    <div class="kpi-val" id="k-gm">–</div>
-    <div class="kpi-sub"><span id="k-gm-pct">–</span> GM%</div>
+    <div class="kpi-val" id="k-gm">{% if initial_today.has_data %}${{ initial_today.gross_margin|floatformat:"0" }}{% else %}–{% endif %}</div>
+    <div class="kpi-sub"><span id="k-gm-pct">{% if initial_today.has_data %}{{ initial_today.gm_pct }}%{% else %}–{% endif %}</span> GM%</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Contribution Margin</div>
-    <div class="kpi-val" id="k-cm">–</div>
-    <div class="kpi-sub"><span id="k-cm-pct">–</span> CM%</div>
+    <div class="kpi-val" id="k-cm">{% if initial_today.has_data %}${{ initial_today.contribution_margin|floatformat:"0" }}{% else %}–{% endif %}</div>
+    <div class="kpi-sub"><span id="k-cm-pct">{% if initial_today.has_data %}{{ initial_today.cm_pct }}%{% else %}–{% endif %}</span> CM%</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">vs Daily Target</div>
@@ -162,7 +187,7 @@
   {% else %}
   <div class="kpi-card green">
     <div class="kpi-label">GM %</div>
-    <div class="kpi-val" id="k-gm-pct">–</div>
+    <div class="kpi-val" id="k-gm-pct">{% if initial_today.has_data %}{{ initial_today.gm_pct }}%{% else %}–{% endif %}</div>
     <div class="kpi-sub">Gross Margin</div>
   </div>
   <div class="kpi-card">
@@ -233,8 +258,8 @@
 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px">
   <div>
     <div class="section-title" id="tableHeading">Product Performance — {{ today|date:"M j, Y" }}</div>
-    <div class="sku-table-subhead">
-      ▶ Expand row to see color variants · SP+SD exact per SKU · SB on group row
+    <div class="sku-table-subhead" id="ppcAttrNote">
+      ▶ Expand row to see color variants · PPC attribution mode shown per group row
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -256,6 +281,7 @@
         <th style="text-align:left">SKU / Group</th>
         <th style="text-align:left">Product</th>
         <th>QTY</th>
+        <th>Last&nbsp;hr&nbsp;units</th>
         <th>Revenue</th>
         <th>CGS</th>
         <th>Amz Fee</th>
@@ -461,6 +487,23 @@ async function loadData(){
     } else {
       document.getElementById('spStatus').textContent = 'Live';
     }
+    // ── "As of" badge ─────────────────────────────────────────────────────────
+    const asOf = document.getElementById('asOfBar');
+    if(asOf){
+      if(d.cached){
+        const srcLabel = d.source === 'hourly_snapshot' ? 'hourly snapshot' : 'cached daily metric';
+        asOf.innerHTML = `📦 <b>Data as of ${d.cached_at}</b> · source: ${srcLabel} · Click <b>Refresh</b> for live SP-API pull.`;
+      } else {
+        asOf.innerHTML = `🟢 <b>Live</b> · just fetched from SP-API · ${new Date().toLocaleString()}`;
+      }
+    }
+    // ── Last-hour sub-line under Revenue ──────────────────────────────────────
+    const lhLine = document.getElementById('k-lh-rev');
+    const lhVs   = document.getElementById('k-lh-vs');
+    const lh     = d.sales?.last_hour;
+    if(lhLine && lh){
+      lhLine.textContent = `+$${Math.round(lh.revenue || 0).toLocaleString()}`;
+    }
     // ── Ads API status badge ──────────────────────────────────────────────
     const adsDot = document.getElementById('adsDot');
     const adsSt  = document.getElementById('adsStatus');
@@ -537,11 +580,46 @@ function renderKPIs(sales, ads){
   if(!sales) return;
   const m   = sales.metrics || {};
   const rev = m.ordered_revenue || 0;
-  // ads object: {status, total_spend, sp, sd, sb, acos} when ok; {} when pending/null
+  // ads object: {status, total_spend, sp, sd, sb, acos,
+  //              settlement_state, live_refreshed_at} when ok; {} when pending/null
   const adsOk = ads?.status === 'ok';
   // Use m.ppc_spend (server-patched to campaign total) as the authoritative PPC figure.
   // Falls back to ads.total_spend for display when metrics patch hasn't run yet.
   const ppc = (m.ppc_spend > 0) ? m.ppc_spend : (adsOk ? (ads.total_spend || 0) : 0);
+
+  // ── Settlement-state badge on the PPC KPI tile ──────────────────────────
+  // 'provisional' → "Live · refreshed HH:MM"   (today)
+  // 'settling'    → "Settling · final by T+3"  (T-1, T-2)
+  // 'locked'      → no badge                   (T-3 and older)
+  const stateEl   = document.getElementById('k-ppc-state');
+  const refreshEl = document.getElementById('k-ppc-refreshed');
+  if (stateEl && refreshEl) {
+    const st = adsOk ? (ads.settlement_state || '') : '';
+    if (st === 'provisional') {
+      stateEl.textContent  = '● LIVE';
+      stateEl.style.background = '#FBE2E0';
+      stateEl.style.color      = '#9C3431';
+      stateEl.style.display    = 'inline-block';
+      const ts = ads.live_refreshed_at;
+      if (ts) {
+        const t = new Date(ts);
+        const hh = String(t.getHours()).padStart(2, '0');
+        const mm = String(t.getMinutes()).padStart(2, '0');
+        refreshEl.textContent = '· refreshed ' + hh + ':' + mm;
+      } else {
+        refreshEl.textContent = '· awaiting first refresh';
+      }
+    } else if (st === 'settling') {
+      stateEl.textContent  = 'SETTLING';
+      stateEl.style.background = '#FBF1DA';
+      stateEl.style.color      = '#8A6B11';
+      stateEl.style.display    = 'inline-block';
+      refreshEl.textContent = '· final by T+3';
+    } else {
+      stateEl.style.display = 'none';
+      refreshEl.textContent = '';
+    }
+  }
   // TACoS = Total PPC / Revenue
   const tacos = (rev && ppc) ? (ppc / rev * 100) : 0;
   // GM% = GM / Revenue  (m.gross_margin = CM − PPC, already correct server-side)
@@ -595,8 +673,28 @@ function renderKPIsFromObject(d){
 function renderSKUTable(data, targets){
   const tbody = document.getElementById('skuTableBody');
   if(!data || !data.length){
-    tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:32px;color:#8A8A8A">No SKU data available</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="21" style="text-align:center;padding:32px;color:#8A8A8A">No SKU data available</td></tr>';
     return;
+  }
+
+  // ── PPC attribution footnote (uses any non-unallocated row's ppc_source) ───
+  const _firstRealRow = data.find(d => !d.is_unallocated) || data[0];
+  const _src = _firstRealRow && _firstRealRow.ppc_source;
+  const _noteEl = document.getElementById('ppcAttrNote');
+  if (_noteEl) {
+    if (_src === 'campaign_attributed') {
+      _noteEl.innerHTML = '⚠️ Today: PPC attributed at <b>product-group</b> level from campaign names (Amazon\'s per-ASIN report has 24h lag). Per-SKU variant rows show $0 for PPC. <b>CAMP</b> badge marks group-attributed rows.';
+      _noteEl.style.color = '#805500';
+    } else if (_src === 'mixed') {
+      _noteEl.innerHTML = '🟦 Mixed: range includes today (campaign-attributed) + past days (Amazon per-ASIN). Per-SKU SP on variants is past-days only. <b>MIX</b> badge marks affected group rows.';
+      _noteEl.style.color = '#005A95';
+    } else if (_src === 'asin_actual') {
+      _noteEl.innerHTML = '✓ PPC values from Amazon\'s per-ASIN report (SP exact per-SKU; SB/SD attributed by campaign name).';
+      _noteEl.style.color = '#067D62';
+    } else {
+      _noteEl.innerHTML = '▶ Expand row to see color variants · PPC attribution mode shown per group row';
+      _noteEl.style.color = '#8A8A8A';
+    }
   }
 
   let html = '';
@@ -620,14 +718,36 @@ function renderSKUTable(data, targets){
     const groupGMTarCls = groupTarGM > 0 ? (groupGMTar >= 0 ? 'tar-gm-hit' : 'tar-gm-miss') : 'tar-gm-dash';
     const groupGMTarDisplay = groupTarGM > 0 ? fmt(groupGMTar) : '—';
 
+    // ── PPC source badge for the group row ─────────────────────────────────
+    let _ppcBadge = '';
+    if (grp.ppc_source === 'campaign_attributed') {
+      _ppcBadge = '<span title="PPC attributed at group level from campaign names; per-SKU Amazon report not published yet" style="margin-left:6px;display:inline-block;background:#FEF1F1;color:#805500;border:1px solid #FCDBA0;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">CAMP</span>';
+    } else if (grp.ppc_source === 'mixed') {
+      _ppcBadge = '<span title="Range includes today (campaign-attributed) + past days (per-ASIN actual). Per-SKU SP shown on variants is past-days only." style="margin-left:6px;display:inline-block;background:#EDF6F8;color:#005A95;border:1px solid #B0D9E3;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">MIX</span>';
+    }
+    // Unallocated row gets a distinct visual treatment
+    if (grp.is_unallocated) {
+      html += `<tr class="group-row" style="background:#FFFBF2;border-top:2px dashed #FCDBA0">
+        <td><span class="sku-code" style="color:#805500">${grp.group}</span></td>
+        <td style="color:#805500">${grp.groupName}</td>
+        <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+        <td class="sp-spend">${fmt(grp.spSpend)}</td>
+        <td class="sd-spend">${fmt(grp.sdSpend)}</td>
+        <td class="sb-spend">${fmt(grp.sbSpend)}</td>
+        <td style="font-weight:700">${fmt(grp.totalPpc)}</td>
+        <td>${fmt(grp.grossMargin)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+      </tr>`;
+      return;   // skip variants for unallocated
+    }
     // ── Group row ────────────────────────────────────────────────────────────
     html += `<tr class="group-row" onclick="toggleGroup(${gi})">
       <td>
         ${hasVariants ? `<span class="expand-btn" id="arr-${gi}">▶</span>` : '<span style="width:24px;display:inline-block"></span>'}
-        <span class="sku-code">${grp.group}</span>
+        <span class="sku-code">${grp.group}</span>${_ppcBadge}
       </td>
       <td>${grp.groupName}</td>
       <td>${num(grp.qty)}</td>
+      <td style="color:#067D62;font-weight:600">${Number(grp.last_hour_units || 0) > 0 ? num(grp.last_hour_units) : '—'}</td>
       <td>${fmt(grp.revenue)}</td>
       <td>${fmt(grp.cgs)}</td>
       <td>${fmt(grp.amzFee)}</td>
@@ -659,6 +779,7 @@ function renderSKUTable(data, targets){
           <td><span style="font-family:'DM Mono',monospace;font-size:10.5px;color:#007185">${v.sku}</span></td>
           <td>${v.name}</td>
           <td>${num(v.qty)}</td>
+          <td style="color:#067D62">${Number(v.last_hour_units || 0) > 0 ? num(v.last_hour_units) : '—'}</td>
           <td>${fmt(v.revenue)}</td>
           <td>${fmt(v.cgs)}</td>
           <td>${fmt(v.amzFee)}</td>
@@ -684,6 +805,7 @@ function renderSKUTable(data, targets){
   // ── Totals row ─────────────────────────────────────────────────────────────
   const sum = (k) => data.reduce((a, g) => a + (Number(g[k]) || 0), 0);
   const tQty   = sum('qty');
+  const tLhU   = sum('last_hour_units');
   const tRev   = sum('revenue');
   const tCgs   = sum('cgs');
   const tAmz   = sum('amzFee');
@@ -707,6 +829,7 @@ function renderSKUTable(data, targets){
     <td><span class="sku-code" style="color:#0F1111">TOTAL</span></td>
     <td></td>
     <td>${num(tQty)}</td>
+    <td style="color:#067D62;font-weight:700">${tLhU > 0 ? num(tLhU) : '—'}</td>
     <td>${fmt(tRev)}</td>
     <td>${fmt(tCgs)}</td>
     <td>${fmt(tAmz)}</td>
@@ -767,6 +890,22 @@ function filterTable(q){
 
 // ── CHARTS ────────────────────────────────────────────────────────────────────
 function renderCharts(sales){
+  // ── Intra-day mode: switch to hourly bars when range=today AND backend
+  //    sent hourly_breakdown (cache-first / hourly-fallback paths) ──────────
+  if(currentRange === 'today' && Array.isArray(sales?.hourly_breakdown) && sales.hourly_breakdown.length){
+    const hours = sales.hourly_breakdown;                                  // [{hour, revenue, units}]
+    const labels = hours.map(h => {
+      const hr = h.hour;
+      if(hr === 0)  return '12 AM';
+      if(hr < 12)   return hr + ' AM';
+      if(hr === 12) return '12 PM';
+      return (hr - 12) + ' PM';
+    });
+    updateChart(revenueChart, labels, hours.map(h => Number(h.revenue || 0)));
+    updateChart(unitsChart,   labels, hours.map(h => Number(h.units   || 0)));
+    return;
+  }
+  // ── Multi-day mode: existing daily-bar behaviour ────────────────────────
   if(!sales?.daily_breakdown) return;
   updateChart(revenueChart, sales.daily_breakdown.map(d=>d.date),    sales.daily_breakdown.map(d=>d.revenue));
   updateChart(unitsChart,   sales.daily_breakdown.map(d=>d.date),    sales.daily_breakdown.map(d=>d.units));
@@ -800,6 +939,8 @@ function setDate(range, btn){
   const badge = document.getElementById('chartRangeBadge');
   if(badge) badge.textContent = labels[range] || range;
   loadData();
+  // Rebalance the auto-refresh cadence (5min on today, 1h on settled ranges)
+  window.dispatchEvent(new Event('range-changed'));
 }
 function openCustomRange(btn){
   const m = document.getElementById('customRangeModal');
@@ -1012,11 +1153,51 @@ function startMarketplaceClock(){
   clockTimer = setInterval(updateMarketplaceClock, 1000);
 }
 
+// ── Initial server-rendered hourly snapshot (Django context) ─────────────────
+const INITIAL_TODAY = {{ initial_today_json|safe }};
+
+// ── Auto-refresh — quietly reload the AJAX payload on a timer ───────────────
+// Today view  → every 5 min (AMS + hourly cron both update sub-hourly)
+// Other views → every 1 hour (settled / daily-grain data)
+// Pauses while the tab is hidden so we don't hammer the server in background.
+let _autoRefreshTimer = null;
+function startAutoRefresh(){
+  if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  const intervalMs = (currentRange === 'today') ? 5 * 60 * 1000 : 60 * 60 * 1000;
+  _autoRefreshTimer = setInterval(() => {
+    if (document.hidden) return;     // skip when tab is in the background
+    loadData();                       // same path the Refresh button uses
+  }, intervalMs);
+}
+// Restart the timer whenever the user switches the range (Today / Yesterday / …)
+// so we don't keep the 5-min interval running when they pick MTD.
+window.addEventListener('range-changed', startAutoRefresh);
+document.addEventListener('visibilitychange', () => {
+  // Refresh once the moment the tab becomes visible again.
+  if (!document.hidden) loadData();
+});
+
+
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   initCharts();
   startMarketplaceClock();
+
+  // First paint: prime the Revenue Trend chart from the server-rendered hourly
+  // snapshot so the chart isn't blank during the ~200-500ms AJAX round-trip.
+  if (INITIAL_TODAY && INITIAL_TODAY.has_data && Array.isArray(INITIAL_TODAY.hourly_revenue)) {
+    const labels = INITIAL_TODAY.hourly_revenue.map((_, h) => {
+      if (h === 0)  return '12 AM';
+      if (h < 12)   return h + ' AM';
+      if (h === 12) return '12 PM';
+      return (h - 12) + ' PM';
+    });
+    updateChart(revenueChart, labels, INITIAL_TODAY.hourly_revenue);
+    updateChart(unitsChart,   labels, INITIAL_TODAY.hourly_units || []);
+  }
+
   loadData();
+  startAutoRefresh();
 });
 </script>
 {% endblock %}

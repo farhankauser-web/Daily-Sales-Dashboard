@@ -27,7 +27,20 @@ from decimal import Decimal
 import requests
 from django.core.management.base import BaseCommand
 
+from apps.dashboard.completeness import log_sync
+
 logger = logging.getLogger(__name__)
+
+
+def _row_date(r: dict):
+    """Extract a YYYY-MM-DD date from an Ads API row, or None."""
+    d_str = r.get('date') or r.get('reportDate') or r.get('startDate') or ''
+    if not d_str:
+        return None
+    try:
+        return date.fromisoformat(str(d_str)[:10])
+    except ValueError:
+        return None
 
 POLL_INTERVAL = 15   # seconds between status checks
 MAX_WAIT      = 1800 # 30 minutes max wait per report
@@ -58,6 +71,9 @@ class Command(BaseCommand):
                             help='Days back from yesterday (default: 39)')
         parser.add_argument('--start', default=None, help='YYYY-MM-DD start date')
         parser.add_argument('--end',   default=None, help='YYYY-MM-DD end date (default: yesterday)')
+        parser.add_argument('--today', action='store_true',
+                            help='Pull TODAY only (overrides --start/--end/--days). '
+                                 'Used by the hourly cron to keep today\'s PPC fresh.')
 
     def handle(self, *args, **opts):
         from apps.amazon_api.models import AmazonAPIConfig
@@ -70,16 +86,15 @@ class Command(BaseCommand):
         if not cfg.has_ads_credentials():
             self.stderr.write('Ads API credentials not set on this config.'); return
 
-        yesterday = date.today() - timedelta(days=1)
-        if opts['end']:
-            end_d = date.fromisoformat(opts['end'])
+        if opts.get('today'):
+            # --today shortcut: pulls today's running total in marketplace TZ.
+            # Used by the hourly cron to keep today's PPC fresh.
+            start_d = end_d = date.today()
         else:
-            end_d = yesterday
-
-        if opts['start']:
-            start_d = date.fromisoformat(opts['start'])
-        else:
-            start_d = end_d - timedelta(days=opts['days'] - 1)
+            yesterday = date.today() - timedelta(days=1)
+            end_d   = date.fromisoformat(opts['end'])   if opts['end']   else yesterday
+            start_d = date.fromisoformat(opts['start']) if opts['start'] else \
+                      end_d - timedelta(days=opts['days'] - 1)
 
         self.stdout.write(self.style.MIGRATE_HEADING(
             f'\n📊 Backfilling PPC: {mp.upper()} | {start_d} → {end_d}'
@@ -102,6 +117,14 @@ class Command(BaseCommand):
         all_sb_rows   = []
         all_sd_rows   = []
         all_prod_rows = []
+
+        # Per-chunk completeness tracking for AdsDataSyncLog.
+        #   key = (source, chunk_start, chunk_end) → 'ok' | 'failed' | 'submission_skipped'
+        # If the SB/SD report failed to submit (try/except below) OR timed out
+        # in the polling loop (None in results), it's 'failed' for every day in
+        # that chunk. Otherwise it's 'ok' (per-day distinction between 'ok' and
+        # 'empty_from_amazon' happens after we've split rows by date).
+        chunk_status: dict[tuple[str, date, date], str] = {}
 
         for i, (cs, ce) in enumerate(chunks, 1):
             self.stdout.write(self.style.MIGRATE_LABEL(
@@ -126,6 +149,7 @@ class Command(BaseCommand):
                 self.stdout.write(f'      reportId: {camp_sb_id}')
             except Exception as e:
                 self.stdout.write(f'      (SB skipped: {e})')
+                chunk_status[('sb_daily', cs, ce)] = 'submission_skipped'
 
             camp_sd_id = None
             self.stdout.write('    Submitting SD campaign report…')
@@ -137,6 +161,7 @@ class Command(BaseCommand):
                 self.stdout.write(f'      reportId: {camp_sd_id}')
             except Exception as e:
                 self.stdout.write(f'      (SD skipped: {e})')
+                chunk_status[('sd_daily', cs, ce)] = 'submission_skipped'
 
             self.stdout.write('    Submitting SP advertised-product report…')
             prod_id = self._submit_report(
@@ -158,6 +183,15 @@ class Command(BaseCommand):
             sb_rows   = results.get(camp_sb_id) or []
             sd_rows   = results.get(camp_sd_id) or []
             prod_rows = results.get(prod_id)    or []
+
+            # Distinguish "report succeeded but empty" from "report failed/timed-out"
+            # results.get(rid) returns None when polling timed out.
+            if camp_sb_id and chunk_status.get(('sb_daily', cs, ce)) != 'submission_skipped':
+                chunk_status[('sb_daily', cs, ce)] = (
+                    'failed' if results.get(camp_sb_id) is None else 'ok')
+            if camp_sd_id and chunk_status.get(('sd_daily', cs, ce)) != 'submission_skipped':
+                chunk_status[('sd_daily', cs, ce)] = (
+                    'failed' if results.get(camp_sd_id) is None else 'ok')
 
             if sp_rows is None:
                 self.stderr.write(self.style.ERROR(
@@ -187,7 +221,100 @@ class Command(BaseCommand):
         self._save_product_data(all_prod_rows, mp, start_d, end_d)
         self._update_daily_metrics(all_camp_rows, mp)
 
+        # ── AdsDataSyncLog: per-day completeness for SB and SD ──────────────
+        self._log_per_day_completeness(
+            mp, start_d, end_d, chunks, chunk_status,
+            sb_rows_all=all_sb_rows, sd_rows_all=all_sd_rows,
+        )
+
         self.stdout.write(self.style.SUCCESS('\n✅  PPC backfill complete.\n'))
+
+    # ── AdsDataSyncLog writer ─────────────────────────────────────────────────
+    def _log_per_day_completeness(
+        self, mp: str, start_d: date, end_d: date,
+        chunks: list[tuple[date, date]],
+        chunk_status: dict[tuple[str, date, date], str],
+        sb_rows_all: list[dict],
+        sd_rows_all: list[dict],
+    ):
+        """
+        Write one AdsDataSyncLog row per (mp, day, source) for sb_daily and
+        sd_daily. Status semantics:
+
+            chunk_status[(source, cs, ce)] is one of:
+              • 'ok'                  → report came back; per-day = 'ok' if rows
+                                        present, else 'empty_from_amazon'
+              • 'failed'              → report timed out / FAILED
+              • 'submission_skipped'  → report never submitted (429 etc.)
+              • missing               → chunk has no entry (shouldn't happen)
+
+        SB/SD missing for a day → only PPC metrics affected; revenue/orders/SP
+        remain visible. Core completeness is NOT gated by these.
+        """
+        # Group rows by date so we can distinguish ok-with-data vs empty
+        sb_dates_with_rows: set[date] = set()
+        for r in sb_rows_all:
+            d = _row_date(r)
+            if d and start_d <= d <= end_d:
+                sb_dates_with_rows.add(d)
+        sd_dates_with_rows: set[date] = set()
+        for r in sd_rows_all:
+            d = _row_date(r)
+            if d and start_d <= d <= end_d:
+                sd_dates_with_rows.add(d)
+
+        def _chunk_for(d: date):
+            for cs, ce in chunks:
+                if cs <= d <= ce:
+                    return (cs, ce)
+            return None
+
+        cur = start_d
+        sb_ok = sb_empty = sb_fail = 0
+        sd_ok = sd_empty = sd_fail = 0
+        while cur <= end_d:
+            chunk = _chunk_for(cur)
+
+            for source, rows_with_data in (
+                ('sb_daily', sb_dates_with_rows),
+                ('sd_daily', sd_dates_with_rows),
+            ):
+                cs_state = chunk_status.get((source, *chunk), 'failed') if chunk else 'failed'
+                if cs_state == 'ok':
+                    if cur in rows_with_data:
+                        status, err = 'ok', ''
+                    else:
+                        status, err = 'empty_from_amazon', ''
+                elif cs_state == 'submission_skipped':
+                    status = 'failed'
+                    err    = 'report submission skipped (429 / credentials)'
+                else:
+                    status = 'failed'
+                    err    = 'report did not complete (timeout or FAILED)'
+
+                # Counters for summary
+                if source == 'sb_daily':
+                    sb_ok   += (status == 'ok')
+                    sb_empty+= (status == 'empty_from_amazon')
+                    sb_fail += (status == 'failed')
+                else:
+                    sd_ok   += (status == 'ok')
+                    sd_empty+= (status == 'empty_from_amazon')
+                    sd_fail += (status == 'failed')
+
+                try:
+                    log_sync(mp, cur, source, status, error_message=err)
+                except Exception as e:
+                    self.stderr.write(self.style.WARNING(
+                        f'  AdsDataSyncLog write ({source}/{cur}) failed: {e}'))
+
+            cur += timedelta(days=1)
+
+        self.stdout.write(self.style.SUCCESS(
+            f'  ✓ AdsDataSyncLog:  '
+            f'SB ok={sb_ok} empty={sb_empty} failed={sb_fail}  ·  '
+            f'SD ok={sd_ok} empty={sd_empty} failed={sd_fail}'
+        ))
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

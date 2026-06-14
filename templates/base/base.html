@@ -505,6 +505,48 @@ tfoot td:first-child { text-align: left; }
     <span class="nav-icon">📈</span> Historical View
   </a>
   {% endif %}
+  <a href="{% url 'dashboard:hourly_patterns' %}" class="nav-item {% block nav_hourly %}{% endblock %}">
+    <span class="nav-icon">⏰</span> Hourly Patterns
+  </a>
+  <a href="{% url 'dashboard:campaigns_list' %}" class="nav-item {% block nav_campaigns %}{% endblock %}">
+    <span class="nav-icon">🎯</span> Campaigns
+  </a>
+  <a href="{% url 'dashboard:search_terms' %}" class="nav-item {% block nav_search_terms %}{% endblock %}">
+    <span class="nav-icon">🔍</span> Search Terms
+  </a>
+  <a href="{% url 'dashboard:placements' %}" class="nav-item {% block nav_placements %}{% endblock %}">
+    <span class="nav-icon">📍</span> Placements
+  </a>
+  <a href="{% url 'dashboard:leaderboards' %}" class="nav-item {% block nav_leaderboards %}{% endblock %}">
+    <span class="nav-icon">🏆</span> Leaderboards
+  </a>
+  <a href="{% url 'dashboard:morning_report' %}" class="nav-item {% block nav_morning %}{% endblock %}">
+    <span class="nav-icon">📰</span> Morning Report
+  </a>
+  <a href="{% url 'dashboard:ba_queries' %}" class="nav-item {% block nav_ba_queries %}{% endblock %}">
+    <span class="nav-icon">🔎</span> BA: Search Queries
+  </a>
+  <a href="{% url 'dashboard:ba_baskets' %}" class="nav-item {% block nav_ba_baskets %}{% endblock %}">
+    <span class="nav-icon">🛍️</span> BA: Baskets & Repeat
+  </a>
+  <a href="{% url 'dashboard:ba_market_share' %}" class="nav-item {% block nav_ba_market_share %}{% endblock %}">
+    <span class="nav-icon">📊</span> BA: Market Share
+  </a>
+  <a href="{% url 'dashboard:ba_share_trend' %}" class="nav-item {% block nav_ba_share_trend %}{% endblock %}">
+    <span class="nav-icon">📈</span> BA: Share Trend
+  </a>
+  <a href="{% url 'dashboard:ai_recommendations' %}" class="nav-item {% block nav_ai_recs %}{% endblock %}">
+    <span class="nav-icon">🤖</span> AI Recommendations
+  </a>
+  <a href="{% url 'dashboard:pnl_daily' %}" class="nav-item {% block nav_pnl %}{% endblock %}">
+    <span class="nav-icon">💵</span> Daily P&L
+  </a>
+  <a href="{% url 'dashboard:pnl_skus' %}" class="nav-item {% block nav_pnl_skus %}{% endblock %}">
+    <span class="nav-icon">📦</span> SKU Profitability
+  </a>
+  <a href="{% url 'dashboard:pnl_breakdown' %}" class="nav-item {% block nav_pnl_breakdown %}{% endblock %}">
+    <span class="nav-icon">🌐</span> P&L Breakdown
+  </a>
   {% if user|has_perm:'can_view_ppc' %}
   <a href="{% url 'dashboard:ppc' %}" class="nav-item {% block nav_ppc %}{% endblock %}">
     <span class="nav-icon">📣</span> PPC Analytics
@@ -618,8 +660,10 @@ function updateClock(){
 }
 updateClock(); setInterval(updateClock, 30000);
 
-// CSRF cookie helper
+// CSRF token — cookie is HttpOnly so read from template tag instead
+const CSRF_TOKEN = '{{ csrf_token }}';
 function getCookie(n){
+  if (n === 'csrftoken') return CSRF_TOKEN;
   const v = document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');
   return v ? v.pop() : '';
 }

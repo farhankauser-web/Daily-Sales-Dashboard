@@ -1,0 +1,1094 @@
+{% extends "base/base.html" %}
+{% block title %}{{ campaign_name }}{% endblock %}
+{% block nav_campaigns %}active{% endblock %}
+{% block page_title %}{{ campaign_name }}{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+<a href="{% url 'dashboard:campaigns_list' %}?mp={{ marketplace }}"
+   class="btn btn-secondary btn-sm"
+   style="margin-left:8px;padding:5px 10px;font-size:11px;text-decoration:none">← Back</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* KPI strip */
+  .cd-meta { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+              padding:10px 14px; margin-bottom:10px; display:flex;
+              align-items:center; gap:14px; flex-wrap:wrap; font-size:12px; }
+  .cd-meta .ttl { font-size:13px; font-weight:600; color:#0F1111; }
+  .cd-meta .sub { color:#555; }
+  .cd-meta .badge { display:inline-block; padding:2px 8px; border-radius:4px;
+                    font-size:10px; font-weight:600; }
+  .cd-meta .badge.sp { background:#E1EFFA; color:#1B4A75; }
+  .cd-meta .badge.sb { background:#EDE3F7; color:#4A2080; }
+  .cd-meta .badge.sd { background:#FDF1DC; color:#7A5400; }
+
+  .cd-kpi-strip { display:grid; grid-template-columns: repeat(8, 1fr); gap:8px;
+                   margin-bottom:14px; }
+  .cd-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:8px 10px; }
+  .cd-kpi .lbl { font-size:10px; color:#8A8A8A; }
+  .cd-kpi .val { font-size:16px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .cd-kpi .sub { font-size:10px; color:#555; margin-top:1px; }
+  .cd-kpi.profit  { border-left:4px solid #067D62; }
+  .cd-kpi.loss    { border-left:4px solid #C40000; }
+
+  .cd-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                padding:8px 12px; border-radius:6px; margin-bottom:12px;
+                font-size:12px; }
+
+  /* Trend chart */
+  .cd-chart-wrap { background:#FFFFFF; border:1px solid #D5D9D9;
+                    border-radius:8px; padding:10px; margin-bottom:14px; }
+  .cd-chart-head { display:flex; justify-content:space-between;
+                    align-items:center; margin-bottom:8px; }
+  .cd-chart-head .lbl { font-size:13px; font-weight:600; color:#0F1111; }
+  .cd-chart-head select { padding:3px 8px; font-size:11px; border-radius:4px;
+                            border:1px solid #D5D9D9; }
+
+  /* Tabs */
+  .cd-tabs { display:flex; gap:2px; border-bottom:1px solid #D5D9D9;
+              margin-bottom:10px; }
+  .cd-tab  { padding:8px 14px; cursor:pointer; font-size:12px; font-weight:600;
+              color:#555; border-bottom:2px solid transparent; user-select:none; }
+  .cd-tab:hover { color:#0F1111; }
+  .cd-tab.active { color:#0F1111; border-bottom-color:#067D62; }
+
+  .cd-tab-pane { display:none; }
+  .cd-tab-pane.active { display:block; }
+
+  /* Table */
+  .cd-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .cd-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555;
+                        position:sticky; top:0; z-index:1; cursor:pointer; }
+  .cd-table thead th.text-left { text-align:left; }
+  .cd-table thead th.sorted { color:#0F1111; }
+  .cd-table tbody td { padding:6px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .cd-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit; }
+  .cd-table tbody tr:hover { background:#F8F9FA; }
+  .cd-table tbody td.profit-pos { color:#067D62; font-weight:600; }
+  .cd-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .cd-table tbody td.contrib-cell {
+    background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
+    text-align:left; padding-left:8px;
+  }
+
+  .cd-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+              padding:24px; text-align:center; color:#555; font-size:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="todayBanner" class="cd-banner" style="display:none"></div>
+
+<div class="cd-meta">
+  <span class="badge {{ campaign_type }}">{{ campaign_type|upper }}</span>
+  <span class="ttl">{{ campaign_name }}</span>
+  <span class="sub">
+    {% if campaign_brand %}· {{ campaign_brand }} {% endif %}
+    · State: {{ campaign_state }}
+    · ID: <code>{{ campaign_id }}</code>
+  </span>
+</div>
+
+<div class="cd-kpi-strip">
+  <div class="cd-kpi"><div class="lbl">Ad Spend</div>
+    <div class="val" id="kpi-spend">—</div><div class="sub" id="kpi-spend-sub"></div></div>
+  <div class="cd-kpi"><div class="lbl">Ad Revenue</div>
+    <div class="val" id="kpi-rev">—</div><div class="sub" id="kpi-rev-sub"></div></div>
+  <div class="cd-kpi profit"><div class="lbl">Gross Profit</div>
+    <div class="val" id="kpi-profit">—</div><div class="sub" id="kpi-profit-sub"></div></div>
+  <div class="cd-kpi"><div class="lbl">Margin %</div>
+    <div class="val" id="kpi-margin">—</div><div class="sub" id="kpi-margin-sub"></div></div>
+  <div class="cd-kpi"><div class="lbl">TACoS</div>
+    <div class="val" id="kpi-tacos">—</div><div class="sub" id="kpi-tacos-sub"></div></div>
+  <div class="cd-kpi"><div class="lbl">ACoS</div>
+    <div class="val" id="kpi-acos">—</div><div class="sub" id="kpi-acos-sub"></div></div>
+  <div class="cd-kpi"><div class="lbl">ROAS</div>
+    <div class="val" id="kpi-roas">—</div><div class="sub" id="kpi-roas-sub"></div></div>
+  <div class="cd-kpi"><div class="lbl">Attribution Cov.</div>
+    <div class="val" id="kpi-cov">—</div><div class="sub" id="kpi-cov-sub"></div></div>
+</div>
+
+<div class="cd-chart-wrap">
+  <div class="cd-chart-head">
+    <div class="lbl" id="trendTitle">Daily trend</div>
+    <select id="trendMetric" onchange="renderTrend()">
+      <option value="profit">Profit</option>
+      <option value="revenue" selected>Revenue</option>
+      <option value="spend">Spend</option>
+      <option value="orders">Orders</option>
+      <option value="margin_pct">Margin %</option>
+      <option value="acos">ACoS</option>
+      <option value="roas">ROAS</option>
+    </select>
+  </div>
+  <canvas id="trendChart" height="80"></canvas>
+</div>
+
+<div class="cd-tabs">
+  <div class="cd-tab active"  data-tab="skus"          onclick="switchTab('skus')">Top Contributing SKUs</div>
+  <div class="cd-tab"         data-tab="daily"         onclick="switchTab('daily')">Daily Performance</div>
+  <div class="cd-tab"         data-tab="search_terms"  onclick="switchTab('search_terms')">Search Terms</div>
+  <div class="cd-tab"         data-tab="targeting"     onclick="switchTab('targeting')">Targeting</div>
+  <div class="cd-tab"         data-tab="placements"    onclick="switchTab('placements')">Placements</div>
+  <div class="cd-tab"         data-tab="hourly"        onclick="switchTab('hourly')">Hourly Performance</div>
+</div>
+
+<div class="cd-tab-pane active" id="pane-skus">
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+              padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
+    <table class="cd-table" id="skusTable">
+      <thead><tr>
+        <th class="text-left" data-sort="product_name">Product</th>
+        <th class="text-left" data-sort="sku">SKU</th>
+        <th class="text-left" data-sort="asin">ASIN</th>
+        <th class="sorted" data-sort="profit">Profit</th>
+        <th data-sort="margin_pct">Margin %</th>
+        <th data-sort="revenue">Revenue</th>
+        <th data-sort="units">Units</th>
+        <th data-sort="orders">Orders</th>
+        <th data-sort="spend_allocation">Spend Alloc.</th>
+        <th data-sort="cogs">COGS</th>
+        <th data-sort="fees">Fees</th>
+        <th class="text-left" data-sort="contribution_pct">Contribution %</th>
+      </tr></thead>
+      <tbody id="skusBody"><tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div id="skusFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+</div>
+
+<div class="cd-tab-pane" id="pane-daily">
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+              padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
+    <table class="cd-table" id="dailyTable">
+      <thead><tr>
+        <th class="text-left">Date</th>
+        <th>Impr.</th><th>Clicks</th><th>CTR</th>
+        <th>Spend</th><th>CPC</th>
+        <th>Revenue</th><th>Orders</th><th>Units</th><th>CVR</th>
+        <th>Profit</th><th>Margin %</th>
+        <th>ACoS</th><th>ROAS</th>
+        <th>Attr Cov.</th><th>SKUs</th>
+      </tr></thead>
+      <tbody id="dailyBody"><tr><td colspan="16" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="cd-tab-pane" id="pane-search_terms">
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+              padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
+    <table class="cd-table" id="stTermsTable">
+      <thead><tr>
+        <th class="text-left">Search Term</th>
+        <th>Est. Profit</th><th>Spend</th><th>Sales</th>
+        <th>ACoS</th><th>ROAS</th>
+        <th>Orders</th><th>Clicks</th><th>CTR</th><th>CVR</th>
+        <th>Impr.</th><th class="text-left">Tags</th>
+      </tr></thead>
+      <tbody id="stTermsBody"><tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div id="stTermsFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+</div>
+
+<div class="cd-tab-pane" id="pane-targeting">
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+              padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
+    <table class="cd-table" id="tgtTable">
+      <thead><tr>
+        <th class="text-left">Target</th>
+        <th>Type</th>
+        <th>Match</th>
+        <th>Est. Profit</th>
+        <th>Spend</th><th>Sales</th>
+        <th>ACoS</th><th>ROAS</th>
+        <th>Orders</th><th>Clicks</th>
+        <th>CTR</th><th>CVR</th><th>CPC</th>
+        <th>Impr.</th>
+      </tr></thead>
+      <tbody id="tgtBody"><tr><td colspan="14" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div id="tgtFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+</div>
+
+<div class="cd-tab-pane" id="pane-placements">
+  <div id="plcVizSection" style="background:#FFFFFF;border:1px solid #D5D9D9;
+              border-radius:10px;padding:14px 18px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:700;color:#0F1111;margin-bottom:8px">
+      Spend share vs Sales share vs Profit share
+    </div>
+    <div id="plcVizRows"><div style="color:#8A8A8A;font-size:12px">Loading…</div></div>
+  </div>
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+              padding:8px;overflow:auto">
+    <table class="cd-table" id="plcTable">
+      <thead><tr>
+        <th class="text-left">Placement</th>
+        <th>Impressions</th><th>Clicks</th><th>CTR</th>
+        <th>Spend</th><th>Spend %</th>
+        <th>Sales</th><th>Sales %</th>
+        <th>Orders</th><th>ACoS</th><th>ROAS</th>
+        <th>Est. Profit</th>
+      </tr></thead>
+      <tbody id="plcBody"><tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div id="plcFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+</div>
+
+<!-- ── Hourly Performance Tab ──────────────────────────────────────── -->
+<div class="cd-tab-pane" id="pane-hourly">
+  <div id="hrBanner" style="background:#FFF8E5;border:1px solid #EAD499;
+              color:#5A4500;padding:8px 12px;border-radius:6px;margin-bottom:10px;
+              font-size:12px;display:none"></div>
+
+  <!-- Controls strip -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+              margin-bottom:10px">
+    <span style="font-size:11px;color:#8A8A8A">Metric:</span>
+    <select id="hrMetric" onchange="renderHourly()"
+            style="padding:4px 10px;font-size:11px;border-radius:4px;
+                   border:1px solid #067D62"></select>
+    <span style="font-size:11px;color:#8A8A8A;margin-left:8px">Period:</span>
+    <button class="cd-tab" data-hr-period="7d"  onclick="setHourlyPeriod('7d',  this)"
+            style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid #D5D9D9;background:#FFF;cursor:pointer">7D</button>
+    <button class="cd-tab" data-hr-period="30d" onclick="setHourlyPeriod('30d', this)"
+            style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid #D5D9D9;background:#FFF;cursor:pointer">30D</button>
+    <span style="flex:1"></span>
+    <button onclick="openHourlyUpload()"
+            style="padding:5px 12px;font-size:11px;font-weight:600;border-radius:4px;
+                   border:1px solid #067D62;background:#FFF;color:#067D62;cursor:pointer">
+      ⬆ Upload hourly CSV
+    </button>
+  </div>
+
+  <!-- Upload modal (same backend as Hourly Patterns page) -->
+  <div id="hrUploadBg" style="display:none;position:fixed;inset:0;
+              background:rgba(0,0,0,.4);z-index:9000"
+       onclick="if(event.target===this)closeHourlyUpload()">
+    <div style="position:absolute;top:8%;left:50%;transform:translateX(-50%);
+                width:520px;max-width:92%;background:#FFF;border-radius:8px;
+                padding:18px 22px;box-shadow:0 8px 28px rgba(0,0,0,.2)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0;font-size:16px">Upload hourly CSV</h3>
+        <button class="btn btn-secondary btn-sm" onclick="closeHourlyUpload()">✕</button>
+      </div>
+      <div style="font-size:12px;color:#666;margin-bottom:12px">
+        Use this to backfill days <strong>before AMS started</strong> or to fill gaps.
+        Export from Seller Central → Advertising → Reports → set
+        <em>Time unit: Hourly</em>, Group by <em>Campaign</em>, max 14 days per file.
+        Manual rows supersede AMS for the same hour.
+      </div>
+      <form id="hrUploadForm" onsubmit="return submitHourlyUpload(event)">
+        <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center;font-size:12px">
+          <label>Ad type</label>
+          <select id="hrUpAdType" name="ad_type" class="form-control" style="padding:6px;font-size:12px">
+            <option value="sp">Sponsored Products</option>
+            <option value="sb">Sponsored Brands</option>
+            <option value="sd">Sponsored Display</option>
+          </select>
+          <label>CSV file</label>
+          <input type="file" id="hrUpFile" name="file" accept=".csv,.txt" required
+                 style="padding:6px;font-size:12px"/>
+        </div>
+        <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="closeHourlyUpload()">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" id="hrUpSubmit">Upload</button>
+        </div>
+      </form>
+      <div id="hrUpResult" style="margin-top:14px;font-size:12px"></div>
+      <hr style="margin:14px 0">
+      <div style="font-size:11px;color:#666;margin-bottom:6px;font-weight:600">Recent uploads (account-wide)</div>
+      <div id="hrUpHistory" style="max-height:200px;overflow:auto;font-size:11px;font-family:'DM Mono',monospace">
+        <div style="color:#8A8A8A">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Best/Worst KPI cards -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+    <div class="cd-kpi" style="border-left:4px solid #067D62"><div class="lbl">Best ROAS hour</div>
+      <div class="val" id="hrBestRoasHour">—</div><div class="sub" id="hrBestRoasHourSub"></div></div>
+    <div class="cd-kpi" style="border-left:4px solid #C40000"><div class="lbl">Worst ACoS hour</div>
+      <div class="val" id="hrWorstAcosHour">—</div><div class="sub" id="hrWorstAcosHourSub"></div></div>
+    <div class="cd-kpi" style="border-left:4px solid #067D62"><div class="lbl">Best day</div>
+      <div class="val" id="hrBestDow">—</div><div class="sub" id="hrBestDowSub"></div></div>
+    <div class="cd-kpi" style="border-left:4px solid #C40000"><div class="lbl">Worst day</div>
+      <div class="val" id="hrWorstDow">—</div><div class="sub" id="hrWorstDowSub"></div></div>
+  </div>
+
+  <!-- Days × Hours heatmap -->
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+              padding:10px 12px;margin-bottom:12px;overflow-x:auto">
+    <div style="font-size:13px;font-weight:700;color:#0F1111;margin-bottom:6px"
+         id="hrHeatTitle">Days × Hours heatmap</div>
+    <table class="hp-heat-table" id="hrHeat"><tbody></tbody></table>
+  </div>
+
+  <!-- Day-of-week × Hours heatmap -->
+  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+              padding:10px 12px;overflow-x:auto">
+    <div style="font-size:13px;font-weight:700;color:#0F1111;margin-bottom:6px">
+      Day-of-week × hour pattern <span style="color:#777;font-weight:400;font-size:11px">— averaged across days</span>
+    </div>
+    <table class="hp-heat-table" id="hrDow"><tbody></tbody></table>
+  </div>
+  <div id="hrFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+</div>
+
+<style>
+  /* Reuse the Hourly Patterns heatmap styles inline so this tab is self-contained */
+  .hp-heat-table { border-collapse:separate; border-spacing:2px; font-size:10px; }
+  .hp-heat-table th { padding:3px 5px; color:#555; font-weight:600; text-align:center;
+                       background:#F3F4F5; border-radius:3px; font-size:10px; }
+  .hp-heat-table th.row-head { text-align:right; min-width:78px; padding-right:8px;
+                                background:transparent; font-family:inherit; font-size:11px; }
+  .hp-heat-table th.total-head { background:#EEF3F8; border-left:2px solid #232F3E; }
+  .hp-heat-table td { width:30px; height:24px; text-align:center;
+                       font-family:'DM Mono',monospace; border-radius:3px;
+                       color:#0F1111; font-size:10px; font-weight:600; cursor:default; }
+  .hp-heat-table td.empty { background:#F8F9FA; color:#C0C5CA; font-size:9px; }
+  .hp-heat-table td.empty::before { content:'—'; }
+  .hp-heat-table td.total-cell { background:#EEF3F8; color:#0F1111; font-weight:700;
+                                   border-left:2px solid #232F3E; }
+  .hp-heat-table tr.total-row td { background:#EEF3F8; color:#0F1111; font-weight:700;
+                                    border-top:2px solid #232F3E; }
+  .hp-heat-table tr.total-row td.total-cell { background:#DDE6EE; }
+  .hp-heat-table td:hover { outline:2px solid #232F3E; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const CAMPAIGN_ID = '{{ campaign_id|escapejs }}';
+let currentMP     = '{{ marketplace }}';
+let currentPeriod = '7d';
+let detailData    = null;
+let skusData      = null;
+let dailyData     = null;
+let stTermsData   = null;
+let tgtData       = null;
+let plcData       = null;
+let hrData        = null;
+let hrMetricId    = 'spend';
+let hrPeriod      = '7d';
+let chart         = null;
+let skusSort      = {key:'profit', dir:-1};
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadAll();
+}
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadAll();
+}
+
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtCurrencyFull(v) {
+  if (v == null) return '—';
+  return (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+}
+function fmtPct(v)  { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v)  { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtDec(v)  { return v == null ? '—' : Number(v).toFixed(2); }
+
+function renderBanner(d) {
+  const b = document.getElementById('todayBanner');
+  if (d.today_warning) { b.textContent = d.today_warning; b.style.display = 'block'; }
+  else                 { b.style.display = 'none'; }
+}
+
+function renderKPI(d) {
+  const k = d.kpi;
+  const setText = (id, v) => { document.getElementById(id).textContent = v; };
+  setText('kpi-spend',  fmtCurrency(k.spend));
+  setText('kpi-spend-sub', `${fmtInt(k.clicks)} clicks · ${fmtInt(k.impressions)} impr`);
+  setText('kpi-rev',    fmtCurrency(k.ad_revenue));
+  setText('kpi-rev-sub', `${fmtInt(k.orders)} orders · ${fmtInt(k.units)} units`);
+  setText('kpi-profit', k.gross_profit == null ? '—' : fmtCurrency(k.gross_profit));
+  setText('kpi-profit-sub',
+    k.gross_profit == null ? 'Available T+1' : 'After ads, COGS, fees');
+  setText('kpi-margin', k.margin_pct == null ? '—' : fmtPct(k.margin_pct));
+  setText('kpi-margin-sub', k.cvr != null ? `CVR ${fmtPct(k.cvr)}` : '');
+  setText('kpi-tacos',  k.tacos == null ? '—' : fmtPct(k.tacos));
+  setText('kpi-tacos-sub', `Acct rev ${fmtCurrency(k.window_revenue)}`);
+  setText('kpi-acos',   k.acos  == null ? '—' : fmtPct(k.acos));
+  setText('kpi-acos-sub', k.ctr != null ? `CTR ${fmtPct(k.ctr)}` : '');
+  setText('kpi-roas',   k.roas  == null ? '—' : fmtDec(k.roas));
+  setText('kpi-roas-sub', k.cpc != null ? `CPC $${fmtDec(k.cpc)}` : '');
+  setText('kpi-cov',    k.attribution_coverage_pct == null ? '—' : fmtPct(k.attribution_coverage_pct));
+  setText('kpi-cov-sub', k.attribution_coverage_pct == null ? '' :
+    (k.attribution_coverage_pct >= 80 ? 'High confidence' : 'Some sales unmatched'));
+
+  document.getElementById('trendTitle').textContent =
+    `Daily trend — ${d.period.start} → ${d.period.end}`;
+}
+
+function renderTrend() {
+  if (!detailData) return;
+  const metricId = document.getElementById('trendMetric').value;
+  const labels = detailData.trend.map(t => t.date.slice(5)); // MM-DD
+  const data   = detailData.trend.map(t => t[metricId]);
+
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: metricId,
+        data,
+        backgroundColor: data.map(v => v == null ? '#D5D9D9' :
+                                   (v < 0 ? '#FBE2E0' : '#E0F2EC')),
+        borderColor:     data.map(v => v == null ? '#A0A5AA' :
+                                   (v < 0 ? '#C40000' : '#067D62')),
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { font: { size: 10 } } },
+        x: { ticks: { font: { size: 9 } } },
+      },
+    },
+  });
+}
+
+function renderSkus(d) {
+  const body = document.getElementById('skusBody');
+  const fn   = document.getElementById('skusFootnote');
+  if (d.today_warning) {
+    body.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#5A4500;padding:24px">${d.today_warning}</td></tr>`;
+    fn.textContent = '';
+    return;
+  }
+  if (!d.rows || d.rows.length === 0) {
+    body.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:24px">No SKU attribution found for this window. Check AdsAdvertisedProductDailySnapshot ingestion.</td></tr>`;
+    fn.textContent = '';
+    return;
+  }
+
+  // Sort
+  const sorted = d.rows.slice().sort((a, b) => {
+    const av = a[skusSort.key], bv = b[skusSort.key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; if (bv == null) return -1;
+    if (typeof av === 'string') return skusSort.dir * av.localeCompare(bv);
+    return skusSort.dir * (av - bv);
+  });
+
+  // Find max contribution for bar scaling
+  const maxContrib = Math.max(0, ...sorted.map(r => r.contribution_pct));
+
+  const html = sorted.map(r => {
+    const profitClass = r.profit > 0 ? 'profit-pos' : (r.profit < 0 ? 'profit-neg' : '');
+    const barWidth = maxContrib > 0 ? (r.contribution_pct / maxContrib * 100) : 0;
+    return `<tr>
+      <td class="text-left" title="${r.product_name}">${r.product_name || '—'}</td>
+      <td class="text-left" style="color:#555">${r.sku || '—'}</td>
+      <td class="text-left" style="color:#555">${r.asin || '—'}</td>
+      <td class="${profitClass}">${fmtCurrency(r.profit)}</td>
+      <td>${fmtPct(r.margin_pct)}</td>
+      <td>${fmtCurrency(r.revenue)}</td>
+      <td>${fmtInt(r.units)}</td>
+      <td>${fmtInt(r.orders)}</td>
+      <td>${fmtCurrency(r.spend_allocation)}</td>
+      <td>${fmtCurrency(r.cogs)}</td>
+      <td>${fmtCurrency(r.fees)}</td>
+      <td class="contrib-cell" style="--bar:${barWidth}%">${fmtPct(r.contribution_pct)}</td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = html;
+  fn.innerHTML = `<strong>${sorted.length}</strong> SKU(s) · `
+    + `Spend allocation = (campaign daily spend) × (SKU revenue / campaign revenue) per day. `
+    + `Contribution % uses positive-profit base — sums to ≤ 100%.`;
+
+  // Sort arrows
+  document.querySelectorAll('#skusTable thead th').forEach(th => {
+    th.classList.remove('sorted');
+    if (th.dataset.sort === skusSort.key) th.classList.add('sorted');
+  });
+}
+
+function renderDaily(d) {
+  const body = document.getElementById('dailyBody');
+  if (!d.rows || d.rows.length === 0) {
+    body.innerHTML = `<tr><td colspan="16" style="text-align:center;color:#8A8A8A;padding:24px">No daily data for this window.</td></tr>`;
+    return;
+  }
+  const html = d.rows.map(r => {
+    const profitClass = r.profit == null ? '' :
+      (r.profit > 0 ? 'profit-pos' : (r.profit < 0 ? 'profit-neg' : ''));
+    return `<tr>
+      <td class="text-left">${r.date}</td>
+      <td>${fmtInt(r.impressions)}</td>
+      <td>${fmtInt(r.clicks)}</td>
+      <td>${r.ctr == null ? '—' : fmtPct(r.ctr)}</td>
+      <td>${fmtCurrency(r.spend)}</td>
+      <td>${r.cpc == null ? '—' : '$'+fmtDec(r.cpc)}</td>
+      <td>${fmtCurrency(r.revenue)}</td>
+      <td>${fmtInt(r.orders)}</td>
+      <td>${fmtInt(r.units)}</td>
+      <td>${r.cvr == null ? '—' : fmtPct(r.cvr)}</td>
+      <td class="${profitClass}">${r.profit == null ? '—' : fmtCurrency(r.profit)}</td>
+      <td>${r.margin_pct == null ? '—' : fmtPct(r.margin_pct)}</td>
+      <td>${r.acos == null ? '—' : fmtPct(r.acos)}</td>
+      <td>${r.roas == null ? '—' : fmtDec(r.roas)}</td>
+      <td>${r.attribution_coverage_pct == null ? '—' : fmtPct(r.attribution_coverage_pct)}</td>
+      <td>${r.sku_count_attributed == null ? '—' : fmtInt(r.sku_count_attributed)}</td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = html;
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll('.cd-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+  document.querySelectorAll('.cd-tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-'+tabId));
+  // Lazy load — fetch only when a tab is opened, never refetch unless period/mp changes
+  if (tabId === 'daily'        && !dailyData)   loadDaily();
+  if (tabId === 'search_terms' && !stTermsData) loadCampaignSearchTerms();
+  if (tabId === 'targeting'    && !tgtData)     loadCampaignTargeting();
+  if (tabId === 'placements'   && !plcData)     loadCampaignPlacements();
+  if (tabId === 'hourly'       && !hrData)      loadCampaignHourly();
+}
+
+// SKU sort handler
+document.querySelectorAll('#skusTable thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (!key) return;
+    if (skusSort.key === key) skusSort.dir *= -1;
+    else                       skusSort = {key, dir: -1};
+    if (skusData) renderSkus(skusData);
+  });
+});
+
+async function loadAll() {
+  // Reset every tab's cache so period/mp changes always refetch.
+  detailData = skusData = dailyData = stTermsData = tgtData = plcData = null;
+  document.getElementById('skusBody').innerHTML =
+    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+  document.getElementById('dailyBody').innerHTML =
+    '<tr><td colspan="16" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+  document.getElementById('stTermsBody').innerHTML =
+    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Switch to tab to load</td></tr>';
+  document.getElementById('tgtBody').innerHTML =
+    '<tr><td colspan="14" style="text-align:center;color:#8A8A8A">Switch to tab to load</td></tr>';
+  document.getElementById('plcBody').innerHTML =
+    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Switch to tab to load</td></tr>';
+  document.getElementById('plcVizRows').innerHTML =
+    '<div style="color:#8A8A8A;font-size:12px">Switch to Placements tab to load</div>';
+
+  try {
+    const dResp = await fetch(`/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/?mp=${currentMP}&period=${currentPeriod}`);
+    detailData = await dResp.json();
+    renderBanner(detailData);
+    renderKPI(detailData);
+    renderTrend();
+  } catch (e) { console.error('detail fetch failed', e); }
+
+  try {
+    const sResp = await fetch(`/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/skus/?mp=${currentMP}&period=${currentPeriod}`);
+    skusData = await sResp.json();
+    renderSkus(skusData);
+  } catch (e) { console.error('skus fetch failed', e); }
+
+  // If a non-default tab is currently active, refresh its data too.
+  const activeTab = document.querySelector('.cd-tab.active').dataset.tab;
+  if (activeTab === 'daily')        loadDaily();
+  if (activeTab === 'search_terms') loadCampaignSearchTerms();
+  if (activeTab === 'targeting')    loadCampaignTargeting();
+  if (activeTab === 'placements')   loadCampaignPlacements();
+  if (activeTab === 'hourly')       loadCampaignHourly();
+}
+
+async function loadDaily() {
+  try {
+    const r = await fetch(`/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/daily/?mp=${currentMP}&period=${currentPeriod}`);
+    dailyData = await r.json();
+    renderDaily(dailyData);
+  } catch (e) { console.error('daily fetch failed', e); }
+}
+
+// ── Search Terms tab — reuses /api/search-terms/ with campaign_id filter ────
+async function loadCampaignSearchTerms() {
+  document.getElementById('stTermsBody').innerHTML =
+    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+  try {
+    const params = new URLSearchParams({
+      mp: currentMP, period: currentPeriod,
+      campaign_id: CAMPAIGN_ID, limit: '500', sort: 'spend', dir: 'desc',
+    });
+    const r = await fetch(`/dashboard/api/search-terms/?${params}`);
+    stTermsData = await r.json();
+    renderCampaignSearchTerms(stTermsData);
+  } catch (e) { console.error('search-terms fetch failed', e); }
+}
+
+function renderCampaignSearchTerms(d) {
+  const body = document.getElementById('stTermsBody');
+  const fn   = document.getElementById('stTermsFootnote');
+  if (!d.rows || d.rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:24px">No search terms recorded for this campaign in the window.</td></tr>';
+    fn.textContent = '';
+    return;
+  }
+  body.innerHTML = d.rows.map(r => {
+    const profClass = r.estimated_profit > 0 ? 'profit-pos' :
+                      (r.estimated_profit < 0 ? 'profit-neg' : '');
+    const tags = (r.tags || []).map(t =>
+      `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;margin-right:2px;background:#F3F4F5;color:#555">${t.replace(/_/g,' ')}</span>`
+    ).join('');
+    return `<tr>
+      <td class="text-left" title="${r.search_term}">${r.search_term || '—'}</td>
+      <td class="${profClass}">${fmtCurrency(r.estimated_profit)}</td>
+      <td>${fmtCurrency(r.spend)}</td>
+      <td>${fmtCurrency(r.sales)}</td>
+      <td>${r.acos == null ? '—' : fmtPct(r.acos)}</td>
+      <td>${r.roas == null ? '—' : fmtDec(r.roas)}</td>
+      <td>${fmtInt(r.orders)}</td>
+      <td>${fmtInt(r.clicks)}</td>
+      <td>${r.ctr == null ? '—' : fmtPct(r.ctr)}</td>
+      <td>${r.cvr == null ? '—' : fmtPct(r.cvr)}</td>
+      <td>${fmtInt(r.impressions)}</td>
+      <td class="text-left">${tags || '<span style="color:#C0C5CA">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  const cmNote = d.cm_not_ready_warning ? ` <strong style="color:#5A4500">${d.cm_not_ready_warning}</strong>` : '';
+  fn.innerHTML = `<strong>${d.kpi.shown_terms}</strong> of <strong>${d.kpi.distinct_terms}</strong> terms shown. <em>${d.profit_proxy_note}</em>${cmNote}`;
+}
+
+// ── Targeting tab — keywords + product/category targets + audiences ─────────
+async function loadCampaignTargeting() {
+  document.getElementById('tgtBody').innerHTML =
+    '<tr><td colspan="14" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+  try {
+    const r = await fetch(`/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/targeting/?mp=${currentMP}&period=${currentPeriod}`);
+    tgtData = await r.json();
+    renderCampaignTargeting(tgtData);
+  } catch (e) { console.error('targeting fetch failed', e); }
+}
+
+function renderCampaignTargeting(d) {
+  const body = document.getElementById('tgtBody');
+  const fn   = document.getElementById('tgtFootnote');
+  if (!d.rows || d.rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#8A8A8A;padding:24px">No targeting rows for this window.</td></tr>';
+    fn.textContent = '';
+    return;
+  }
+  const TYPE_LABEL = {
+    keyword: 'Keyword', product_asin: 'PAT-ASIN', product_category: 'PAT-Cat',
+    audience: 'Audience', contextual: 'Contextual', auto: 'Auto', other: 'Other',
+  };
+  body.innerHTML = d.rows.map(r => {
+    const profClass = r.estimated_profit > 0 ? 'profit-pos' :
+                      (r.estimated_profit < 0 ? 'profit-neg' : '');
+    const expr = r.expression || r.target_id;
+    const match = (r.match_types && r.match_types.length && r.match_types[0])
+      ? r.match_types.join(', ') : '—';
+    return `<tr>
+      <td class="text-left" title="${expr}">${expr}</td>
+      <td>${TYPE_LABEL[r.target_type] || r.target_type}</td>
+      <td>${match}</td>
+      <td class="${profClass}">${fmtCurrency(r.estimated_profit)}</td>
+      <td>${fmtCurrency(r.spend)}</td>
+      <td>${fmtCurrency(r.sales)}</td>
+      <td>${r.acos == null ? '—' : fmtPct(r.acos)}</td>
+      <td>${r.roas == null ? '—' : fmtDec(r.roas)}</td>
+      <td>${fmtInt(r.orders)}</td>
+      <td>${fmtInt(r.clicks)}</td>
+      <td>${r.ctr == null ? '—' : fmtPct(r.ctr)}</td>
+      <td>${r.cvr == null ? '—' : fmtPct(r.cvr)}</td>
+      <td>${r.cpc == null ? '—' : '$'+fmtDec(r.cpc)}</td>
+      <td>${fmtInt(r.impressions)}</td>
+    </tr>`;
+  }).join('');
+  fn.innerHTML = `<strong>${d.target_count}</strong> target(s) for this campaign in the window. <em>${d.profit_proxy_note}</em>`;
+}
+
+// ── Placements tab — reuses /api/placements/ with campaign_id filter ────────
+async function loadCampaignPlacements() {
+  document.getElementById('plcBody').innerHTML =
+    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+  document.getElementById('plcVizRows').innerHTML =
+    '<div style="color:#8A8A8A;font-size:12px">Loading…</div>';
+  try {
+    const r = await fetch(`/dashboard/api/placements/?mp=${currentMP}&period=${currentPeriod}&campaign_id=${encodeURIComponent(CAMPAIGN_ID)}`);
+    plcData = await r.json();
+    renderCampaignPlacements(plcData);
+  } catch (e) { console.error('placements fetch failed', e); }
+}
+
+function renderCampaignPlacements(d) {
+  const viz  = document.getElementById('plcVizRows');
+  const body = document.getElementById('plcBody');
+  const fn   = document.getElementById('plcFootnote');
+
+  if (!d.placements || d.placements.length === 0) {
+    viz.innerHTML = '<div style="color:#8A8A8A;font-size:12px">No placement data for this campaign yet — placement ingest may still be in flight.</div>';
+    body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:24px">No placement rows.</td></tr>';
+    fn.textContent = '';
+    return;
+  }
+
+  // Inline mini-viz (3 bars per placement, same shape as the dedicated page)
+  viz.innerHTML = d.placements.map(p => `
+    <div style="display:grid;grid-template-columns:130px 1fr;align-items:center;gap:12px;margin-bottom:10px">
+      <div style="font-weight:700;font-size:12px;color:#0F1111">${p.label}
+        <div style="font-size:10px;color:#777;font-weight:400">${fmtInt(p.impressions)} impr · ${fmtInt(p.clicks)} clicks</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        ${['spend','sales','profit'].map(metric => {
+          const label = metric === 'spend' ? 'Spend share' : (metric === 'sales' ? 'Sales share' : 'Profit share');
+          const pct = metric === 'spend' ? p.spend_pct : (metric === 'sales' ? p.sales_pct : p.profit_pct);
+          const amt = metric === 'spend' ? p.spend : (metric === 'sales' ? p.sales : p.estimated_profit);
+          const colour = metric === 'spend' ? '#1B4A75' : (metric === 'sales' ? '#067D62' : '#7A5400');
+          return `<div style="background:#F8F9FA;border-radius:6px;padding:6px 10px">
+            <div style="font-size:10px;color:#777;text-transform:uppercase;letter-spacing:0.3px">${label}</div>
+            <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;color:#0F1111">${fmtPct(pct)}</div>
+            <div style="font-size:10px;color:#777">${fmtCurrency(amt)}</div>
+            <div style="height:5px;background:#E5E7E8;border-radius:3px;margin-top:5px;overflow:hidden">
+              <div style="height:100%;background:${colour};width:${Math.min(pct, 100)}%;transition:width 200ms"></div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  body.innerHTML = d.placements.map(p => {
+    const profClass = p.estimated_profit > 0 ? 'profit-pos' :
+                      (p.estimated_profit < 0 ? 'profit-neg' : '');
+    return `<tr>
+      <td class="text-left">${p.label}</td>
+      <td>${fmtInt(p.impressions)}</td>
+      <td>${fmtInt(p.clicks)}</td>
+      <td>${p.ctr == null ? '—' : fmtPct(p.ctr)}</td>
+      <td>${fmtCurrency(p.spend)}</td>
+      <td>${fmtPct(p.spend_pct)}</td>
+      <td>${fmtCurrency(p.sales)}</td>
+      <td>${fmtPct(p.sales_pct)}</td>
+      <td>${fmtInt(p.orders)}</td>
+      <td>${p.acos == null ? '—' : fmtPct(p.acos)}</td>
+      <td>${p.roas == null ? '—' : fmtDec(p.roas)}</td>
+      <td class="${profClass}">${fmtCurrency(p.estimated_profit)}</td>
+    </tr>`;
+  }).join('');
+  const cmNote = d.cm_not_ready_warning ? ` <strong style="color:#5A4500">${d.cm_not_ready_warning}</strong>` : '';
+  fn.innerHTML = `<em>${d.profit_proxy_note}</em>${cmNote}`;
+}
+
+// ── Hourly Performance tab ──────────────────────────────────────────────
+// Fetches raw per-hour numbers ONCE per (mp, period) and recomputes the
+// selected metric (spend/sales/ACoS/ROAS/CPC/CTR/CVR) client-side so the
+// metric switcher never re-hits the server.
+function setHourlyPeriod(p, btn) {
+  hrPeriod = p;
+  document.querySelectorAll('[data-hr-period]').forEach(b => {
+    b.style.background = '#FFF'; b.style.borderColor = '#D5D9D9';
+    b.style.color = '#0F1111';
+  });
+  if (btn) { btn.style.background = '#067D62'; btn.style.borderColor = '#067D62'; btn.style.color = '#FFF'; }
+  hrData = null;
+  loadCampaignHourly();
+}
+
+async function loadCampaignHourly() {
+  const url = `/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/hourly/?mp=${currentMP}&period=${hrPeriod}`;
+  try {
+    const r = await fetch(url);
+    hrData = await r.json();
+    const banner = document.getElementById('hrBanner');
+    // Combine SP-only + freshness messages into one banner
+    let parts = [];
+    if (hrData.sp_only_msg) parts.push(hrData.sp_only_msg);
+    if (hrData.freshness && hrData.freshness.message) {
+      const f = hrData.freshness;
+      // Darker/stronger background when we're more than 1 day stale
+      if (f.days_stale != null && f.days_stale >= 1) {
+        banner.style.background = '#FBE2E0';
+        banner.style.borderColor = '#E5B5B0';
+        banner.style.color = '#7A2B25';
+      } else {
+        banner.style.background = '#FFF8E5';
+        banner.style.borderColor = '#EAD499';
+        banner.style.color = '#5A4500';
+      }
+      parts.push('<strong>⚠ ' + (f.days_stale ? `${f.days_stale} day(s) stale.` : 'No data.') + '</strong> ' + f.message);
+    } else {
+      banner.style.background = '#FFF8E5';
+      banner.style.borderColor = '#EAD499';
+      banner.style.color = '#5A4500';
+    }
+    // Low-activity notice — campaign barely spent in the window
+    const wt = hrData.window || {};
+    if ((wt.spend || 0) < 50 && (wt.impressions || 0) < 1000) {
+      parts.push('<strong>ℹ Low activity:</strong> this campaign had only $'
+                  + (wt.spend || 0).toFixed(2) + ' spend / '
+                  + (wt.impressions || 0).toLocaleString() + ' impressions across the window. '
+                  + 'Cells marked “—” indicate hours with no auction activity. '
+                  + 'Try a higher-volume campaign to see a fully-populated heatmap.');
+    }
+    if (parts.length) { banner.innerHTML = parts.join('<br/>'); banner.style.display = 'block'; }
+    else              { banner.style.display = 'none'; }
+    const sel = document.getElementById('hrMetric');
+    if (sel.options.length === 0) {
+      sel.innerHTML = hrData.metric_options.map(m =>
+        `<option value="${m.id}"${m.id === hrMetricId ? ' selected' : ''}>${m.label}</option>`
+      ).join('');
+    }
+    renderHourly();
+  } catch (e) { console.error('hourly fetch failed', e); }
+}
+
+function _hrValue(cell, metricId) {
+  // If the cell had no auction activity at all, treat as truly empty —
+  // distinguishes "ad didn't run this hour" from "ran but got 0 clicks".
+  const noActivity = !cell.impressions && !cell.clicks && !cell.spend;
+  if (['spend','sales','orders','clicks','impressions'].includes(metricId)) {
+    return noActivity ? null : cell[metricId];
+  }
+  const spend = cell.spend || 0, sales = cell.sales || 0;
+  const clicks = cell.clicks || 0, impr = cell.impressions || 0, orders = cell.orders || 0;
+  if (metricId === 'acos') return sales > 0 ? (spend / sales * 100) : null;
+  if (metricId === 'roas') return spend > 0 ? (sales / spend)       : null;
+  if (metricId === 'cpc')  return clicks > 0 ? (spend / clicks)     : null;
+  if (metricId === 'ctr')  return impr > 0 ? (clicks / impr * 100)  : null;
+  if (metricId === 'cvr')  return clicks > 0 ? (orders / clicks * 100) : null;
+  return null;
+}
+
+function _hrFmt(v, fmt) {
+  if (v == null) return '';
+  if (fmt === 'currency') return fmtCurrency(v);
+  if (fmt === 'integer')  return fmtInt(v);
+  if (fmt === 'percent')  return v.toFixed(1) + '%';
+  if (fmt === 'ratio')    return v.toFixed(2);
+  return String(v);
+}
+
+function _hrCellColour(v, max, min, higherBetter) {
+  if (v == null) return '';
+  if (max === min) return 'background:#E0F2EC;color:#067D62';
+  const norm = (v - min) / (max - min);
+  const intensity = Math.max(0, Math.min(1, higherBetter ? norm : (1 - norm)));
+  // Green scale: #FFFFFF (low) → #067D62 (high)
+  const r = Math.round(255 - intensity * (255 - 6));
+  const g = Math.round(255 - intensity * (255 - 125));
+  const b = Math.round(255 - intensity * (255 - 98));
+  return `background:rgb(${r},${g},${b});color:${intensity > 0.5 ? '#FFF' : '#0F1111'}`;
+}
+
+function renderHourly() {
+  if (!hrData) return;
+  const metricId = document.getElementById('hrMetric').value || 'spend';
+  hrMetricId = metricId;
+  const metric = hrData.metric_options.find(m => m.id === metricId);
+  const fmt = metric.fmt; const higherBetter = !!metric.higher_better;
+
+  const allValues = [];
+  hrData.days.forEach(d => d.hours.forEach(c => {
+    const v = _hrValue(c, metricId); if (v != null) allValues.push(v);
+  }));
+  const min = Math.min(...allValues, 0), max = Math.max(...allValues, 0.001);
+  const weekdayLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  let html = '<thead><tr><th class="row-head"></th>';
+  for (let h = 0; h < 24; h++) html += `<th>${h}</th>`;
+  html += '<th class="total-head">Total</th></tr></thead><tbody>';
+  let colTotals = new Array(24).fill(0); let colHas = new Array(24).fill(false);
+  let grand = 0; let grandHas = false;
+  hrData.days.forEach(day => {
+    html += `<tr><td class="row-head">${day.date.slice(5)} ${weekdayLabels[day.weekday]}</td>`;
+    let rowTotal = 0; let rowHas = false;
+    day.hours.forEach((c, h) => {
+      const v = _hrValue(c, metricId);
+      if (v == null) { html += `<td class="empty"></td>`; return; }
+      rowTotal += v; rowHas = true;
+      if (typeof v === 'number') { colTotals[h] += v; colHas[h] = true; }
+      const style = _hrCellColour(v, max, min, higherBetter);
+      const tip = `${day.date} h${h.toString().padStart(2,'0')} · ${metric.label} ${_hrFmt(v, fmt)} · spend $${c.spend.toFixed(0)} · sales $${c.sales.toFixed(0)} · orders ${c.orders}`;
+      html += `<td style="${style}" title="${tip}">${_hrFmt(v, fmt)}</td>`;
+    });
+    if (rowHas) { grand += rowTotal; grandHas = true;
+      html += `<td class="total-cell">${_hrFmt(rowTotal, fmt)}</td>`;
+    } else { html += `<td class="total-cell empty"></td>`; }
+    html += '</tr>';
+  });
+  html += `<tr class="total-row"><td class="row-head">Total</td>`;
+  for (let h = 0; h < 24; h++) html += colHas[h] ? `<td>${_hrFmt(colTotals[h], fmt)}</td>` : `<td></td>`;
+  html += grandHas ? `<td class="total-cell">${_hrFmt(grand, fmt)}</td>` : `<td class="total-cell"></td>`;
+  html += '</tr></tbody>';
+  document.getElementById('hrHeat').innerHTML = html;
+  document.getElementById('hrHeatTitle').textContent =
+    `Days × Hours — ${metric.label} (${hrData.period.start} → ${hrData.period.end})`;
+
+  // DOW × Hours
+  let dowHtml = '<thead><tr><th class="row-head"></th>';
+  for (let h = 0; h < 24; h++) dowHtml += `<th>${h}</th>`;
+  dowHtml += '<th class="total-head">Total</th></tr></thead><tbody>';
+  const dowVals = [];
+  hrData.dow_pattern.forEach(row => row.hours.forEach(c => {
+    const v = _hrValue(c, metricId); if (v != null) dowVals.push(v);
+  }));
+  const dowMin = Math.min(...dowVals, 0), dowMax = Math.max(...dowVals, 0.001);
+  let dowColTotals = new Array(24).fill(0);
+  hrData.dow_pattern.forEach(row => {
+    dowHtml += `<tr><td class="row-head">${weekdayLabels[row.weekday]}</td>`;
+    let rt = 0;
+    row.hours.forEach((c, h) => {
+      const v = _hrValue(c, metricId);
+      if (v == null) { dowHtml += `<td class="empty"></td>`; return; }
+      rt += v; dowColTotals[h] += v;
+      const style = _hrCellColour(v, dowMax, dowMin, higherBetter);
+      dowHtml += `<td style="${style}" title="${weekdayLabels[row.weekday]} h${h} avg · ${_hrFmt(v, fmt)}">${_hrFmt(v, fmt)}</td>`;
+    });
+    dowHtml += `<td class="total-cell">${_hrFmt(rt, fmt)}</td></tr>`;
+  });
+  dowHtml += `<tr class="total-row"><td class="row-head">Total</td>`;
+  for (let h = 0; h < 24; h++) dowHtml += `<td>${_hrFmt(dowColTotals[h], fmt)}</td>`;
+  dowHtml += `<td class="total-cell">${_hrFmt(dowColTotals.reduce((a,b)=>a+b,0), fmt)}</td>`;
+  dowHtml += '</tr></tbody>';
+  document.getElementById('hrDow').innerHTML = dowHtml;
+
+  // Best/Worst KPI cards
+  const bw = hrData.best_worst;
+  const setKpi = (id, sub, row, key, lbl) => {
+    const el = document.getElementById(id), elSub = document.getElementById(sub);
+    if (!row) { el.textContent = '—'; elSub.textContent = 'insufficient data'; return; }
+    el.textContent = `h${row.hour.toString().padStart(2,'0')}`;
+    elSub.textContent = `${lbl} ${typeof row[key]==='number' ? row[key].toFixed(2) : row[key]}  ·  $${row.spend.toFixed(0)} spend`;
+  };
+  setKpi('hrBestRoasHour',  'hrBestRoasHourSub',  bw.by_hour.best_roas,  'roas', 'ROAS');
+  setKpi('hrWorstAcosHour', 'hrWorstAcosHourSub', bw.by_hour.worst_acos, 'acos', 'ACoS');
+  const dayLbl = (row, key, lbl) => {
+    if (!row) return ['—', 'insufficient data'];
+    return [weekdayLabels[row.weekday], `${lbl} ${typeof row[key]==='number' ? row[key].toFixed(2) : row[key]}  ·  $${row.spend.toFixed(0)} spend`];
+  };
+  const [bd, bdSub] = dayLbl(bw.by_dow.best_roas,  'roas', 'ROAS');
+  const [wd, wdSub] = dayLbl(bw.by_dow.worst_acos, 'acos', 'ACoS');
+  document.getElementById('hrBestDow').textContent     = bd;
+  document.getElementById('hrBestDowSub').textContent  = bdSub;
+  document.getElementById('hrWorstDow').textContent    = wd;
+  document.getElementById('hrWorstDowSub').textContent = wdSub;
+
+  document.getElementById('hrFootnote').innerHTML =
+    `SP-only — Amazon publishes hourly facts via the Marketing Stream for Sponsored Products only. ` +
+    `Cells with &lt;$5 spend over the window are excluded from "best/worst" rankings to avoid noisy outliers.`;
+}
+
+// ── Upload modal — same backend as /dashboard/hourly/ ───────────────────
+function openHourlyUpload() {
+  document.getElementById('hrUploadBg').style.display = 'block';
+  document.getElementById('hrUpResult').innerHTML = '';
+  refreshHourlyUploadHistory();
+}
+function closeHourlyUpload() {
+  document.getElementById('hrUploadBg').style.display = 'none';
+}
+async function refreshHourlyUploadHistory() {
+  const el = document.getElementById('hrUpHistory');
+  el.innerHTML = '<div style="color:#8A8A8A">Loading…</div>';
+  try {
+    const r = await fetch(`/dashboard/api/hourly-patterns/uploads/?mp=${currentMP}`);
+    const d = await r.json();
+    if (!d.uploads || !d.uploads.length) {
+      el.innerHTML = '<div style="color:#8A8A8A">No uploads yet.</div>';
+      return;
+    }
+    el.innerHTML = d.uploads.map(u => `
+      <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #EEE">
+        <div>
+          <span style="color:${u.status==='ok'?'#067D62':'#C40000'}">${u.status==='ok'?'✓':'✗'}</span>
+          <strong>${u.ad_type.toUpperCase()}</strong>
+          ${u.date_range_start || '?'}→${u.date_range_end || '?'}
+          <span style="color:#888">(${u.days_covered}d, ${u.rows_imported}/${u.rows_in_file} rows)</span>
+        </div>
+        <div style="color:#8A8A8A">${(u.filename || '').slice(0,40)}</div>
+      </div>
+      ${u.error_message ? `<div style="color:#C40000;padding:2px 0 6px 18px">${u.error_message}</div>` : ''}
+    `).join('');
+  } catch { el.innerHTML = '<div style="color:#C40000">Failed to load history.</div>'; }
+}
+async function submitHourlyUpload(e) {
+  e.preventDefault();
+  const btn = document.getElementById('hrUpSubmit');
+  const res = document.getElementById('hrUpResult');
+  btn.disabled = true; btn.textContent = 'Uploading…'; res.innerHTML = '';
+  const form = new FormData();
+  form.append('marketplace', currentMP);
+  form.append('ad_type', document.getElementById('hrUpAdType').value);
+  form.append('file',    document.getElementById('hrUpFile').files[0]);
+  try {
+    const r = await fetch('/dashboard/api/hourly-patterns/upload/', {
+      method: 'POST', body: form,
+      headers: { 'X-CSRFToken': getCookie('csrftoken') },
+    });
+    const d = await r.json();
+    if (d.status === 'ok') {
+      res.innerHTML = `<div style="background:#E0F2EC;color:#067D62;padding:8px 10px;border-radius:4px;font-weight:600">
+        ✓ Imported ${d.rows_imported} rows over ${d.days_covered} day(s)
+        (${d.date_range_start} → ${d.date_range_end}).
+      </div>`;
+      // Reload the heatmap so the new rows appear
+      hrData = null;
+      setTimeout(loadCampaignHourly, 400);
+    } else {
+      res.innerHTML = `<div style="background:#FBE2E0;color:#9C3431;padding:8px 10px;border-radius:4px">
+        ✗ ${d.message || 'Failed'}</div>`;
+    }
+  } catch {
+    res.innerHTML = '<div style="background:#FBE2E0;color:#9C3431;padding:8px 10px;border-radius:4px">Network error.</div>';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload';
+    refreshHourlyUploadHistory();
+  }
+  return false;
+}
+
+loadAll();
+</script>
+{% endblock %}

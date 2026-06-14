@@ -1,0 +1,370 @@
+{% extends "base/base.html" %}
+{% block title %}Search Query Performance{% endblock %}
+{% block nav_ba_queries %}active{% endblock %}
+{% block page_title %}Brand Analytics — Search Query Performance{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<span style="margin-left:12px;font-size:11px;color:#8A8A8A">ASIN:</span>
+<select id="asinPicker" class="form-control"
+        style="margin-left:6px;padding:5px 10px;font-size:11px;font-family:'DM Mono',monospace;
+               width:auto;min-width:220px;background:#FFF;border:1px solid #067D62"
+        onchange="setAsin(this.value)"></select>
+<span style="margin-left:8px;font-size:11px;color:#8A8A8A">Week:</span>
+<select id="weekPicker" class="form-control"
+        style="margin-left:6px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setWeek(this.value)"></select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ba-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                padding:10px 14px; border-radius:6px; margin-bottom:12px;
+                font-size:13px; }
+
+  .ba-meta { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+              padding:10px 14px; margin-bottom:12px; font-size:12px;
+              display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .ba-meta strong { color:#0F1111; }
+  .ba-meta .asin { font-family:'DM Mono',monospace; background:#F3F4F5;
+                    padding:2px 8px; border-radius:4px; }
+
+  .ba-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .ba-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:10px 14px; }
+  .ba-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .ba-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .ba-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .ba-kpi.share { border-left:4px solid #067D62; }
+
+  .ba-tag-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+                 padding:8px 12px; margin-bottom:10px;
+                 display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .ba-tag-bar .lbl { font-size:11px; color:#8A8A8A; margin-right:4px; }
+  .ba-tag-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+                  padding:4px 10px; border-radius:14px; cursor:pointer;
+                  font-size:11px; font-weight:600; user-select:none; }
+  .ba-tag-pill:hover { background:#EAEDED; }
+  .ba-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:#067D62; }
+  .ba-tag-pill .count { background:rgba(0,0,0,0.12); margin-left:6px;
+                        padding:1px 6px; border-radius:8px; font-size:10px; }
+  .ba-tag-pill.active .count { background:rgba(255,255,255,0.25); }
+
+  .ba-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .ba-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555;
+                        position:sticky; top:0; z-index:1; cursor:pointer;
+                        user-select:none; }
+  .ba-table thead th.text-left { text-align:left; }
+  .ba-table thead th.sorted { color:#0F1111; }
+  .ba-table tbody td { padding:6px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .ba-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
+                                  max-width:280px; white-space:nowrap;
+                                  overflow:hidden; text-overflow:ellipsis; }
+  .ba-table tbody td.tags-cell { text-align:left; font-family:inherit; }
+  .ba-table tbody tr:hover { background:#F8F9FA; }
+  .ba-table tbody td.delta-up   { color:#067D62; }
+  .ba-table tbody td.delta-down { color:#C40000; }
+
+  /* Share % visual bar */
+  .ba-share-cell { padding:0 !important; height:28px; min-width:90px;
+                    position:relative; }
+  .ba-share-bar { position:absolute; top:6px; bottom:6px; left:4px; right:4px;
+                  background:#F3F4F5; border-radius:3px; overflow:hidden; }
+  .ba-share-bar > div { height:100%; background:#067D62; transition:width 250ms; }
+  .ba-share-cell .pct { position:relative; z-index:1; padding:6px 8px;
+                        font-family:'DM Mono',monospace; font-weight:600; }
+
+  .ba-row-tag { display:inline-block; padding:1px 6px; border-radius:3px;
+                 font-size:9px; font-weight:600; margin-right:2px; }
+  .ba-row-tag.dominant     { background:#E0F2EC; color:#067D62; }
+  .ba-row-tag.weak         { background:#FFF1ED; color:#9C5331; }
+  .ba-row-tag.losing_pdp   { background:#FBE2E0; color:#9C3431; }
+  .ba-row-tag.scaling_opp  { background:#E1EFFA; color:#1B4A75; }
+
+  .ba-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="banner" class="ba-banner" style="display:none"></div>
+
+<div id="deltaBanner" style="display:none;background:#FFF8E5;border:1px solid #EAD499;
+            color:#5A4500;padding:8px 12px;border-radius:6px;margin-bottom:10px;
+            font-size:12px;line-height:1.5"></div>
+
+<div class="ba-meta" id="metaBar">Loading…</div>
+
+<div class="ba-kpi-strip">
+  <div class="ba-kpi"><div class="lbl">Queries we appear in</div>
+    <div class="val" id="kpi-queries">—</div>
+    <div class="sub" id="kpi-queries-sub"></div></div>
+  <div class="ba-kpi"><div class="lbl">Our impressions</div>
+    <div class="val" id="kpi-impr">—</div>
+    <div class="sub" id="kpi-impr-sub"></div></div>
+  <div class="ba-kpi"><div class="lbl">Our clicks</div>
+    <div class="val" id="kpi-clicks">—</div>
+    <div class="sub" id="kpi-clicks-sub"></div></div>
+  <div class="ba-kpi share"><div class="lbl">Weighted click share</div>
+    <div class="val" id="kpi-click-share">—</div>
+    <div class="sub" id="kpi-click-share-sub"></div></div>
+  <div class="ba-kpi share"><div class="lbl">Weighted purchase share</div>
+    <div class="val" id="kpi-purchase-share">—</div>
+    <div class="sub" id="kpi-purchase-share-sub"></div></div>
+</div>
+
+<div class="ba-tag-bar">
+  <span class="lbl">Filter:</span>
+  <span class="ba-tag-pill" data-tag="dominant" onclick="toggleTag('dominant', this)">
+    Dominant (&gt;50% click share) <span class="count" id="tag-count-dominant">0</span>
+  </span>
+  <span class="ba-tag-pill" data-tag="weak" onclick="toggleTag('weak', this)">
+    Weak (high impr, low click) <span class="count" id="tag-count-weak">0</span>
+  </span>
+  <span class="ba-tag-pill" data-tag="losing_pdp" onclick="toggleTag('losing_pdp', this)">
+    Losing PDP <span class="count" id="tag-count-losing_pdp">0</span>
+  </span>
+  <span class="ba-tag-pill" data-tag="scaling_opp" onclick="toggleTag('scaling_opp', this)">
+    Scaling Opportunity <span class="count" id="tag-count-scaling_opp">0</span>
+  </span>
+</div>
+
+<div id="emptyState" class="ba-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">🔎</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No search query data</div>
+  <div id="emptyMsg"></div>
+</div>
+
+<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+            padding:8px;overflow:auto;max-height:calc(100vh - 340px)">
+  <table class="ba-table" id="baTable">
+    <thead><tr>
+      <th class="text-left" data-sort="search_query">Search Query</th>
+      <th data-sort="search_query_score">Rank</th>
+      <th data-sort="search_query_volume" class="sorted">Volume</th>
+      <th data-sort="asin_impression_count">Our impr</th>
+      <th data-sort="impressions_share">Impr %</th>
+      <th data-sort="click_share">Click %</th>
+      <th data-sort="delta_click_share">Δ vs prior</th>
+      <th data-sort="purchase_share">Purchase %</th>
+      <th data-sort="delta_purchase_share">Δ vs prior</th>
+      <th class="text-left">Tags</th>
+    </tr></thead>
+    <tbody id="baBody"><tr><td colspan="10" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+
+<script>
+let currentMP    = '{{ marketplace }}';
+let currentAsin  = '';
+let currentWeek  = '';
+let activeTags   = new Set();
+let currentSort  = {key:'search_query_volume', dir:-1};
+let lastData     = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  currentAsin = ''; currentWeek = '';
+  loadData();
+}
+function setAsin(a) { currentAsin = a; currentWeek = ''; loadData(); }
+function setWeek(w) { currentWeek = w; loadData(); }
+
+function toggleTag(tag, el) {
+  if (activeTags.has(tag)) { activeTags.delete(tag); el.classList.remove('active'); }
+  else                     { activeTags.add(tag);    el.classList.add('active'); }
+  loadData();
+}
+
+function fmtPct(v)  { return v == null ? '—' : v.toFixed(2) + '%'; }
+function fmtInt(v)  { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtDelta(v){
+  if (v == null) return '—';
+  if (Math.abs(v) < 0.01) return '0.0 pt';
+  const sign = v > 0 ? '+' : '';
+  return sign + v.toFixed(1) + ' pt';
+}
+
+function renderKPI(d) {
+  const k = d.kpi;
+  const setText = (id, v) => { document.getElementById(id).textContent = v; };
+  setText('kpi-queries',  fmtInt(k.queries_total));
+  setText('kpi-queries-sub', `${k.queries_shown} shown`);
+  setText('kpi-impr',     fmtInt(k.asin_impressions));
+  setText('kpi-impr-sub', `${fmtInt(k.asin_clicks)} clicks · ${fmtInt(k.asin_purchases)} purchases`);
+  setText('kpi-clicks',   fmtInt(k.asin_clicks));
+  setText('kpi-clicks-sub', k.asin_impressions > 0
+    ? `${(k.asin_clicks / k.asin_impressions * 100).toFixed(2)}% CTR on our impr`
+    : '');
+  setText('kpi-click-share',   fmtPct(k.weighted_click_share));
+  setText('kpi-click-share-sub', 'Vol-weighted avg across queries');
+  setText('kpi-purchase-share', fmtPct(k.weighted_purchase_share));
+  setText('kpi-purchase-share-sub', 'Vol-weighted avg across queries');
+
+  Object.entries(d.tag_counts).forEach(([t, n]) => {
+    const el = document.getElementById('tag-count-' + t);
+    if (el) el.textContent = n;
+  });
+
+  document.getElementById('metaBar').innerHTML =
+    `<strong>${d.asin_label.title || d.asin}</strong>` +
+    `<span class="asin">${d.asin}</span>` +
+    (d.asin_label.brand ? `<span>· ${d.asin_label.brand}</span>` : '') +
+    (d.asin_label.sku ? `<span>· SKU ${d.asin_label.sku}</span>` : '') +
+    `<span>· Week ${d.week_start} → ${d.week_end}</span>` +
+    `<span style="margin-left:auto;color:#777;font-size:11px">` +
+    `${d.weeks.length} week(s) ingested for this ASIN</span>`;
+
+  // Δ-vs-prior banner — explains WHY the delta column is empty when there's no
+  // second week ingested, with the exact command to fix it.
+  const dBanner = document.getElementById('deltaBanner');
+  if (d.delta_state && !d.delta_state.has_prior_week && d.delta_state.message) {
+    dBanner.innerHTML =
+      `<strong>⚠️ Δ vs prior is empty.</strong> ` + d.delta_state.message
+        .replace(/`([^`]+)`/g, '<code style="background:#FFF;padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
+    dBanner.style.display = 'block';
+  } else {
+    dBanner.style.display = 'none';
+  }
+}
+
+function populateDropdowns(d) {
+  const ap = document.getElementById('asinPicker');
+  // Show ASIN + product name in each option so the selector is meaningful at a glance.
+  // d.asins is a flat list; d.asin_labels (when present) maps asin → {title, sku, brand}.
+  const labels = d.asin_labels || {};
+  const optHtml = d.asins.map(a => {
+    const lbl = labels[a] || {};
+    const human = (lbl.title || lbl.sku || a).slice(0, 50);
+    const text  = `${a} · ${human}`;
+    return `<option value="${a}"${a===d.asin?' selected':''}>${text}</option>`;
+  }).join('');
+  if (ap.options.length !== d.asins.length) {
+    ap.innerHTML = optHtml;
+  } else {
+    ap.value = d.asin;
+  }
+  const wp = document.getElementById('weekPicker');
+  if (wp.options.length !== d.weeks.length) {
+    wp.innerHTML = d.weeks.map(w => `<option value="${w}"${w===d.week_start?' selected':''}>${w}</option>`).join('');
+  } else {
+    wp.value = d.week_start;
+  }
+}
+
+function shareCell(pct) {
+  const w = Math.min(100, pct);
+  return `<td class="ba-share-cell">
+    <div class="ba-share-bar"><div style="width:${w}%"></div></div>
+    <div class="pct">${fmtPct(pct)}</div>
+  </td>`;
+}
+
+function renderTable(d) {
+  const tbody = document.getElementById('baBody');
+  if (!d.rows || d.rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#8A8A8A;padding:24px">No queries match the active filters.</td></tr>';
+    return;
+  }
+  const sorted = d.rows.slice().sort((a, b) => {
+    const av = a[currentSort.key], bv = b[currentSort.key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; if (bv == null) return -1;
+    if (typeof av === 'string') return currentSort.dir * av.localeCompare(bv);
+    return currentSort.dir * (av - bv);
+  });
+
+  tbody.innerHTML = sorted.map(r => {
+    const tags = (r.tags || []).map(t =>
+      `<span class="ba-row-tag ${t}" title="${t.replace(/_/g,' ')}">${t.replace(/_/g,' ')}</span>`
+    ).join('');
+    const dcc = r.delta_click_share == null ? '' :
+      (r.delta_click_share > 0 ? 'delta-up' : (r.delta_click_share < 0 ? 'delta-down' : ''));
+    const dpc = r.delta_purchase_share == null ? '' :
+      (r.delta_purchase_share > 0 ? 'delta-up' : (r.delta_purchase_share < 0 ? 'delta-down' : ''));
+    return `<tr>
+      <td class="text-left" title="${r.search_query}">${r.search_query}</td>
+      <td>#${r.search_query_score}</td>
+      <td>${fmtInt(r.search_query_volume)}</td>
+      <td>${fmtInt(r.asin_impression_count)}</td>
+      <td>${fmtPct(r.impressions_share)}</td>
+      ${shareCell(r.click_share)}
+      <td class="${dcc}">${fmtDelta(r.delta_click_share)}</td>
+      ${shareCell(r.purchase_share)}
+      <td class="${dpc}">${fmtDelta(r.delta_purchase_share)}</td>
+      <td class="tags-cell">${tags || '<span style="color:#C0C5CA">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('#baTable thead th').forEach(th => {
+    th.classList.remove('sorted');
+    if (th.dataset.sort === currentSort.key) th.classList.add('sorted');
+  });
+
+  document.getElementById('footnote').innerHTML =
+    `<strong>${d.kpi.queries_shown}</strong> of <strong>${d.kpi.queries_total}</strong> queries shown. ` +
+    `Click share = % of all clicks on this query that landed on our ASIN. ` +
+    `Δ columns compare to the prior available week for the same ASIN.`;
+}
+
+document.querySelectorAll('#baTable thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (!key) return;
+    if (currentSort.key === key) currentSort.dir *= -1;
+    else                          currentSort = {key, dir:-1};
+    if (lastData) renderTable(lastData);
+  });
+});
+
+async function loadData() {
+  const params = new URLSearchParams({mp: currentMP});
+  if (currentAsin) params.set('asin', currentAsin);
+  if (currentWeek) params.set('week_start', currentWeek);
+  if (activeTags.size > 0) params.set('tags', [...activeTags].join(','));
+  try {
+    const r = await fetch(`/dashboard/api/ba/queries/?${params}`);
+    const d = await r.json();
+    lastData = d;
+
+    const banner = document.getElementById('banner');
+    if (d.no_data) {
+      banner.textContent = d.no_data_msg;
+      banner.style.display = 'block';
+      document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('emptyMsg').textContent = d.no_data_msg;
+      return;
+    }
+    banner.style.display = 'none';
+    document.getElementById('emptyState').style.display = 'none';
+
+    populateDropdowns(d);
+    renderKPI(d);
+    renderTable(d);
+  } catch (e) {
+    console.error('ba/queries fetch failed', e);
+  }
+}
+
+loadData();
+</script>
+{% endblock %}

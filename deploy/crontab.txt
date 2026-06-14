@@ -1,0 +1,143 @@
+# Infinitee Xclusives — local crontab
+# ─────────────────────────────────────────────────────────────────────────────
+# Install: crontab /Users/farhankauser/Desktop/project/infinitee_app/deploy/crontab.txt
+# Verify:  crontab -l
+# Edit:    open this file in PyCharm, change, save, re-run the install command
+#
+# IMPORTANT: cron on macOS DOES NOT run when the Mac is asleep or powered off.
+# If your machine sleeps, switch to a launchd LaunchAgent — ping me and I'll
+# write the .plist.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Environment for cron's stripped shell
+PATH=/opt/anaconda3/envs/infinitee/bin:/usr/local/bin:/usr/bin:/bin
+PYTHON=/opt/anaconda3/envs/infinitee/bin/python
+MANAGE=/Users/farhankauser/Desktop/project/infinitee_app/manage.py
+LOG=/Users/farhankauser/Desktop/project/infinitee_app/logs
+
+# ── HOURLY: per-hour metric snapshot ─────────────────────────────────────────
+# At HH:05 every hour, snapshot today's per-hour rows for every active marketplace.
+# Also refreshes today's DailyMetric + DailySkuSnapshot (sync_hourly_window does
+# both off the same parsed report — no extra SP-API call).
+5 * * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE snapshot_hourly_metrics >> $LOG/hourly.log 2>&1
+
+# ── DAILY: yesterday's full DailyMetric (back-fill for safety) ───────────────
+# Runs at 10:00 UTC (~03:00 PT) every day.
+0 10 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_daily_metrics >> $LOG/daily.log 2>&1
+
+# ── DAILY: finalize yesterday at 00:45 local ─────────────────────────────────
+# Locks yesterday's DailyMetric + DailySkuSnapshot (sets finalized_at).
+# After this fires the hourly cron stops rewriting yesterday's rows.
+# If this misses (Mac asleep), snapshot_hourly_metrics auto-runs a catch-up.
+45 0 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE finalize_yesterday >> $LOG/finalize.log 2>&1
+
+# ── DAILY: PPC backfill (7-day window for late attribution) ──────────────────
+# Runs at 06:00 local every day. Pulls SP/SB/SD campaign + ASIN-level spend
+# for the last 7 days. PPC fields can still update even on finalized rows
+# (Amazon's PPC attribution drifts for up to ~14 days post-click).
+# Also writes per-day AdsDataSyncLog rows for source='sb_daily' / 'sd_daily'.
+0 6 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE backfill_ppc --marketplace usa --days 7 >> $LOG/ppc_daily.log 2>&1
+
+# ── EVERY 30 MIN: live SUMMARY pull for TODAY (Ads API) ─────────────────────
+# Replaces backfill_ppc --today because that uses DAILY time-unit which Amazon
+# doesn't aggregate until the day closes (returns 0 rows during the day).
+# SUMMARY refreshes continuously, matching the Ads UI within ~15-30 min.
+# Writes per-campaign rows to PPCCampaignSnapshot for today; allocator's
+# max(AMS, daily) rule then surfaces these values on the dashboard.
+*/30 * * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_today_ppc --marketplace usa >> $LOG/ppc_today.log 2>&1
+
+# ── EVERY 30 MIN (offset +5): recompute today's SKU allocation ──────────────
+# Runs 5 min after sync_today_ppc so allocator sees the freshest daily totals.
+5,35 * * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE compute_sku_ppc --marketplace usa --days 1 >> $LOG/sku_ppc.log 2>&1
+
+# ── EVERY MINUTE: ingest AMS events from S3 (real hourly SP data) ────────────
+# Amazon Marketing Stream pushes minute-level SP traffic + conversion events
+# to our S3 bucket via Firehose. This cron polls new objects, parses them,
+# and upserts PPCCampaignHourlySnapshot. It is the replacement for the dead
+# backfill_sp_hourly job — the v3 Ads Reporting API doesn't actually support
+# timeUnit=HOURLY for SP, but AMS does (event-stream architecture).
+#
+# Requires AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY in the environment, or
+# ~/.aws/credentials configured for the user running cron.
+* * * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE ingest_ams_s3 --max-objects 100 >> $LOG/ams_ingest.log 2>&1
+
+# ── DAILY: refresh AMS subscription statuses from Amazon ─────────────────────
+# Detects subscriptions that flipped to ARCHIVED / FAILED so we surface it.
+30 5 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE seed_ams_subscriptions >> $LOG/ams_subs.log 2>&1
+
+# ── HOURLY: recompute today's SKU-level PPC allocation (provisional) ─────────
+# At HH:15, after the hourly orders snapshot finishes, recompute today's
+# SkuPpcAllocation so the dashboard shows fresh allocations to within an hour.
+# The EMA smoothing in the allocator prevents wild swings between runs.
+15 * * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE compute_sku_ppc --days 1 >> $LOG/sku_ppc.log 2>&1
+
+# ── DAILY 03:00: settle T-1..T-3 SKU PPC allocations ─────────────────────────
+# Recomputes 3 days back from today so any newly-arrived AMS revisions and
+# spAdvertisedProduct data get folded in. Locks rows older than T-3 per §5.
+0 3 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE compute_sku_ppc --days 4 >> $LOG/sku_ppc.log 2>&1
+
+# ── WEEKLY: backfill any stray missing days (idempotent) ─────────────────────
+# Sundays at 04:00. Catches any day the hourly + daily cron may have missed.
+0 4 * * 0 cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE compute_sku_ppc --backfill >> $LOG/sku_ppc.log 2>&1
+
+# ── WEEKLY: prune hourly snapshots older than 30 days ────────────────────────
+# Sundays at 03:30.
+30 3 * * 0 cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE prune_hourly_snapshots --keep-days 30 >> $LOG/prune.log 2>&1
+
+# ── WEEKLY: prune DailyMetric + DailySkuSnapshot older than 90 days ──────────
+# Sundays at 03:45 (15 min after hourly prune).
+45 3 * * 0 cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE prune_daily_metrics --keep-days 90 >> $LOG/prune.log 2>&1
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PHASE 1 — CAMPAIGN INTELLIGENCE & SEARCH-TERM ANALYTICS
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── DAILY 03:30: submit T-1 detail reports for ALL marketplaces ──────────────
+# Submits search-term, targeting, advertised-product, placement, and ad-group
+# reports across SP/SB/SD for yesterday. Each report is recorded as 'pending'
+# in AdsDataSyncLog along with Amazon's report_id; the every-15-min poll cron
+# below resumes pending reports until they're 'ok' / 'failed'.
+30 3 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE ingest_ads_detail_reports >> $LOG/ads_detail.log 2>&1
+
+# ── EVERY 15 MIN (08:00-23:45): resume any pending detail reports ────────────
+# Most reports complete within 5-15 min, but heavy accounts can take an hour.
+# This cron keeps polling Amazon for the report_ids saved by the 03:30 cron;
+# once any report finishes it's downloaded + upserted in the same pass.
+# Restricted to daytime hours to avoid pointless wake-ups overnight.
+*/15 8-23 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE ingest_ads_detail_reports --date $(date -v-1d +\%Y-\%m-\%d) >> $LOG/ads_detail.log 2>&1
+
+# ── DAILY 05:00: compute CampaignProfitDaily + CampaignSearchTermSummary ─────
+# Reads AdsAdvertisedProductDailySnapshot + DailySkuSnapshot and writes
+# CampaignProfitDaily (per-campaign P&L) + CampaignSearchTermSummary (per-
+# campaign search-term tag counts). 5 AM gives the 03:30 submit + 15-min polls
+# ~90 min to settle yesterday's reports.
+0 5 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE compute_campaign_profit >> $LOG/campaign_profit.log 2>&1
+
+# ── DAILY 05:30: generate yesterday's profit alerts ──────────────────────────
+# Runs after compute_campaign_profit settles. Generates Critical / Warning /
+# Info alert rows surfaced in /dashboard/alerts/ and the morning report.
+# Idempotent — re-runs on the same date update rather than duplicate.
+30 5 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE generate_profit_alerts >> $LOG/profit_alerts.log 2>&1
+
+# ── DAILY 06:00: generate AI recommendations ─────────────────────────────────
+# Phase 4 — Claude reads the briefing (yesterday P&L + top/worst campaigns +
+# best/worst SKUs + alerts + BA share signal + basket signal) and persists
+# ranked, actionable recommendations into AIRecommendation. The /dashboard/ai/
+# recommendations/ page surfaces these. The user can also click "Regenerate"
+# in the UI to re-run on demand. Anthropic credits required.
+0 6 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE generate_ai_recommendations >> $LOG/ai_recommendations.log 2>&1
+
+# ── DAILY 06:30: late-attribution re-pull window (T-7 → T-1) ─────────────────
+# Amazon backfills attributed conversions for 7 days after a click. Pulling
+# yesterday-only would miss revenue that landed today against a click 6 days
+# ago. This re-pulls search-term + advertised-product for the trailing 7 days,
+# then re-computes CampaignProfitDaily for the same window. Targeting,
+# placement, ad-group don't need this — their numbers don't shift after T+1.
+30 6 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE ingest_ads_detail_reports --rewind 6 --report-kinds sp_search_term,sb_search_term,sp_advertised_product,sb_advertised_product,sd_advertised_product >> $LOG/ads_detail.log 2>&1
+0 8 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE compute_campaign_profit --rewind 6 >> $LOG/campaign_profit.log 2>&1
+
+# ── WEEKLY: prune Phase 1 fact tables older than 90 days ─────────────────────
+# Sundays at 04:00. AdsSearchTermDailySnapshot grows fastest (~20-100k rows/day).
+# CampaignProfitDaily + CampaignSearchTermSummary are KEPT indefinitely — they're
+# the long-term P&L history.
+# (TODO: write prune_ads_detail_reports — for now, manual pruning if needed.)

@@ -1,0 +1,404 @@
+{% extends "base/base.html" %}
+{% block title %}Search Term Intelligence{% endblock %}
+{% block nav_search_terms %}active{% endblock %}
+{% block page_title %}Search Term Intelligence{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+<select id="adTypeFilter" class="form-control"
+        style="margin-left:8px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setAdType(this.value)">
+  <option value="all">All Types</option>
+  <option value="sp">Sponsored Products</option>
+  <option value="sb">Sponsored Brands</option>
+</select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .st-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .st-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:10px 14px; }
+  .st-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .st-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .st-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .st-kpi.profit  { border-left:4px solid #067D62; }
+
+  .st-tag-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+                 padding:8px 12px; margin-bottom:10px;
+                 display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .st-tag-bar .lbl { font-size:11px; color:#8A8A8A; margin-right:4px; }
+  .st-tag-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+                  padding:4px 10px; border-radius:14px; cursor:pointer;
+                  font-size:11px; font-weight:600; user-select:none; }
+  .st-tag-pill:hover { background:#EAEDED; }
+  .st-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:#067D62; }
+  .st-tag-pill .count { background:rgba(0,0,0,0.12); color:inherit;
+                        margin-left:6px; padding:1px 6px; border-radius:8px;
+                        font-size:10px; }
+  .st-tag-pill.active .count { background:rgba(255,255,255,0.25); }
+
+  .st-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .st-table thead th { background:#F3F4F5; padding:8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555;
+                        position:sticky; top:0; z-index:1; cursor:pointer;
+                        user-select:none; }
+  .st-table thead th.text-left { text-align:left; }
+  .st-table thead th.sorted { color:#0F1111; }
+  .st-table thead th .help { display:inline-block; margin-left:4px;
+                              width:13px; height:13px; line-height:13px;
+                              border-radius:50%; background:#D5D9D9; color:#FFF;
+                              font-size:9px; font-weight:700; text-align:center;
+                              cursor:help; }
+  .st-table tbody td { padding:6px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .st-table tbody td.term-cell { text-align:left; font-weight:600; max-width:280px;
+                                  white-space:nowrap; overflow:hidden;
+                                  text-overflow:ellipsis; font-family:inherit;
+                                  cursor:pointer; }
+  .st-table tbody td.term-cell:hover { color:#067D62; text-decoration:underline; }
+  .st-table tbody td.tags-cell { text-align:left; font-family:inherit; }
+  .st-table tbody tr:hover { background:#F8F9FA; }
+  .st-table tbody td.profit-pos { color:#067D62; font-weight:600; }
+  .st-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+
+  .st-row-tag { display:inline-block; padding:1px 6px; border-radius:3px;
+                 font-size:9px; font-weight:600; margin-right:2px; }
+  .st-row-tag.high_spend_no_sales  { background:#FBE2E0; color:#9C3431; }
+  .st-row-tag.high_ctr_low_cvr     { background:#FFF1ED; color:#9C5331; }
+  .st-row-tag.high_profit          { background:#E0F2EC; color:#067D62; }
+  .st-row-tag.scaling_opportunity  { background:#E1EFFA; color:#1B4A75; }
+  .st-row-tag.losing_money         { background:#FBE2E0; color:#9C3431; }
+
+  /* Drill modal */
+  .st-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.4);
+                  display:flex; align-items:center; justify-content:center;
+                  z-index:1000; }
+  .st-modal    { background:#FFFFFF; border-radius:10px; padding:18px 20px;
+                  max-width:800px; width:90%; max-height:80vh; overflow:auto; }
+  .st-modal h3 { margin:0 0 8px; font-size:15px; color:#0F1111; }
+  .st-modal .close-x { float:right; cursor:pointer; color:#8A8A8A; }
+  .st-modal table { width:100%; font-size:11px; border-collapse:collapse; }
+  .st-modal th { background:#F3F4F5; padding:6px; text-align:right;
+                  font-size:11px; font-weight:600; color:#555; }
+  .st-modal th.text-left { text-align:left; }
+  .st-modal td { padding:5px; text-align:right; border-bottom:1px solid #EAEDED;
+                  font-family:'DM Mono',monospace; }
+  .st-modal td.text-left { text-align:left; font-family:inherit; }
+
+  .st-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="cmWarning" style="display:none;background:#FFF8E5;border:1px solid #EAD499;
+            color:#5A4500;padding:8px 12px;border-radius:6px;margin-bottom:10px;
+            font-size:12px"></div>
+
+<div class="st-kpi-strip">
+  <div class="st-kpi"><div class="lbl">Distinct Terms</div>
+    <div class="val" id="kpi-terms">—</div>
+    <div class="sub" id="kpi-terms-sub"></div></div>
+  <div class="st-kpi"><div class="lbl">Spend</div>
+    <div class="val" id="kpi-spend">—</div>
+    <div class="sub" id="kpi-spend-sub"></div></div>
+  <div class="st-kpi"><div class="lbl">Sales</div>
+    <div class="val" id="kpi-sales">—</div>
+    <div class="sub" id="kpi-sales-sub"></div></div>
+  <div class="st-kpi profit"><div class="lbl">
+    Estimated Profit
+    <span title="Calculated using campaign-level blended margin. Per-SKU per-search-term attribution is not provided by Amazon — this proxy is the standard approach.">ⓘ</span>
+  </div>
+    <div class="val" id="kpi-profit">—</div>
+    <div class="sub" id="kpi-profit-sub"></div></div>
+  <div class="st-kpi"><div class="lbl">Orders</div>
+    <div class="val" id="kpi-orders">—</div>
+    <div class="sub" id="kpi-orders-sub"></div></div>
+</div>
+
+<div class="st-tag-bar">
+  <span class="lbl">Filter by tag:</span>
+  {% for t in tag_options %}
+  <span class="st-tag-pill" data-tag="{{ t.id }}" onclick="toggleTag('{{ t.id }}', this)">
+    {{ t.label }} <span class="count" id="tag-count-{{ t.id }}">0</span>
+  </span>
+  {% endfor %}
+  <span style="flex:1"></span>
+  <span class="lbl" id="resultMeta"></span>
+</div>
+
+<div id="emptyState" class="st-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">🔍</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No search terms found</div>
+  <div id="emptyMsg">No AdsSearchTermDailySnapshot rows for the selected window.</div>
+</div>
+
+<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+            padding:8px;overflow:auto;max-height:calc(100vh - 360px)">
+  <table class="st-table" id="stTable">
+    <thead><tr>
+      <th class="text-left" data-sort="search_term">Search Term</th>
+      <th data-sort="profit" class="sorted">
+        Est. Profit
+        <span class="help" title="Calculated using each campaign's blended contribution margin. This is a proxy — per-SKU per-search-term attribution is not provided by Amazon.">?</span>
+      </th>
+      <th data-sort="spend">Spend</th>
+      <th data-sort="sales">Sales</th>
+      <th data-sort="acos">ACoS</th>
+      <th data-sort="roas">ROAS</th>
+      <th data-sort="orders">Orders</th>
+      <th data-sort="clicks">Clicks</th>
+      <th>CTR</th>
+      <th>CVR</th>
+      <th data-sort="impressions">Impr.</th>
+      <th>Campaigns</th>
+      <th class="text-left">Tags</th>
+    </tr></thead>
+    <tbody id="stBody"><tr><td colspan="13" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+
+<div id="drillModal" class="st-modal-bg" style="display:none" onclick="closeDrill(event)">
+  <div class="st-modal" onclick="event.stopPropagation()">
+    <span class="close-x" onclick="closeDrill()">×</span>
+    <h3 id="drillTitle">Term breakdown</h3>
+    <div id="drillBody"><div style="color:#8A8A8A">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+let currentMP     = '{{ marketplace }}';
+let currentPeriod = '7d';
+let currentType   = 'all';
+let activeTags    = new Set();
+let currentSort   = {key:'profit', dir:'desc'};
+let lastData      = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setAdType(v) { currentType = v; loadData(); }
+
+function toggleTag(tag, el) {
+  if (activeTags.has(tag)) { activeTags.delete(tag); el.classList.remove('active'); }
+  else                     { activeTags.add(tag);    el.classList.add('active'); }
+  loadData();
+}
+
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtDec(v) { return v == null ? '—' : Number(v).toFixed(2); }
+
+function renderKPI(d) {
+  const k = d.kpi;
+  const setText = (id, v) => { document.getElementById(id).textContent = v; };
+  setText('kpi-terms',  fmtInt(k.distinct_terms));
+  setText('kpi-terms-sub', `${k.shown_terms} shown${k.truncated ? ' (truncated)' : ''}`);
+  setText('kpi-spend',  fmtCurrency(k.spend));
+  setText('kpi-spend-sub', `${d.period.start} → ${d.period.end}`);
+  setText('kpi-sales',  fmtCurrency(k.sales));
+  setText('kpi-sales-sub', k.spend > 0 ? `ROAS ${(k.sales / k.spend).toFixed(2)}` : '');
+  setText('kpi-profit', fmtCurrency(k.estimated_profit));
+  setText('kpi-profit-sub', 'Proxy — see ⓘ above');
+  setText('kpi-orders', fmtInt(k.orders));
+  setText('kpi-orders-sub', k.sales > 0 ? `$${(k.sales / Math.max(k.orders,1)).toFixed(0)} avg` : '');
+
+  // Tag counts
+  Object.entries(d.tag_counts).forEach(([t, n]) => {
+    const el = document.getElementById('tag-count-'+t);
+    if (el) el.textContent = n;
+  });
+
+  // Result meta line
+  const meta = document.getElementById('resultMeta');
+  const filt = [];
+  if (currentType !== 'all') filt.push(`type=${currentType.toUpperCase()}`);
+  if (activeTags.size > 0)   filt.push(`tags=${[...activeTags].join('+')}`);
+  meta.textContent = filt.length ? `Filtered: ${filt.join(', ')}` : '';
+}
+
+function renderTable(d) {
+  const body = document.getElementById('stBody');
+  const empty = document.getElementById('emptyState');
+  if (!d.rows || d.rows.length === 0) {
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    document.getElementById('emptyMsg').textContent =
+      'No search terms match the current filters. ' +
+      'If the backfill is still running, search-term data lands at T-1.';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const html = d.rows.map(r => {
+    const profClass = r.estimated_profit == null ? '' :
+      (r.estimated_profit > 0 ? 'profit-pos' : (r.estimated_profit < 0 ? 'profit-neg' : ''));
+    const tags = (r.tags || []).map(t =>
+      `<span class="st-row-tag ${t}" title="${t.replace(/_/g,' ')}">${t.replace(/_/g, ' ')}</span>`
+    ).join('');
+    const escapedTerm = (r.search_term || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    return `<tr>
+      <td class="term-cell" title="${r.search_term}" onclick="openDrill('${escapedTerm}')">${r.search_term || '—'}</td>
+      <td class="${profClass}">${fmtCurrency(r.estimated_profit)}</td>
+      <td>${fmtCurrency(r.spend)}</td>
+      <td>${fmtCurrency(r.sales)}</td>
+      <td>${fmtPct(r.acos)}</td>
+      <td>${fmtDec(r.roas)}</td>
+      <td>${fmtInt(r.orders)}</td>
+      <td>${fmtInt(r.clicks)}</td>
+      <td>${fmtPct(r.ctr)}</td>
+      <td>${fmtPct(r.cvr)}</td>
+      <td>${fmtInt(r.impressions)}</td>
+      <td>${r.campaign_count}</td>
+      <td class="tags-cell">${tags || '<span style="color:#C0C5CA">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = html;
+
+  // Update sort arrows
+  document.querySelectorAll('#stTable thead th').forEach(th => {
+    th.classList.remove('sorted');
+    if (th.dataset.sort === currentSort.key) th.classList.add('sorted');
+  });
+
+  // Footnote
+  const fn = document.getElementById('footnote');
+  fn.innerHTML =
+    `<strong>${d.kpi.shown_terms}</strong> of <strong>${d.kpi.distinct_terms}</strong> distinct terms shown. ` +
+    (d.kpi.truncated
+      ? `Truncated to top ${d.limit} by spend; refine filters or sort to see specific terms.`
+      : 'All terms shown.') +
+    `<br/><em>${d.profit_proxy_note}</em>`;
+}
+
+document.querySelectorAll('#stTable thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (!key) return;
+    if (currentSort.key === key) {
+      currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      currentSort = {key, dir: 'desc'};
+    }
+    loadData();
+  });
+});
+
+async function loadData() {
+  const params = new URLSearchParams({
+    mp:       currentMP,
+    period:   currentPeriod,
+    ad_type:  currentType,
+    sort:     currentSort.key,
+    dir:      currentSort.dir,
+  });
+  if (activeTags.size > 0) params.set('tags', [...activeTags].join(','));
+
+  try {
+    const r = await fetch(`/dashboard/api/search-terms/?${params}`);
+    if (!r.ok) throw new Error(r.statusText);
+    const d = await r.json();
+    lastData = d;
+    const warn = document.getElementById('cmWarning');
+    if (d.cm_not_ready_warning) { warn.textContent = d.cm_not_ready_warning; warn.style.display = 'block'; }
+    else                         { warn.style.display = 'none'; }
+    renderKPI(d);
+    renderTable(d);
+  } catch (e) {
+    console.error('loadData failed', e);
+    document.getElementById('emptyMsg').textContent = 'Failed to load: ' + e.message;
+    document.getElementById('emptyState').style.display = 'block';
+  }
+}
+
+async function openDrill(term) {
+  const modal = document.getElementById('drillModal');
+  const title = document.getElementById('drillTitle');
+  const body  = document.getElementById('drillBody');
+  modal.style.display = 'flex';
+  title.textContent = `“${term}” — per-campaign breakdown`;
+  body.innerHTML = '<div style="color:#8A8A8A">Loading…</div>';
+  try {
+    const r = await fetch(`/dashboard/api/search-terms/detail/?mp=${currentMP}&period=${currentPeriod}&term=${encodeURIComponent(term)}`);
+    const d = await r.json();
+    if (!d.rows || d.rows.length === 0) {
+      body.innerHTML = '<div style="color:#8A8A8A">No campaign rows found for this term.</div>';
+      return;
+    }
+    body.innerHTML = `<table>
+      <thead><tr>
+        <th class="text-left">Campaign</th>
+        <th>Spend</th><th>Sales</th><th>Est. Profit</th>
+        <th>Orders</th><th>Clicks</th><th>ACoS</th><th>ROAS</th>
+      </tr></thead><tbody>
+      ${d.rows.map(r => `<tr>
+        <td class="text-left" title="${r.campaign_name}">
+          <a href="/dashboard/campaigns/${encodeURIComponent(r.campaign_id)}/?mp=${currentMP}" style="color:#0F1111">
+            ${r.campaign_name}
+          </a>
+        </td>
+        <td>${fmtCurrency(r.spend)}</td>
+        <td>${fmtCurrency(r.sales)}</td>
+        <td style="color:${r.estimated_profit > 0 ? '#067D62' : (r.estimated_profit < 0 ? '#C40000' : '#0F1111')};font-weight:600">${fmtCurrency(r.estimated_profit)}</td>
+        <td>${fmtInt(r.orders)}</td>
+        <td>${fmtInt(r.clicks)}</td>
+        <td>${r.acos == null ? '—' : fmtPct(r.acos)}</td>
+        <td>${r.roas == null ? '—' : fmtDec(r.roas)}</td>
+      </tr>`).join('')}
+      </tbody></table>`;
+  } catch (e) {
+    console.error('drill failed', e);
+    body.innerHTML = `<div style="color:#C40000">Failed: ${e.message}</div>`;
+  }
+}
+
+function closeDrill(ev) {
+  if (ev && ev.target !== ev.currentTarget) return;
+  document.getElementById('drillModal').style.display = 'none';
+}
+
+loadData();
+</script>
+{% endblock %}

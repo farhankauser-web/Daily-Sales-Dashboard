@@ -1,0 +1,273 @@
+{% extends "base/base.html" %}
+{% block title %}P&L Breakdown{% endblock %}
+{% block nav_pnl %}active{% endblock %}
+{% block page_title %}P&L Breakdown{% endblock %}
+
+{% block topbar_controls %}
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+<select id="mpForBrand" class="form-control"
+        style="margin-left:8px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setMPForBrand(this.value)">
+  {% for mp in allowed_marketplaces %}
+  <option value="{{ mp }}" {% if mp == 'usa' %}selected{% endif %}>
+    {% if mp == 'usa' %}🇺🇸 USA brands
+    {% elif mp == 'ca' %}🇨🇦 CA brands
+    {% elif mp == 'uk' %}🇬🇧 UK brands
+    {% elif mp == 'de' %}🇩🇪 DE brands
+    {% elif mp == 'ae' %}🇦🇪 UAE brands
+    {% elif mp == 'sa' %}🇸🇦 KSA brands
+    {% else %}{{ mp|upper }}{% endif %}
+  </option>
+  {% endfor %}
+</select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pb-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+                 padding:14px 18px; margin-bottom:14px; }
+  .pb-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
+  .pb-section .subtitle { font-size:11px; color:#777; margin-bottom:10px; }
+
+  .pb-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .pb-table thead th { background:#F3F4F5; padding:8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555; cursor:pointer;
+                        user-select:none; }
+  .pb-table thead th.text-left { text-align:left; }
+  .pb-table thead th.sorted { color:#0F1111; }
+  .pb-table tbody td { padding:7px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .pb-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit; }
+  .pb-table tbody tr:hover { background:#F8F9FA; }
+  .pb-table tbody td.profit-pos { color:#067D62; font-weight:600; }
+  .pb-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .pb-table tbody td.contrib-cell {
+    background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
+    text-align:left; padding-left:8px;
+  }
+  .pb-table tbody tr.totals td { background:#F8F9FA; border-top:2px solid #232F3E;
+                                  font-weight:700; }
+
+  .pb-empty { padding:24px; text-align:center; color:#8A8A8A; font-size:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ── Marketplace Board ─────────────────────────────────────────── -->
+<div class="pb-section">
+  <h3>🌐 Profitability by Marketplace</h3>
+  <div class="subtitle" id="mpSubtitle">Window: —</div>
+  <table class="pb-table" id="mpTable">
+    <thead><tr>
+      <th class="text-left">Marketplace</th>
+      <th data-sort-mp="gross_profit" class="sorted">Gross Profit</th>
+      <th data-sort-mp="margin_pct">Margin %</th>
+      <th data-sort-mp="tacos">TACoS</th>
+      <th data-sort-mp="revenue">Revenue</th>
+      <th data-sort-mp="ppc_spend">PPC</th>
+      <th data-sort-mp="referral_fee">Referral</th>
+      <th data-sort-mp="fba_fee">FBA</th>
+      <th data-sort-mp="cogs">COGS</th>
+      <th data-sort-mp="orders">Orders</th>
+      <th data-sort-mp="units">Units</th>
+      <th class="text-left" data-sort-mp="contribution_pct">% of Total Profit</th>
+    </tr></thead>
+    <tbody id="mpBody"><tr><td colspan="12" class="pb-empty">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- ── Brand Board ────────────────────────────────────────────────── -->
+<div class="pb-section">
+  <h3>🏷️ Profitability by Brand</h3>
+  <div class="subtitle" id="brSubtitle">Scope: —</div>
+  <table class="pb-table" id="brTable">
+    <thead><tr>
+      <th class="text-left">Brand</th>
+      <th data-sort-br="gross_profit" class="sorted">Gross Profit</th>
+      <th data-sort-br="margin_pct">Margin %</th>
+      <th data-sort-br="tacos">TACoS</th>
+      <th data-sort-br="revenue">Revenue</th>
+      <th data-sort-br="ppc_spend">PPC</th>
+      <th data-sort-br="referral_fee">Referral</th>
+      <th data-sort-br="fba_fee">FBA</th>
+      <th data-sort-br="cogs">COGS</th>
+      <th data-sort-br="units">Units</th>
+      <th data-sort-br="sku_count">SKUs</th>
+      <th class="text-left" data-sort-br="contribution_pct">% of Total Profit</th>
+    </tr></thead>
+    <tbody id="brBody"><tr><td colspan="12" class="pb-empty">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+let currentPeriod   = '7d';
+let currentMPforBr  = '{{ allowed_marketplaces.0|default:"usa" }}';
+let mpSort = {key:'gross_profit', dir:-1};
+let brSort = {key:'gross_profit', dir:-1};
+let lastData = null;
+
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setMPForBrand(mp) { currentMPforBr = mp; loadData(); }
+
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+
+function mpLabel(mp) {
+  return ({usa:'🇺🇸 USA', ca:'🇨🇦 CA', uk:'🇬🇧 UK', de:'🇩🇪 DE',
+           ae:'🇦🇪 UAE', sa:'🇸🇦 KSA'})[mp] || mp.toUpperCase();
+}
+
+function renderMarketplaceBoard(rows) {
+  const tbody = document.getElementById('mpBody');
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" class="pb-empty">No marketplace data for this window.</td></tr>';
+    return;
+  }
+  const sorted = rows.slice().sort((a, b) => {
+    const av = a[mpSort.key], bv = b[mpSort.key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; if (bv == null) return -1;
+    if (typeof av === 'string') return mpSort.dir * av.localeCompare(bv);
+    return mpSort.dir * (av - bv);
+  });
+  const maxContrib = Math.max(0, ...sorted.map(r => r.contribution_pct));
+
+  // Compute totals row
+  const totals = sorted.reduce((acc, r) => ({
+    revenue: acc.revenue + r.revenue, ppc_spend: acc.ppc_spend + r.ppc_spend,
+    referral_fee: acc.referral_fee + r.referral_fee, fba_fee: acc.fba_fee + r.fba_fee,
+    cogs: acc.cogs + r.cogs, gross_profit: acc.gross_profit + r.gross_profit,
+    orders: acc.orders + r.orders, units: acc.units + r.units,
+  }), {revenue:0, ppc_spend:0, referral_fee:0, fba_fee:0, cogs:0, gross_profit:0, orders:0, units:0});
+  const totMargin = totals.revenue > 0 ? totals.gross_profit / totals.revenue * 100 : 0;
+  const totTacos  = totals.revenue > 0 ? totals.ppc_spend   / totals.revenue * 100 : 0;
+
+  tbody.innerHTML = sorted.map(r => {
+    const profClass = r.gross_profit > 0 ? 'profit-pos' : (r.gross_profit < 0 ? 'profit-neg' : '');
+    const barWidth = maxContrib > 0 ? (r.contribution_pct / maxContrib * 100) : 0;
+    return `<tr>
+      <td class="text-left">${mpLabel(r.marketplace)}</td>
+      <td class="${profClass}">${fmtCurrency(r.gross_profit)}</td>
+      <td>${fmtPct(r.margin_pct)}</td>
+      <td>${fmtPct(r.tacos)}</td>
+      <td>${fmtCurrency(r.revenue)}</td>
+      <td>${fmtCurrency(r.ppc_spend)}</td>
+      <td>${fmtCurrency(r.referral_fee)}</td>
+      <td>${fmtCurrency(r.fba_fee)}</td>
+      <td>${fmtCurrency(r.cogs)}</td>
+      <td>${fmtInt(r.orders)}</td>
+      <td>${fmtInt(r.units)}</td>
+      <td class="contrib-cell" style="--bar:${barWidth}%">${fmtPct(r.contribution_pct)}</td>
+    </tr>`;
+  }).join('') + `<tr class="totals">
+    <td class="text-left">Total</td>
+    <td class="${totals.gross_profit > 0 ? 'profit-pos' : (totals.gross_profit < 0 ? 'profit-neg' : '')}">${fmtCurrency(totals.gross_profit)}</td>
+    <td>${fmtPct(totMargin)}</td>
+    <td>${fmtPct(totTacos)}</td>
+    <td>${fmtCurrency(totals.revenue)}</td>
+    <td>${fmtCurrency(totals.ppc_spend)}</td>
+    <td>${fmtCurrency(totals.referral_fee)}</td>
+    <td>${fmtCurrency(totals.fba_fee)}</td>
+    <td>${fmtCurrency(totals.cogs)}</td>
+    <td>${fmtInt(totals.orders)}</td>
+    <td>${fmtInt(totals.units)}</td>
+    <td>—</td>
+  </tr>`;
+  document.querySelectorAll('#mpTable thead th').forEach(th => {
+    th.classList.remove('sorted');
+    if (th.dataset.sortMp === mpSort.key) th.classList.add('sorted');
+  });
+}
+
+function renderBrandBoard(rows) {
+  const tbody = document.getElementById('brBody');
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" class="pb-empty">No brand data for this window.</td></tr>';
+    return;
+  }
+  const sorted = rows.slice().sort((a, b) => {
+    const av = a[brSort.key], bv = b[brSort.key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; if (bv == null) return -1;
+    if (typeof av === 'string') return brSort.dir * av.localeCompare(bv);
+    return brSort.dir * (av - bv);
+  });
+  const maxContrib = Math.max(0, ...sorted.map(r => r.contribution_pct));
+
+  tbody.innerHTML = sorted.map(r => {
+    const profClass = r.gross_profit > 0 ? 'profit-pos' : (r.gross_profit < 0 ? 'profit-neg' : '');
+    const barWidth = maxContrib > 0 ? (r.contribution_pct / maxContrib * 100) : 0;
+    return `<tr>
+      <td class="text-left">${r.brand}</td>
+      <td class="${profClass}">${fmtCurrency(r.gross_profit)}</td>
+      <td>${fmtPct(r.margin_pct)}</td>
+      <td>${fmtPct(r.tacos)}</td>
+      <td>${fmtCurrency(r.revenue)}</td>
+      <td>${fmtCurrency(r.ppc_spend)}</td>
+      <td>${fmtCurrency(r.referral_fee)}</td>
+      <td>${fmtCurrency(r.fba_fee)}</td>
+      <td>${fmtCurrency(r.cogs)}</td>
+      <td>${fmtInt(r.units)}</td>
+      <td>${fmtInt(r.sku_count)}</td>
+      <td class="contrib-cell" style="--bar:${barWidth}%">${fmtPct(r.contribution_pct)}</td>
+    </tr>`;
+  }).join('');
+  document.querySelectorAll('#brTable thead th').forEach(th => {
+    th.classList.remove('sorted');
+    if (th.dataset.sortBr === brSort.key) th.classList.add('sorted');
+  });
+}
+
+document.querySelectorAll('#mpTable thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sortMp; if (!key) return;
+    if (mpSort.key === key) mpSort.dir *= -1;
+    else                     mpSort = {key, dir:-1};
+    if (lastData) renderMarketplaceBoard(lastData.marketplaces);
+  });
+});
+document.querySelectorAll('#brTable thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sortBr; if (!key) return;
+    if (brSort.key === key) brSort.dir *= -1;
+    else                     brSort = {key, dir:-1};
+    if (lastData) renderBrandBoard(lastData.brands);
+  });
+});
+
+async function loadData() {
+  try {
+    const r = await fetch(`/dashboard/api/pnl/breakdown/?period=${currentPeriod}&mp=${currentMPforBr}`);
+    const d = await r.json();
+    lastData = d;
+    document.getElementById('mpSubtitle').textContent =
+      `Window: ${d.period.start} → ${d.period.end}  ·  ${d.marketplaces.length} marketplace(s) you have access to`;
+    document.getElementById('brSubtitle').textContent =
+      `Scope: ${mpLabel(d.marketplace_for_brand_board)}  ·  Window: ${d.period.start} → ${d.period.end}`;
+    renderMarketplaceBoard(d.marketplaces);
+    renderBrandBoard(d.brands);
+  } catch (e) { console.error('breakdown fetch failed', e); }
+}
+
+loadData();
+</script>
+{% endblock %}

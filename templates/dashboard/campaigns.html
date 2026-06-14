@@ -1,0 +1,310 @@
+{% extends "base/base.html" %}
+{% block title %}Campaign Performance Center{% endblock %}
+{% block nav_campaigns %}active{% endblock %}
+{% block page_title %}Campaign Performance Center{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+<select id="adTypeFilter" class="form-control"
+        style="margin-left:8px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setAdType(this.value)">
+  <option value="all">All Types</option>
+  <option value="sp">Sponsored Products</option>
+  <option value="sb">Sponsored Brands</option>
+  <option value="sd">Sponsored Display</option>
+</select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .cmp-kpi-strip { display:grid; grid-template-columns: repeat(6, 1fr); gap:10px;
+                    margin-bottom:14px; }
+  .cmp-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+             padding:10px 14px; }
+  .cmp-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .cmp-kpi .val { font-size:18px; font-weight:700; color:#0F1111;
+                   font-family:'DM Mono',monospace; }
+  .cmp-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .cmp-kpi.profit  { border-left:4px solid #067D62; }
+  .cmp-kpi.loss    { border-left:4px solid #C40000; }
+
+  .cmp-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                 padding:8px 12px; border-radius:6px; margin-bottom:12px;
+                 font-size:12px; }
+
+  .cmp-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .cmp-table thead th { background:#F3F4F5; padding:8px 8px; text-align:right;
+                         font-size:11px; font-weight:600; color:#555;
+                         cursor:pointer; user-select:none;
+                         position:sticky; top:0; z-index:1; }
+  .cmp-table thead th:first-child,
+  .cmp-table thead th.text-left { text-align:left; }
+  .cmp-table thead th .sort-arrow { color:#C0C5CA; margin-left:4px; font-size:9px; }
+  .cmp-table thead th.sorted .sort-arrow { color:#0F1111; }
+  .cmp-table tbody td { padding:6px 8px; text-align:right;
+                         border-bottom:1px solid #EAEDED;
+                         font-family:'DM Mono',monospace; font-size:11px; }
+  .cmp-table tbody td.name-cell { text-align:left; font-weight:600; max-width:280px;
+                                   white-space:nowrap; overflow:hidden;
+                                   text-overflow:ellipsis; font-family:inherit; }
+  .cmp-table tbody td.name-cell a { color:#0F1111; text-decoration:none; }
+  .cmp-table tbody td.name-cell a:hover { text-decoration:underline; color:#067D62; }
+  .cmp-table tbody td.type-cell { text-align:left; font-family:inherit; }
+  .cmp-table tbody tr:hover { background:#F8F9FA; }
+  .cmp-table tbody td.profit-pos { color:#067D62; font-weight:600; }
+  .cmp-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .cmp-table tbody td.coverage-low { background:#FFF1ED; color:#9C3431; }
+
+  .type-badge { display:inline-block; padding:1px 6px; border-radius:3px;
+                 font-size:10px; font-weight:600; }
+  .type-badge.sp { background:#E1EFFA; color:#1B4A75; }
+  .type-badge.sb { background:#EDE3F7; color:#4A2080; }
+  .type-badge.sd { background:#FDF1DC; color:#7A5400; }
+
+  .cmp-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="todayBanner" class="cmp-banner" style="display:none"></div>
+
+<div class="cmp-kpi-strip">
+  <div class="cmp-kpi"><div class="lbl">Ad Spend</div>
+    <div class="val" id="kpi-spend">—</div><div class="sub" id="kpi-spend-sub"></div></div>
+  <div class="cmp-kpi"><div class="lbl">Ad Revenue</div>
+    <div class="val" id="kpi-rev">—</div><div class="sub" id="kpi-rev-sub"></div></div>
+  <div class="cmp-kpi profit"><div class="lbl">Gross Profit</div>
+    <div class="val" id="kpi-profit">—</div><div class="sub" id="kpi-profit-sub"></div></div>
+  <div class="cmp-kpi"><div class="lbl">Margin %</div>
+    <div class="val" id="kpi-margin">—</div><div class="sub" id="kpi-margin-sub"></div></div>
+  <div class="cmp-kpi"><div class="lbl">TACoS</div>
+    <div class="val" id="kpi-tacos">—</div><div class="sub" id="kpi-tacos-sub"></div></div>
+  <div class="cmp-kpi"><div class="lbl">Active Campaigns</div>
+    <div class="val" id="kpi-count">—</div><div class="sub" id="kpi-count-sub"></div></div>
+</div>
+
+<div id="emptyState" class="cmp-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">📭</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No campaign data</div>
+  <div id="emptyMsg">No CampaignProfitDaily rows found for the selected period.</div>
+</div>
+
+<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+            padding:8px;overflow:auto;max-height:calc(100vh - 280px)">
+  <table class="cmp-table" id="cmpTable">
+    <thead><tr>
+      <th class="text-left"   data-sort="campaign_name">Campaign <span class="sort-arrow">▾</span></th>
+      <th class="text-left"   data-sort="campaign_type">Type <span class="sort-arrow">▾</span></th>
+      <th data-sort="profit"  class="sorted">Profit <span class="sort-arrow">▼</span></th>
+      <th data-sort="margin_pct">Margin % <span class="sort-arrow">▾</span></th>
+      <th data-sort="tacos">TACoS <span class="sort-arrow">▾</span></th>
+      <th data-sort="contribution_to_profit_pct">% of Total Profit <span class="sort-arrow">▾</span></th>
+      <th data-sort="ad_revenue">Ad Revenue <span class="sort-arrow">▾</span></th>
+      <th data-sort="spend">Spend <span class="sort-arrow">▾</span></th>
+      <th data-sort="acos">ACoS <span class="sort-arrow">▾</span></th>
+      <th data-sort="roas">ROAS <span class="sort-arrow">▾</span></th>
+      <th data-sort="orders">Orders <span class="sort-arrow">▾</span></th>
+      <th data-sort="cvr">CVR <span class="sort-arrow">▾</span></th>
+      <th data-sort="clicks">Clicks <span class="sort-arrow">▾</span></th>
+      <th data-sort="ctr">CTR <span class="sort-arrow">▾</span></th>
+      <th data-sort="cpc">CPC <span class="sort-arrow">▾</span></th>
+      <th data-sort="impressions">Impr. <span class="sort-arrow">▾</span></th>
+      <th data-sort="attribution_coverage_pct">Attr Cov. <span class="sort-arrow">▾</span></th>
+    </tr></thead>
+    <tbody id="cmpBody"></tbody>
+  </table>
+</div>
+
+<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+
+<script>
+let currentMP     = '{{ marketplace }}';
+let currentPeriod = '7d';
+let currentType   = 'all';
+let currentSort   = {key:'profit', dir:-1};  // -1 desc, +1 asc
+let lastData      = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setAdType(v) { currentType = v; loadData(); }
+
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v)  { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v)  { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtDec(v)  { return v == null ? '—' : Number(v).toFixed(2); }
+
+function renderKPI(d) {
+  const k = d.kpi;
+  const setText = (id, v) => { document.getElementById(id).textContent = v; };
+  setText('kpi-spend',  fmtCurrency(k.spend));
+  setText('kpi-spend-sub', `${fmtInt(k.clicks)} clicks · ${fmtInt(k.impressions)} impr`);
+  setText('kpi-rev',    fmtCurrency(k.ad_revenue));
+  setText('kpi-rev-sub', `ROAS ${k.roas != null ? k.roas.toFixed(2) : '—'} · ACoS ${fmtPct(k.acos)}`);
+  setText('kpi-profit', k.gross_profit == null ? '—' : fmtCurrency(k.gross_profit));
+  setText('kpi-profit-sub',
+    k.gross_profit == null ? 'Available T+1' : `${fmtInt(k.orders)} orders attributed`);
+  setText('kpi-margin', k.margin_pct == null ? '—' : fmtPct(k.margin_pct));
+  setText('kpi-margin-sub',
+    k.margin_pct == null ? '' : `Window blend across all campaigns`);
+  setText('kpi-tacos', k.tacos == null ? '—' : fmtPct(k.tacos));
+  setText('kpi-tacos-sub',
+    `Account rev ${fmtCurrency(k.window_revenue)}`);
+  setText('kpi-count',  fmtInt(k.campaign_count));
+  setText('kpi-count-sub', `${d.period.start} → ${d.period.end}`);
+}
+
+function renderBanner(d) {
+  const b = document.getElementById('todayBanner');
+  if (d.today_warning) { b.textContent = d.today_warning; b.style.display = 'block'; }
+  else                 { b.style.display = 'none'; }
+}
+
+function renderTable(d) {
+  const tbody = document.getElementById('cmpBody');
+  const empty = document.getElementById('emptyState');
+  if (!d.rows || d.rows.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    document.getElementById('emptyMsg').textContent =
+      d.is_today
+       ? 'No live PPC data yet for today — wait for the next 30-min sync.'
+       : 'No CampaignProfitDaily rows for this window. Run `compute_campaign_profit` if T-1 data has just landed.';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Sort
+  const sorted = d.rows.slice().sort((a, b) => {
+    const av = a[currentSort.key], bv = b[currentSort.key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; if (bv == null) return -1;
+    if (typeof av === 'string') return currentSort.dir * av.localeCompare(bv);
+    return currentSort.dir * (av - bv);
+  });
+
+  // Render rows
+  const html = sorted.map(r => {
+    const profitClass = r.profit == null ? '' :
+      (r.profit > 0 ? 'profit-pos' : (r.profit < 0 ? 'profit-neg' : ''));
+    const covClass = (r.attribution_coverage_pct != null
+                      && r.attribution_coverage_pct < 80) ? 'coverage-low' : '';
+    const typeBadge = `<span class="type-badge ${r.campaign_type}">${r.campaign_type.toUpperCase()}</span>`;
+    return `<tr>
+      <td class="name-cell" title="${r.campaign_name}">
+        <a href="#" onclick="openDetail('${r.campaign_id}');return false">${r.campaign_name}</a>
+      </td>
+      <td class="type-cell">${typeBadge}</td>
+      <td class="${profitClass}">${r.profit == null ? '—' : fmtCurrency(r.profit)}</td>
+      <td>${r.margin_pct == null ? '—' : fmtPct(r.margin_pct)}</td>
+      <td>${r.tacos == null ? '—' : fmtPct(r.tacos)}</td>
+      <td>${r.contribution_to_profit_pct == null ? '—' : fmtPct(r.contribution_to_profit_pct)}</td>
+      <td>${fmtCurrency(r.ad_revenue)}</td>
+      <td>${fmtCurrency(r.spend)}</td>
+      <td>${r.acos == null ? '—' : fmtPct(r.acos)}</td>
+      <td>${r.roas == null ? '—' : fmtDec(r.roas)}</td>
+      <td>${fmtInt(r.orders)}</td>
+      <td>${r.cvr == null ? '—' : fmtPct(r.cvr)}</td>
+      <td>${fmtInt(r.clicks)}</td>
+      <td>${r.ctr == null ? '—' : fmtPct(r.ctr)}</td>
+      <td>${r.cpc == null ? '—' : fmtDec(r.cpc)}</td>
+      <td>${fmtInt(r.impressions)}</td>
+      <td class="${covClass}" title="% of campaign-reported sales matched to advertised-product rows">
+        ${r.attribution_coverage_pct == null ? '—' : fmtPct(r.attribution_coverage_pct)}
+      </td>
+    </tr>`;
+  }).join('');
+  tbody.innerHTML = html;
+
+  // Update sort-arrow states
+  document.querySelectorAll('#cmpTable thead th').forEach(th => {
+    th.classList.remove('sorted');
+    const arrow = th.querySelector('.sort-arrow');
+    if (arrow) arrow.textContent = '▾';
+    if (th.dataset.sort === currentSort.key) {
+      th.classList.add('sorted');
+      if (arrow) arrow.textContent = currentSort.dir < 0 ? '▼' : '▲';
+    }
+  });
+
+  // Footnote
+  const fn = document.getElementById('footnote');
+  if (d.is_today) {
+    fn.textContent =
+      'Today: live SUMMARY pull from Ads API; profit and detail breakdowns appear after yesterday\'s compute (~05:00 local).';
+  } else {
+    fn.innerHTML = `Window: <strong>${d.period.start}</strong> → <strong>${d.period.end}</strong>. ` +
+      'Cells highlighted in red have attribution coverage below 80% — campaign profitability there relies on broader margin estimates.';
+  }
+}
+
+document.querySelectorAll('#cmpTable thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (!key) return;
+    if (currentSort.key === key) currentSort.dir *= -1;
+    else { currentSort = {key, dir:-1}; }
+    if (lastData) renderTable(lastData);
+  });
+});
+
+async function loadData() {
+  const url = `/dashboard/api/campaigns/?mp=${currentMP}&period=${currentPeriod}&campaign_type=${currentType}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.statusText);
+    const d = await r.json();
+    lastData = d;
+    renderBanner(d);
+    renderKPI(d);
+    renderTable(d);
+  } catch (e) {
+    console.error('loadData failed', e);
+    document.getElementById('emptyMsg').textContent = 'Failed to load: ' + e.message;
+    document.getElementById('emptyState').style.display = 'block';
+  }
+}
+
+function openDetail(campaign_id) {
+  window.location.href = `/dashboard/campaigns/${encodeURIComponent(campaign_id)}/?mp=${currentMP}`;
+}
+
+loadData();
+</script>
+{% endblock %}

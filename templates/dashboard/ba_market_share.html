@@ -1,0 +1,321 @@
+{% extends "base/base.html" %}
+{% block title %}Market Share{% endblock %}
+{% block nav_ba_market_share %}active{% endblock %}
+{% block page_title %}Brand Analytics — Market Share Dashboard{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<span style="margin-left:12px;font-size:11px;color:#8A8A8A">Week:</span>
+<select id="weekPicker" class="form-control"
+        style="margin-left:6px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setWeek(this.value)"></select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ms-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                padding:10px 14px; border-radius:6px; margin-bottom:12px;
+                font-size:13px; }
+
+  .ms-kpi-strip { display:grid; grid-template-columns: repeat(6, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .ms-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:10px 14px; }
+  .ms-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .ms-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .ms-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .ms-kpi.share-click    { border-left:4px solid #067D62; }
+  .ms-kpi.share-purchase { border-left:4px solid #1B4A75; }
+  .ms-kpi.wins           { border-left:4px solid #067D62; }
+  .ms-kpi.losses         { border-left:4px solid #C40000; }
+
+  .ms-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+                 padding:14px 18px; margin-bottom:14px; }
+  .ms-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
+  .ms-section .sub { font-size:11px; color:#777; margin-bottom:10px; }
+  .ms-section h3 .pill { display:inline-block; margin-left:6px; font-size:10px;
+                          background:#F3F4F5; padding:2px 8px; border-radius:10px;
+                          color:#555; font-weight:600; vertical-align:middle; }
+
+  .ms-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .ms-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555;
+                        position:sticky; top:0; z-index:1; }
+  .ms-table thead th.text-left { text-align:left; }
+  .ms-table tbody td { padding:6px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .ms-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
+                                  max-width:280px; white-space:nowrap;
+                                  overflow:hidden; text-overflow:ellipsis; }
+  .ms-table tbody tr:hover { background:#F8F9FA; }
+  .ms-table tbody td.share-pos { color:#067D62; font-weight:600; }
+  .ms-table tbody td.share-neg { color:#C40000; font-weight:600; }
+  .ms-table tbody td.share-cell {
+    background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
+    text-align:left; padding-left:8px;
+  }
+  .ms-table tbody td.share-cell.loss {
+    background:linear-gradient(to right, #FBE2E0 var(--bar, 0%), transparent var(--bar, 0%));
+  }
+  .ms-table tbody td.share-cell.competitor {
+    background:linear-gradient(to right, #E1EFFA var(--bar, 0%), transparent var(--bar, 0%));
+  }
+
+  .ms-grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+  @media (max-width:1100px) { .ms-grid-2 { grid-template-columns: 1fr; } }
+
+  .ms-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+              padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="banner" class="ms-banner" style="display:none"></div>
+
+<div class="ms-kpi-strip">
+  <div class="ms-kpi"><div class="lbl">Queries we appear in</div>
+    <div class="val" id="kpi-queries">—</div>
+    <div class="sub" id="kpi-queries-sub"></div></div>
+  <div class="ms-kpi"><div class="lbl">Total query volume</div>
+    <div class="val" id="kpi-volume">—</div>
+    <div class="sub" id="kpi-volume-sub"></div></div>
+  <div class="ms-kpi share-click"><div class="lbl">Weighted click share</div>
+    <div class="val" id="kpi-click">—</div>
+    <div class="sub" id="kpi-click-sub"></div></div>
+  <div class="ms-kpi share-purchase"><div class="lbl">Weighted purchase share</div>
+    <div class="val" id="kpi-purchase">—</div>
+    <div class="sub" id="kpi-purchase-sub"></div></div>
+  <div class="ms-kpi wins"><div class="lbl">Queries we DOMINATE</div>
+    <div class="val" id="kpi-wins">—</div>
+    <div class="sub" id="kpi-wins-sub"></div></div>
+  <div class="ms-kpi losses"><div class="lbl">Distinct competitors</div>
+    <div class="val" id="kpi-competitors">—</div>
+    <div class="sub" id="kpi-competitors-sub"></div></div>
+</div>
+
+<div id="emptyState" class="ms-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">📊</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No market share data</div>
+  <div id="emptyMsg"></div>
+</div>
+
+<div class="ms-grid-2">
+  <!-- Wins -->
+  <div class="ms-section">
+    <h3>🏆 Where we WIN <span class="pill" id="wins-count">0</span></h3>
+    <div class="sub">Queries where our combined click share is ≥30%. These are queries we own.</div>
+    <div style="max-height:50vh;overflow:auto">
+      <table class="ms-table">
+        <thead><tr>
+          <th class="text-left">Search query</th>
+          <th>Volume</th>
+          <th class="text-left">Our click share</th>
+          <th>Purchase</th>
+        </tr></thead>
+        <tbody id="winsBody"><tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Losses -->
+  <div class="ms-section">
+    <h3>⚠️ Where we LOSE <span class="pill" id="losses-count">0</span></h3>
+    <div class="sub">High-volume queries where we appear in top-3 but capture <10% of clicks. Conversion / listing optimisation opportunities.</div>
+    <div style="max-height:50vh;overflow:auto">
+      <table class="ms-table">
+        <thead><tr>
+          <th class="text-left">Search query</th>
+          <th>Volume</th>
+          <th class="text-left">Our click share</th>
+          <th>Our ASINs in top-3</th>
+        </tr></thead>
+        <tbody id="lossesBody"><tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Competitor leaderboard -->
+<div class="ms-section">
+  <h3>🥇 Top competitor ASINs (derived from Market Basket) <span class="pill" id="competitors-count">0</span></h3>
+  <div class="sub">Non-our-brand ASINs that customers co-purchase with ours. The per-ASIN SQP report doesn't expose top-3 competitors, so we derive competitor signal from the Market Basket "external" pairs instead. More overlap = stronger competitive risk.</div>
+  <div style="max-height:50vh;overflow:auto">
+    <table class="ms-table">
+      <thead><tr>
+        <th class="text-left">Competitor ASIN</th>
+        <th class="text-left">Product</th>
+        <th>Our ASINs they pair with</th>
+        <th class="text-left">Avg co-purchase %</th>
+        <th>Peak co-purchase %</th>
+      </tr></thead>
+      <tbody id="competitorsBody"><tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Per-our-ASIN contribution -->
+<div class="ms-section">
+  <h3>🎯 Our ASINs ranked by query exposure</h3>
+  <div class="sub">For each of our ingested ASINs: # of queries they rank in, total query volume, and their volume-weighted shares.</div>
+  <div style="max-height:50vh;overflow:auto">
+    <table class="ms-table">
+      <thead><tr>
+        <th class="text-left">ASIN</th>
+        <th class="text-left">Product</th>
+        <th>Queries</th>
+        <th>Total query volume</th>
+        <th class="text-left">Avg click share</th>
+        <th class="text-left">Avg purchase share</th>
+      </tr></thead>
+      <tbody id="perAsinBody"><tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let currentMP   = '{{ marketplace }}';
+let currentWeek = '';
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  currentWeek = '';
+  loadData();
+}
+function setWeek(w) { currentWeek = w; loadData(); }
+
+function fmtPct(v) { return v == null ? '—' : v.toFixed(2) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+
+function populateWeeks(d) {
+  const w = document.getElementById('weekPicker');
+  if (w.options.length !== d.weeks.length) {
+    w.innerHTML = d.weeks.map(x => `<option value="${x}"${x===d.week_start?' selected':''}>${x}</option>`).join('');
+  } else {
+    w.value = d.week_start;
+  }
+}
+
+function renderKPI(d) {
+  const k = d.kpi;
+  const setText = (id, v) => { document.getElementById(id).textContent = v; };
+  setText('kpi-queries',  fmtInt(k.queries_in_market));
+  setText('kpi-queries-sub', `${d.week_start} → ${d.week_end}`);
+  setText('kpi-volume',   fmtInt(k.total_query_volume));
+  setText('kpi-volume-sub', 'Aggregate Amazon search impressions');
+  setText('kpi-click',    fmtPct(k.weighted_click_share));
+  setText('kpi-click-sub', 'Volume-weighted across all queries');
+  setText('kpi-purchase', fmtPct(k.weighted_purchase_share));
+  setText('kpi-purchase-sub', 'Volume-weighted across all queries');
+  setText('kpi-wins',     fmtInt(k.queries_we_dominate));
+  setText('kpi-wins-sub', `${k.win_query_count} ≥30% share`);
+  setText('kpi-competitors', fmtInt(k.unique_competitors));
+  setText('kpi-competitors-sub', `${k.loss_query_count} high-vol low-share queries`);
+
+  document.getElementById('wins-count').textContent        = `${d.wins.length} shown`;
+  document.getElementById('losses-count').textContent      = `${d.losses.length} shown`;
+  document.getElementById('competitors-count').textContent = `${d.competitors.length} shown`;
+}
+
+function renderWins(d) {
+  const body = document.getElementById('winsBody');
+  if (!d.wins.length) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">No queries with ≥30% click share yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = d.wins.map(r => `<tr>
+    <td class="text-left" title="${r.search_query}">${r.search_query}</td>
+    <td>${fmtInt(r.volume)}</td>
+    <td class="share-cell" style="--bar:${Math.min(r.our_click_share, 100)}%">${fmtPct(r.our_click_share)}</td>
+    <td>${fmtPct(r.our_purchase_share)}</td>
+  </tr>`).join('');
+}
+
+function renderLosses(d) {
+  const body = document.getElementById('lossesBody');
+  if (!d.losses.length) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">No high-volume queries where we appear but lose. ✅</td></tr>';
+    return;
+  }
+  body.innerHTML = d.losses.map(r => `<tr>
+    <td class="text-left" title="${r.search_query}">${r.search_query}</td>
+    <td>${fmtInt(r.volume)}</td>
+    <td class="share-cell loss" style="--bar:${Math.min(r.our_click_share, 100)}%">${fmtPct(r.our_click_share)}</td>
+    <td>${r.our_asin_count}</td>
+  </tr>`).join('');
+}
+
+function renderCompetitors(d) {
+  const body = document.getElementById('competitorsBody');
+  if (!d.competitors.length) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">No external competitor pairs in Market Basket data for this week.</td></tr>';
+    return;
+  }
+  body.innerHTML = d.competitors.map(c => `<tr>
+    <td class="text-left"><code>${c.asin}</code></td>
+    <td class="text-left" title="${c.title}">${c.title || '—'}</td>
+    <td>${c.overlap_count}</td>
+    <td class="share-cell competitor" style="--bar:${Math.min(c.avg_combo_pct, 100)}%">${fmtPct(c.avg_combo_pct)}</td>
+    <td>${fmtPct(c.top_combo_pct)}</td>
+  </tr>`).join('');
+}
+
+function renderPerAsin(d) {
+  const body = document.getElementById('perAsinBody');
+  if (!d.per_asin.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">No per-ASIN data.</td></tr>';
+    return;
+  }
+  body.innerHTML = d.per_asin.map(r => `<tr>
+    <td class="text-left"><code>${r.asin}</code></td>
+    <td class="text-left" title="${r.title}">${r.title || '—'}</td>
+    <td>${fmtInt(r.query_count)}</td>
+    <td>${fmtInt(r.total_query_volume)}</td>
+    <td class="share-cell" style="--bar:${Math.min(r.avg_click_share, 100)}%">${fmtPct(r.avg_click_share)}</td>
+    <td class="share-cell" style="--bar:${Math.min(r.avg_purchase_share, 100)}%">${fmtPct(r.avg_purchase_share)}</td>
+  </tr>`).join('');
+}
+
+async function loadData() {
+  const params = new URLSearchParams({mp: currentMP});
+  if (currentWeek) params.set('week_start', currentWeek);
+  try {
+    const r = await fetch(`/dashboard/api/ba/market-share/?${params}`);
+    const d = await r.json();
+    const banner = document.getElementById('banner');
+    if (d.no_data) {
+      banner.textContent = d.no_data_msg || 'No data.';
+      banner.style.display = 'block';
+      document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('emptyMsg').textContent = d.no_data_msg || '';
+      return;
+    }
+    banner.style.display = 'none';
+    document.getElementById('emptyState').style.display = 'none';
+    populateWeeks(d);
+    renderKPI(d);
+    renderWins(d);
+    renderLosses(d);
+    renderCompetitors(d);
+    renderPerAsin(d);
+  } catch (e) {
+    console.error('market-share fetch failed', e);
+  }
+}
+
+loadData();
+</script>
+{% endblock %}

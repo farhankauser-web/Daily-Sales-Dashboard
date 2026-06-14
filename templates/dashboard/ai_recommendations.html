@@ -1,0 +1,331 @@
+{% extends "base/base.html" %}
+{% block title %}AI Recommendations{% endblock %}
+{% block nav_ai_recs %}active{% endblock %}
+{% block page_title %}AI Recommendations{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<button class="btn btn-secondary btn-sm" id="regenBtn"
+        style="margin-left:8px;padding:5px 10px;font-size:11px"
+        onclick="regenerate()">🔄 Regenerate</button>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ai-banner { padding:10px 14px; border-radius:6px; margin-bottom:12px;
+                font-size:13px; line-height:1.5; }
+  .ai-banner.info { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500; }
+  .ai-banner.err  { background:#FBE2E0; border:1px solid #E5B5B0; color:#7A2B25; }
+  .ai-banner code { background:rgba(0,0,0,0.05); padding:1px 5px; border-radius:3px;
+                     font-size:11px; }
+
+  .ai-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .ai-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:10px 14px; }
+  .ai-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .ai-kpi .val { font-size:24px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .ai-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .ai-kpi.critical    { border-left:4px solid #C40000; }
+  .ai-kpi.warning     { border-left:4px solid #B7710E; }
+  .ai-kpi.opportunity { border-left:4px solid #067D62; }
+
+  .ai-filter-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+                    padding:8px 12px; margin-bottom:10px;
+                    display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .ai-filter-bar .lbl { font-size:11px; color:#8A8A8A; }
+  .ai-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+              padding:4px 10px; border-radius:14px; cursor:pointer;
+              font-size:11px; font-weight:600; user-select:none; }
+  .ai-pill:hover { background:#EAEDED; }
+  .ai-pill.active { background:#067D62; color:#FFF; border-color:#067D62; }
+  .ai-pill .count { background:rgba(0,0,0,0.12); margin-left:6px;
+                     padding:1px 6px; border-radius:8px; font-size:10px; }
+  .ai-pill.active .count { background:rgba(255,255,255,0.25); }
+
+  .ai-card-list { display:flex; flex-direction:column; gap:10px; }
+
+  .ai-card { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+              padding:14px 16px; transition:opacity 200ms; }
+  .ai-card.critical    { border-left:4px solid #C40000; }
+  .ai-card.warning     { border-left:4px solid #B7710E; }
+  .ai-card.opportunity { border-left:4px solid #067D62; }
+  .ai-card.info        { border-left:4px solid #1B4A75; }
+  .ai-card.dimmed { opacity:0.55; }
+
+  .ai-card .head { display:flex; align-items:flex-start; gap:10px; }
+  .ai-card .head .badges { display:flex; gap:6px; flex-wrap:wrap; }
+  .ai-card .badge { display:inline-block; padding:2px 8px; border-radius:4px;
+                    font-size:10px; font-weight:600; }
+  .ai-card .badge.severity_critical    { background:#FBE2E0; color:#9C3431; }
+  .ai-card .badge.severity_warning     { background:#FFF1D5; color:#8A5500; }
+  .ai-card .badge.severity_opportunity { background:#E0F2EC; color:#067D62; }
+  .ai-card .badge.severity_info        { background:#E1EFFA; color:#1B4A75; }
+  .ai-card .badge.category { background:#F3F4F5; color:#555; }
+  .ai-card .badge.status   { background:#FFFFFF; color:#555; border:1px solid #D5D9D9; }
+  .ai-card .badge.confidence { background:#FFFFFF; color:#555; border:1px solid #D5D9D9;
+                                font-family:'DM Mono',monospace; }
+
+  .ai-card .headline { font-size:15px; font-weight:700; color:#0F1111;
+                        margin-top:6px; line-height:1.35; }
+  .ai-card .scope { font-size:11px; color:#777; margin-top:2px;
+                     font-family:'DM Mono',monospace; }
+  .ai-card .scope a { color:#067D62; text-decoration:none; }
+  .ai-card .scope a:hover { text-decoration:underline; }
+  .ai-card .meta { font-size:11px; color:#777; margin-top:2px; }
+
+  .ai-card .section { margin-top:8px; }
+  .ai-card .section .lbl { font-size:10px; color:#777; text-transform:uppercase;
+                            letter-spacing:0.3px; font-weight:600; margin-bottom:2px; }
+  .ai-card .section .body { font-size:12px; color:#0F1111; line-height:1.55; }
+
+  .ai-card .actions { display:flex; gap:6px; margin-top:10px;
+                       padding-top:10px; border-top:1px solid #EAEDED; }
+  .ai-card .actions button { padding:5px 12px; font-size:11px; font-weight:600;
+                              border-radius:4px; border:1px solid #D5D9D9;
+                              background:#FFF; cursor:pointer; color:#0F1111; }
+  .ai-card .actions button:hover { background:#F3F4F5; }
+  .ai-card .actions button.done       { border-color:#067D62; color:#067D62; }
+  .ai-card .actions button.snooze     { border-color:#B7710E; color:#B7710E; }
+  .ai-card .actions button.dismiss    { border-color:#C40000; color:#C40000; }
+
+  .ai-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+              padding:40px; text-align:center; color:#555; }
+  .ai-empty .icon { font-size:36px; margin-bottom:8px; }
+  .ai-empty .ttl { font-size:15px; font-weight:700; color:#0F1111;
+                    margin-bottom:6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="banner" class="ai-banner" style="display:none"></div>
+
+<div class="ai-kpi-strip">
+  <div class="ai-kpi"><div class="lbl">Active recommendations</div>
+    <div class="val" id="kpi-total">—</div>
+    <div class="sub" id="kpi-total-sub"></div></div>
+  <div class="ai-kpi critical"><div class="lbl">Critical open</div>
+    <div class="val" id="kpi-crit">—</div></div>
+  <div class="ai-kpi opportunity"><div class="lbl">Opportunities open</div>
+    <div class="val" id="kpi-opp">—</div></div>
+  <div class="ai-kpi"><div class="lbl">Last generated</div>
+    <div class="val" id="kpi-when" style="font-size:14px">—</div>
+    <div class="sub" id="kpi-when-sub"></div></div>
+</div>
+
+<div class="ai-filter-bar">
+  <span class="lbl">Severity:</span>
+  <span class="ai-pill" data-sev="critical"    onclick="toggleSev('critical', this)">
+    Critical <span class="count" id="sev-count-critical">0</span></span>
+  <span class="ai-pill" data-sev="warning"     onclick="toggleSev('warning', this)">
+    Warning <span class="count" id="sev-count-warning">0</span></span>
+  <span class="ai-pill" data-sev="opportunity" onclick="toggleSev('opportunity', this)">
+    Opportunity <span class="count" id="sev-count-opportunity">0</span></span>
+  <span class="ai-pill" data-sev="info"        onclick="toggleSev('info', this)">
+    Info <span class="count" id="sev-count-info">0</span></span>
+  <span style="flex:1"></span>
+  <span class="lbl">Status:</span>
+  <select id="statusFilter" onchange="loadData()"
+          style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #D5D9D9">
+    <option value="new,acknowledged,snoozed">Active (new + ack + snoozed)</option>
+    <option value="new">New only</option>
+    <option value="acknowledged">Acknowledged</option>
+    <option value="done">Done</option>
+    <option value="snoozed">Snoozed</option>
+    <option value="dismissed">Dismissed</option>
+    <option value="new,acknowledged,snoozed,done,dismissed">All</option>
+  </select>
+</div>
+
+<div id="emptyState" class="ai-empty" style="display:none">
+  <div class="icon">🤖</div>
+  <div class="ttl" id="emptyTitle">No recommendations yet</div>
+  <div id="emptyMsg"></div>
+</div>
+
+<div class="ai-card-list" id="cardList"></div>
+
+<script>
+const SCOPE_LABELS = {
+  campaign:'Campaign', sku:'SKU', search_term:'Search Term',
+  placement:'Placement', brand:'Brand', account:'Account',
+  inventory:'Inventory', other:'Other',
+};
+const CAT_LABELS = {
+  ppc_scale:'PPC: Scale', ppc_cut:'PPC: Cut', ppc_negate:'PPC: Negate',
+  ppc_bid:'PPC: Bid', sku_scale:'SKU: Scale', sku_pause:'SKU: Pause',
+  margin_fix:'Margin', inventory:'Inventory', listing:'Listing',
+  cross_sell:'Cross-sell', competitive:'Competitive', other:'Other',
+};
+
+let currentMP    = '{{ marketplace }}';
+let activeSevs   = new Set();
+let lastData     = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function toggleSev(s, el) {
+  if (activeSevs.has(s)) { activeSevs.delete(s); el.classList.remove('active'); }
+  else                    { activeSevs.add(s);    el.classList.add('active'); }
+  loadData();
+}
+
+function ago(iso) {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  const min = Math.floor((Date.now() - t) / 60000);
+  if (min < 60)  return min + ' min ago';
+  if (min < 1440) return Math.floor(min/60) + ' h ago';
+  return Math.floor(min/1440) + ' d ago';
+}
+
+function renderKPI(d) {
+  document.getElementById('kpi-total').textContent     = d.kpi.total_active;
+  document.getElementById('kpi-total-sub').textContent =
+    `${d.status_counts.done || 0} done · ${d.status_counts.dismissed || 0} dismissed`;
+  document.getElementById('kpi-crit').textContent      = d.kpi.critical_open;
+  document.getElementById('kpi-opp').textContent       = d.kpi.opportunity_open;
+  document.getElementById('kpi-when').textContent      = ago(d.last_generated);
+  document.getElementById('kpi-when-sub').textContent  =
+    d.last_generated ? new Date(d.last_generated).toLocaleString() : 'never';
+
+  Object.entries(d.severity_counts || {}).forEach(([s, n]) => {
+    const el = document.getElementById('sev-count-' + s);
+    if (el) el.textContent = n;
+  });
+}
+
+function renderCards(d) {
+  const list  = document.getElementById('cardList');
+  const empty = document.getElementById('emptyState');
+  if (!d.rows || !d.rows.length) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    if (d.last_generated) {
+      document.getElementById('emptyTitle').textContent = 'No recommendations match these filters';
+      document.getElementById('emptyMsg').innerHTML =
+        'Try clearing severity pills or switching status to <em>All</em>.';
+    } else {
+      document.getElementById('emptyTitle').textContent = 'No AI recommendations have been generated yet';
+      document.getElementById('emptyMsg').innerHTML =
+        'Click <strong>🔄 Regenerate</strong> above to ask Claude to analyse your latest data. ' +
+        'If you see <code>credit balance too low</code>, top up at ' +
+        '<a href="https://console.anthropic.com" target="_blank" style="color:#067D62">console.anthropic.com</a>.';
+    }
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Apply severity filter client-side
+  let rows = d.rows;
+  if (activeSevs.size > 0) rows = rows.filter(r => activeSevs.has(r.severity));
+
+  list.innerHTML = rows.map(r => {
+    const dim = (r.status === 'done' || r.status === 'dismissed') ? 'dimmed' : '';
+    const scopeLink = r.drill_url
+      ? `<a href="${r.drill_url}">${r.scope_name || (r.scope_id || '—')}</a>`
+      : (r.scope_name || r.scope_id || '—');
+    return `<div class="ai-card ${r.severity} ${dim}" data-id="${r.id}">
+      <div class="head">
+        <div class="badges">
+          <span class="badge severity_${r.severity}">${r.severity.toUpperCase()}</span>
+          <span class="badge category">${CAT_LABELS[r.category] || r.category}</span>
+          <span class="badge status">${r.status}</span>
+          <span class="badge confidence">conf ${r.confidence.toFixed(2)}</span>
+        </div>
+      </div>
+      <div class="headline">${r.headline}</div>
+      <div class="scope">${SCOPE_LABELS[r.scope_type] || r.scope_type} · ${scopeLink}</div>
+      <div class="meta">Projected impact: <strong>${r.projected_impact || '—'}</strong></div>
+      ${r.evidence ? `<div class="section"><div class="lbl">Evidence</div><div class="body">${r.evidence}</div></div>` : ''}
+      ${r.suggested_action ? `<div class="section"><div class="lbl">Suggested next step</div><div class="body">${r.suggested_action}</div></div>` : ''}
+      <div class="actions">
+        ${r.status !== 'done' ? `<button class="done"     onclick="setStatus(${r.id},'done')">✓ Mark done</button>` : ''}
+        ${r.status === 'new'  ? `<button onclick="setStatus(${r.id},'acknowledged')">👀 Acknowledge</button>` : ''}
+        ${r.status !== 'snoozed' && r.status !== 'done' ? `<button class="snooze"   onclick="snoozeRec(${r.id})">😴 Snooze 7d</button>` : ''}
+        ${r.status !== 'dismissed' ? `<button class="dismiss"  onclick="setStatus(${r.id},'dismissed')">✗ Dismiss</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function setStatus(id, status, snoozeDays) {
+  const body = {status};
+  if (status === 'snoozed' && snoozeDays) {
+    const d = new Date(); d.setDate(d.getDate() + snoozeDays);
+    body.snoozed_until = d.toISOString().slice(0, 10);
+  }
+  try {
+    const r = await fetch(`/dashboard/api/ai/recommendations/${id}/status/`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (r.ok) loadData();
+  } catch (e) { console.error(e); }
+}
+function snoozeRec(id) { setStatus(id, 'snoozed', 7); }
+
+async function regenerate() {
+  const btn = document.getElementById('regenBtn');
+  btn.disabled = true; btn.textContent = '🔄 Generating…';
+  const banner = document.getElementById('banner');
+  banner.style.display = 'none';
+  try {
+    const r = await fetch(`/dashboard/api/ai/recommendations/regenerate/?mp=${currentMP}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      banner.className = 'ai-banner err';
+      banner.innerHTML = `<strong>Generation failed.</strong> ${j.error || ''}`;
+      banner.style.display = 'block';
+    } else if ((j.stderr || '').includes('credit balance')) {
+      banner.className = 'ai-banner err';
+      banner.innerHTML = `<strong>Anthropic credit balance is too low.</strong> Top up at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>, then click Regenerate again.`;
+      banner.style.display = 'block';
+    } else if ((j.stderr || '').match(/✗/)) {
+      banner.className = 'ai-banner err';
+      banner.innerHTML = `<strong>Generation hit an error:</strong><br/><pre style="font-size:11px;margin:6px 0;white-space:pre-wrap">${j.stderr}</pre>`;
+      banner.style.display = 'block';
+    }
+    loadData();
+  } catch (e) {
+    banner.className = 'ai-banner err';
+    banner.textContent = 'Generation failed: ' + e.message;
+    banner.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 Regenerate';
+  }
+}
+
+async function loadData() {
+  const params = new URLSearchParams({mp: currentMP});
+  const status = document.getElementById('statusFilter').value;
+  if (status) params.set('status', status);
+  try {
+    const r = await fetch(`/dashboard/api/ai/recommendations/?${params}`);
+    const d = await r.json();
+    lastData = d;
+    renderKPI(d);
+    renderCards(d);
+  } catch (e) { console.error('ai-recs fetch failed', e); }
+}
+
+loadData();
+</script>
+{% endblock %}

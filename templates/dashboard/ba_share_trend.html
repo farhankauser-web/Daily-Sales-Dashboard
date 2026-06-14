@@ -1,0 +1,328 @@
+{% extends "base/base.html" %}
+{% block title %}Share Trend{% endblock %}
+{% block nav_ba_share_trend %}active{% endblock %}
+{% block page_title %}Brand Analytics — Click + Purchase Share Trend{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .st-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                padding:10px 14px; border-radius:6px; margin-bottom:12px;
+                font-size:13px; }
+  .st-banner code { background:#FFF; padding:1px 4px; border-radius:3px;
+                     font-size:11px; }
+
+  .st-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .st-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:12px 16px; }
+  .st-kpi .lbl { font-size:11px; color:#8A8A8A; text-transform:uppercase;
+                  letter-spacing:0.3px; }
+  .st-kpi .val { font-size:24px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; margin-top:2px; }
+  .st-kpi .delta { font-size:12px; margin-top:4px; font-family:'DM Mono',monospace; }
+  .st-kpi .delta.up   { color:#067D62; }
+  .st-kpi .delta.down { color:#C40000; }
+  .st-kpi.click    { border-left:4px solid #067D62; }
+  .st-kpi.purchase { border-left:4px solid #1B4A75; }
+
+  .st-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+                 padding:14px 18px; margin-bottom:14px; }
+  .st-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
+  .st-section .sub { font-size:11px; color:#777; margin-bottom:10px; }
+  .st-section h3 .pill { display:inline-block; margin-left:6px; font-size:10px;
+                          background:#F3F4F5; padding:2px 8px; border-radius:10px;
+                          color:#555; font-weight:600; vertical-align:middle; }
+
+  .st-grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+  @media (max-width:1100px) { .st-grid-2 { grid-template-columns: 1fr; } }
+
+  .st-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .st-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555; }
+  .st-table thead th.text-left { text-align:left; }
+  .st-table tbody td { padding:6px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .st-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
+                                  max-width:300px; white-space:nowrap;
+                                  overflow:hidden; text-overflow:ellipsis; }
+  .st-table tbody tr:hover { background:#F8F9FA; }
+  .st-table tbody td.delta-pos { color:#067D62; font-weight:600; }
+  .st-table tbody td.delta-neg { color:#C40000; font-weight:600; }
+
+  .st-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+              padding:24px; text-align:center; color:#555; font-size:12px; }
+
+  .st-spark { display:inline-block; width:120px; height:24px; vertical-align:middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="banner" class="st-banner" style="display:none"></div>
+<div id="moversBanner" class="st-banner" style="display:none"></div>
+
+<div class="st-kpi-strip">
+  <div class="st-kpi click">
+    <div class="lbl">Weighted click share — latest week</div>
+    <div class="val" id="kpi-click">—</div>
+    <div class="delta" id="delta-click"></div>
+  </div>
+  <div class="st-kpi purchase">
+    <div class="lbl">Weighted purchase share — latest week</div>
+    <div class="val" id="kpi-purchase">—</div>
+    <div class="delta" id="delta-purchase"></div>
+  </div>
+  <div class="st-kpi">
+    <div class="lbl">Total query volume</div>
+    <div class="val" id="kpi-volume">—</div>
+    <div class="delta" id="delta-volume"></div>
+  </div>
+  <div class="st-kpi">
+    <div class="lbl">Queries in market</div>
+    <div class="val" id="kpi-queries">—</div>
+    <div class="delta" id="delta-queries"></div>
+  </div>
+</div>
+
+<div class="st-section">
+  <h3>📈 Brand share trend over weeks <span class="pill" id="weeks-pill">0 weeks</span></h3>
+  <div class="sub">Volume-weighted average click + purchase share, computed across every query of ours per week. Two lines: green = click share, blue = purchase share.</div>
+  <canvas id="trendChart" height="90"></canvas>
+</div>
+
+<div class="st-grid-2">
+  <div class="st-section">
+    <h3>📈 Top share GAINERS <span class="pill" id="gainers-count">0</span></h3>
+    <div class="sub">Queries where our click share grew the most week-over-week. Filtered to top-quartile-volume queries so noise from tiny queries doesn't pollute the list.</div>
+    <div style="max-height:55vh;overflow:auto">
+      <table class="st-table">
+        <thead><tr>
+          <th class="text-left">Search query</th>
+          <th>Volume</th>
+          <th>Prior</th>
+          <th>Latest</th>
+          <th>Δ click</th>
+        </tr></thead>
+        <tbody id="gainersBody"><tr><td colspan="5" class="st-empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="st-section">
+    <h3>📉 Top share LOSERS <span class="pill" id="losers-count">0</span></h3>
+    <div class="sub">Queries where our click share dropped the most week-over-week. Same volume filter.</div>
+    <div style="max-height:55vh;overflow:auto">
+      <table class="st-table">
+        <thead><tr>
+          <th class="text-left">Search query</th>
+          <th>Volume</th>
+          <th>Prior</th>
+          <th>Latest</th>
+          <th>Δ click</th>
+        </tr></thead>
+        <tbody id="losersBody"><tr><td colspan="5" class="st-empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="st-section">
+  <h3>🎯 Per-ASIN share trend</h3>
+  <div class="sub">Volume-weighted click + purchase share trend for each of our ingested ASINs. Sparkline = click share; final number is the most recent week.</div>
+  <div style="max-height:60vh;overflow:auto">
+    <table class="st-table">
+      <thead><tr>
+        <th class="text-left">ASIN</th>
+        <th class="text-left">Product</th>
+        <th>Latest click %</th>
+        <th>Latest purchase %</th>
+        <th class="text-left">Click-share trend</th>
+      </tr></thead>
+      <tbody id="perAsinBody"><tr><td colspan="5" class="st-empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+let currentMP = '{{ marketplace }}';
+let chart = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+
+function fmtPct(v) { return v == null ? '—' : v.toFixed(2) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+
+function renderDelta(elId, delta, fmt) {
+  const el = document.getElementById(elId);
+  if (delta == null) { el.textContent = ''; return; }
+  const positive = delta > 0;
+  el.className = 'delta ' + (delta === 0 ? '' : (positive ? 'up' : 'down'));
+  const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '—');
+  el.textContent = `${arrow} ${(fmt || fmtPct)(Math.abs(delta))}`;
+}
+
+function renderKPI(d) {
+  const t = d.account_trend;
+  if (!t.length) {
+    document.getElementById('kpi-click').textContent    = '—';
+    document.getElementById('kpi-purchase').textContent = '—';
+    document.getElementById('kpi-volume').textContent   = '—';
+    document.getElementById('kpi-queries').textContent  = '—';
+    return;
+  }
+  const latest = t[t.length - 1];
+  const prior  = t.length > 1 ? t[t.length - 2] : null;
+  document.getElementById('kpi-click').textContent    = fmtPct(latest.weighted_click_share);
+  document.getElementById('kpi-purchase').textContent = fmtPct(latest.weighted_purchase_share);
+  document.getElementById('kpi-volume').textContent   = fmtInt(latest.total_query_volume);
+  document.getElementById('kpi-queries').textContent  = fmtInt(latest.queries_in_market);
+  if (prior) {
+    renderDelta('delta-click',    latest.weighted_click_share    - prior.weighted_click_share);
+    renderDelta('delta-purchase', latest.weighted_purchase_share - prior.weighted_purchase_share);
+    renderDelta('delta-volume',   latest.total_query_volume      - prior.total_query_volume, fmtInt);
+    renderDelta('delta-queries',  latest.queries_in_market       - prior.queries_in_market,  fmtInt);
+  }
+  document.getElementById('weeks-pill').textContent = `${t.length} week(s)`;
+}
+
+function renderTrendChart(d) {
+  const t = d.account_trend;
+  const labels = t.map(x => x.week_start.slice(5));    // MM-DD
+  const click  = t.map(x => x.weighted_click_share);
+  const purch  = t.map(x => x.weighted_purchase_share);
+
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [
+      {label: 'Weighted click share %',   data: click, borderColor: '#067D62',
+       backgroundColor:'rgba(6,125,98,0.10)', tension:0.3, pointRadius:4, fill:true},
+      {label: 'Weighted purchase share %', data: purch, borderColor:'#1B4A75',
+       backgroundColor:'rgba(27,74,117,0.06)', tension:0.3, pointRadius:4, fill:true},
+    ]},
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true, labels:{font:{size:11}} } },
+      scales: {
+        y: { beginAtZero: true, ticks:{font:{size:10},callback:v=>v+'%'} },
+        x: { ticks:{font:{size:10}} },
+      },
+    },
+  });
+}
+
+function renderMovers(d, mode) {
+  const rows = mode === 'up' ? d.movers_up : d.movers_down;
+  const bodyId = mode === 'up' ? 'gainersBody' : 'losersBody';
+  const body = document.getElementById(bodyId);
+  if (!rows || !rows.length) {
+    const msg = d.state && !d.state.has_movers
+      ? 'Need at least 2 weeks of SQP data to compute movers.'
+      : (mode === 'up' ? 'No share gainers vs prior week.' : 'No share losers vs prior week.');
+    body.innerHTML = `<tr><td colspan="5" class="st-empty">${msg}</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r => {
+    const cls = r.delta_click > 0 ? 'delta-pos' : (r.delta_click < 0 ? 'delta-neg' : '');
+    return `<tr>
+      <td class="text-left" title="${r.search_query}">${r.search_query}</td>
+      <td>${fmtInt(r.volume)}</td>
+      <td>${fmtPct(r.prior_click)}</td>
+      <td>${fmtPct(r.latest_click)}</td>
+      <td class="${cls}">${r.delta_click > 0 ? '+' : ''}${r.delta_click.toFixed(2)} pt</td>
+    </tr>`;
+  }).join('');
+}
+
+function sparkline(series) {
+  // Tiny SVG sparkline from a series of {click_share} values, ignoring nulls
+  const vals = series.map(s => s.click_share).filter(v => v != null);
+  if (!vals.length) return '<span style="color:#C0C5CA">—</span>';
+  if (vals.length === 1) return `<span style="color:#777">single point: ${fmtPct(vals[0])}</span>`;
+  const max = Math.max(...vals, 0.001);
+  const min = Math.min(...vals);
+  const W = 120, H = 24, P = 2;
+  const xs = (i, n) => P + (i / Math.max(n-1, 1)) * (W - 2*P);
+  const ys = v => H - P - ((v - min) / Math.max(max - min, 0.001)) * (H - 2*P);
+  const pts = vals.map((v, i) => `${xs(i, vals.length)},${ys(v)}`).join(' ');
+  return `<svg class="st-spark" viewBox="0 0 ${W} ${H}">
+    <polyline fill="none" stroke="#067D62" stroke-width="1.5" points="${pts}"/>
+    <circle cx="${xs(vals.length-1, vals.length)}" cy="${ys(vals[vals.length-1])}" r="2" fill="#067D62"/>
+  </svg>`;
+}
+
+function renderPerAsin(d) {
+  const body = document.getElementById('perAsinBody');
+  if (!d.per_asin_trend.length) {
+    body.innerHTML = '<tr><td colspan="5" class="st-empty">No ASIN-level data.</td></tr>';
+    return;
+  }
+  body.innerHTML = d.per_asin_trend.map(r => {
+    const last = r.series[r.series.length - 1];
+    return `<tr>
+      <td class="text-left"><code>${r.asin}</code></td>
+      <td class="text-left" title="${r.title}">${r.title || '—'}</td>
+      <td>${fmtPct(last ? last.click_share : null)}</td>
+      <td>${fmtPct(last ? last.purchase_share : null)}</td>
+      <td class="text-left">${sparkline(r.series)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderMoversBanner(d) {
+  const el = document.getElementById('moversBanner');
+  if (d.state && !d.state.has_movers && d.state.movers_explanation) {
+    el.innerHTML = '<strong>⚠️ Share movers need ≥2 weeks.</strong> ' +
+      d.state.movers_explanation.replace(/`([^`]+)`/g, '<code>$1</code>');
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function loadData() {
+  try {
+    const r = await fetch(`/dashboard/api/ba/share-trend/?mp=${currentMP}`);
+    const d = await r.json();
+    const banner = document.getElementById('banner');
+    if (d.no_data) {
+      banner.textContent = d.no_data_msg || 'No data.';
+      banner.style.display = 'block';
+      return;
+    }
+    banner.style.display = 'none';
+    renderKPI(d);
+    renderTrendChart(d);
+    renderMoversBanner(d);
+    renderMovers(d, 'up');
+    renderMovers(d, 'down');
+    renderPerAsin(d);
+    document.getElementById('gainers-count').textContent = `${d.movers_up.length}`;
+    document.getElementById('losers-count').textContent  = `${d.movers_down.length}`;
+  } catch (e) { console.error('share-trend fetch failed', e); }
+}
+
+loadData();
+</script>
+{% endblock %}

@@ -1,0 +1,352 @@
+{% extends "base/base.html" %}
+{% block title %}Placement Analytics{% endblock %}
+{% block nav_placements %}active{% endblock %}
+{% block page_title %}Placement Analytics{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for p in period_options %}
+  <button class="date-btn {% if p.id == '7d' %}active{% endif %}"
+          data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
+  {% endfor %}
+</div>
+<span style="margin-left:8px;font-size:11px;color:#8A8A8A">
+  Sponsored Products only · SD has no placements
+</span>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pl-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                padding:8px 12px; border-radius:6px; margin-bottom:10px;
+                font-size:12px; }
+
+  .pl-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .pl-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:10px 14px; }
+  .pl-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .pl-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .pl-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .pl-kpi.profit  { border-left:4px solid #067D62; }
+
+  /* The headline visualization — 3 placements × 3 metric bars side by side. */
+  .pl-viz { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+            padding:18px 20px; margin-bottom:14px; }
+  .pl-viz h3 { margin:0 0 12px; font-size:14px; font-weight:700; color:#0F1111; }
+  .pl-viz .row { display:grid; grid-template-columns:140px 1fr;
+                  align-items:center; gap:14px; margin-bottom:12px; }
+  .pl-viz .label { font-weight:700; font-size:13px; color:#0F1111; }
+  .pl-viz .label .sub { font-size:11px; color:#777; font-weight:400; display:block; }
+  .pl-viz .group { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  .pl-viz .bar-cell { background:#F8F9FA; border-radius:6px; padding:6px 10px; }
+  .pl-viz .bar-cell .metric { font-size:10px; color:#777; text-transform:uppercase;
+                                letter-spacing:0.4px; margin-bottom:4px; }
+  .pl-viz .bar-cell .pct { font-family:'DM Mono',monospace; font-weight:700;
+                            font-size:14px; color:#0F1111; }
+  .pl-viz .bar-cell .raw { font-size:10px; color:#777; margin-top:1px; }
+  .pl-viz .bar { height:6px; background:#E5E7E8; border-radius:3px; margin-top:6px;
+                  overflow:hidden; position:relative; }
+  .pl-viz .bar > div { height:100%; background:#067D62; transition:width 250ms ease; }
+  .pl-viz .bar-cell.spend > .bar > div  { background:#1B4A75; }
+  .pl-viz .bar-cell.sales > .bar > div  { background:#067D62; }
+  .pl-viz .bar-cell.profit > .bar > div { background:#7A5400; }
+
+  /* Detailed table */
+  .pl-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .pl-table thead th { background:#F3F4F5; padding:8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555; }
+  .pl-table thead th.text-left { text-align:left; }
+  .pl-table tbody td { padding:7px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .pl-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit; }
+  .pl-table tbody td.profit-pos { color:#067D62; font-weight:600; }
+  .pl-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+
+  /* Per-campaign mix mini-bars */
+  .pl-mix-cell { padding:0 !important; height:32px; min-width:90px;
+                  position:relative; font-size:10px; }
+  .pl-mix-bar { position:absolute; top:6px; bottom:6px; left:0;
+                 background:#E5E7E8; border-radius:3px; width:calc(100% - 8px);
+                 margin:0 4px; }
+  .pl-mix-bar > div { height:100%; background:#067D62; border-radius:3px;
+                       transition:width 200ms ease; }
+  .pl-mix-cell .num { position:relative; z-index:1; padding:4px 6px;
+                       display:flex; justify-content:space-between;
+                       font-family:'DM Mono',monospace; }
+  .pl-mix-cell .num .pct { font-weight:600; color:#0F1111; }
+  .pl-mix-cell .num .amt { color:#666; }
+
+  .pl-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="cmWarning" class="pl-banner" style="display:none"></div>
+
+<div class="pl-kpi-strip">
+  <div class="pl-kpi"><div class="lbl">Ad Spend</div>
+    <div class="val" id="kpi-spend">—</div>
+    <div class="sub" id="kpi-spend-sub"></div></div>
+  <div class="pl-kpi"><div class="lbl">Ad Sales</div>
+    <div class="val" id="kpi-sales">—</div>
+    <div class="sub" id="kpi-sales-sub"></div></div>
+  <div class="pl-kpi profit"><div class="lbl">Est. Profit
+    <span title="Calculated using each campaign's blended contribution-margin %.">ⓘ</span>
+  </div>
+    <div class="val" id="kpi-profit">—</div>
+    <div class="sub" id="kpi-profit-sub"></div></div>
+  <div class="pl-kpi"><div class="lbl">Orders</div>
+    <div class="val" id="kpi-orders">—</div>
+    <div class="sub" id="kpi-orders-sub"></div></div>
+  <div class="pl-kpi"><div class="lbl">Campaigns</div>
+    <div class="val" id="kpi-campaigns">—</div>
+    <div class="sub" id="kpi-campaigns-sub"></div></div>
+</div>
+
+<div class="pl-viz" id="vizWrap">
+  <h3>Where the budget is working — Spend share vs Sales share vs Profit share</h3>
+  <div id="vizRows"><div style="color:#8A8A8A;font-size:12px">Loading…</div></div>
+  <div style="font-size:11px;color:#777;margin-top:8px;background:#F8F9FA;
+              padding:8px 10px;border-radius:4px;border-left:3px solid #B0B5BA">
+    <strong>About these categories:</strong>
+    Amazon's v3 Ads API exposes four placement classifications for Sponsored
+    Products — <em>Top of Search</em>, <em>Product Pages</em>,
+    <em>Other on-Amazon</em>, and <em>Off Amazon</em>.
+    <strong>Rest of Search is rolled into "Other on-Amazon"</strong> along with
+    cart, post-purchase widgets, and other on-Amazon contexts — Amazon's API
+    does not break it out separately at the campaign-placement level.
+    A high Sales % and Profit % with a lower Spend % means the placement
+    over-delivers vs its cost.
+  </div>
+</div>
+
+<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+            padding:8px;overflow:auto;margin-bottom:14px">
+  <table class="pl-table" id="placementTable">
+    <thead><tr>
+      <th class="text-left">Placement</th>
+      <th>Impressions</th><th>Clicks</th><th>CTR</th>
+      <th>Spend</th><th>Spend %</th>
+      <th>Sales</th><th>Sales %</th>
+      <th>Orders</th><th>ACoS</th><th>ROAS</th>
+      <th>Est. Profit</th><th>Profit %</th>
+    </tr></thead>
+    <tbody id="placementBody"><tr><td colspan="13" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<h3 style="font-size:13px;font-weight:700;color:#0F1111;margin:14px 0 6px">
+  Per-campaign placement mix (top 30 by spend)
+</h3>
+<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+            padding:8px;overflow:auto;max-height:50vh">
+  <table class="pl-table" id="topCampaignTable">
+    <thead><tr>
+      <th class="text-left">Campaign</th>
+      <th>Total Spend</th>
+      <th class="text-left">Top of Search</th>
+      <th class="text-left">Rest of Search</th>
+      <th class="text-left">Product Pages</th>
+      <th>Total Profit</th>
+    </tr></thead>
+    <tbody id="topCampaignBody"><tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+
+<div id="emptyState" class="pl-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">📍</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No placement data</div>
+  <div id="emptyMsg">AdsPlacementDailySnapshot is empty for the selected window.</div>
+</div>
+
+<script>
+let currentMP     = '{{ marketplace }}';
+let currentPeriod = '7d';
+let lastData      = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+function setPeriod(pid, btn) {
+  currentPeriod = pid;
+  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtDec(v) { return v == null ? '—' : Number(v).toFixed(2); }
+
+function renderKPI(d) {
+  const k = d.kpi;
+  const setText = (id, v) => { document.getElementById(id).textContent = v; };
+  setText('kpi-spend',  fmtCurrency(k.total_spend));
+  setText('kpi-spend-sub', `${d.period.start} → ${d.period.end}`);
+  setText('kpi-sales',  fmtCurrency(k.total_sales));
+  setText('kpi-sales-sub', k.total_spend > 0 ? `ROAS ${(k.total_sales / k.total_spend).toFixed(2)}` : '');
+  setText('kpi-profit', fmtCurrency(k.total_profit));
+  setText('kpi-profit-sub', 'Across all placements');
+  setText('kpi-orders', fmtInt(k.total_orders));
+  setText('kpi-orders-sub', k.total_clicks > 0 ? `CVR ${(k.total_orders / k.total_clicks * 100).toFixed(1)}%` : '');
+  setText('kpi-campaigns', fmtInt(k.campaigns));
+  setText('kpi-campaigns-sub', `${fmtInt(k.total_impressions)} impressions`);
+}
+
+function renderViz(d) {
+  const wrap = document.getElementById('vizRows');
+  if (!d.placements || d.placements.length === 0) {
+    wrap.innerHTML = '<div style="color:#8A8A8A">No placement data yet for this window.</div>';
+    return;
+  }
+  wrap.innerHTML = d.placements.map(p => `
+    <div class="row">
+      <div class="label">${p.label}<span class="sub">${fmtInt(p.impressions)} impr · ${fmtInt(p.clicks)} clicks</span></div>
+      <div class="group">
+        <div class="bar-cell spend">
+          <div class="metric">Spend share</div>
+          <div class="pct">${fmtPct(p.spend_pct)}</div>
+          <div class="raw">${fmtCurrency(p.spend)}</div>
+          <div class="bar"><div style="width:${Math.min(p.spend_pct, 100)}%"></div></div>
+        </div>
+        <div class="bar-cell sales">
+          <div class="metric">Sales share</div>
+          <div class="pct">${fmtPct(p.sales_pct)}</div>
+          <div class="raw">${fmtCurrency(p.sales)}</div>
+          <div class="bar"><div style="width:${Math.min(p.sales_pct, 100)}%"></div></div>
+        </div>
+        <div class="bar-cell profit">
+          <div class="metric">Profit share</div>
+          <div class="pct">${fmtPct(p.profit_pct)}</div>
+          <div class="raw">${fmtCurrency(p.estimated_profit)}</div>
+          <div class="bar"><div style="width:${Math.min(p.profit_pct, 100)}%"></div></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderTable(d) {
+  const body = document.getElementById('placementBody');
+  if (!d.placements || d.placements.length === 0) {
+    body.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#8A8A8A;padding:24px">No placement data.</td></tr>';
+    return;
+  }
+  body.innerHTML = d.placements.map(p => {
+    const profClass = p.estimated_profit > 0 ? 'profit-pos' :
+                      (p.estimated_profit < 0 ? 'profit-neg' : '');
+    return `<tr>
+      <td class="text-left">${p.label}</td>
+      <td>${fmtInt(p.impressions)}</td>
+      <td>${fmtInt(p.clicks)}</td>
+      <td>${fmtPct(p.ctr)}</td>
+      <td>${fmtCurrency(p.spend)}</td>
+      <td>${fmtPct(p.spend_pct)}</td>
+      <td>${fmtCurrency(p.sales)}</td>
+      <td>${fmtPct(p.sales_pct)}</td>
+      <td>${fmtInt(p.orders)}</td>
+      <td>${fmtPct(p.acos)}</td>
+      <td>${fmtDec(p.roas)}</td>
+      <td class="${profClass}">${fmtCurrency(p.estimated_profit)}</td>
+      <td>${fmtPct(p.profit_pct)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTopCampaigns(d) {
+  const body = document.getElementById('topCampaignBody');
+  if (!d.top_campaigns || d.top_campaigns.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">No campaign data.</td></tr>';
+    return;
+  }
+  body.innerHTML = d.top_campaigns.map(c => {
+    const cellFor = (plc) => {
+      const p = c.placements[plc];
+      if (!p) return '<td class="pl-mix-cell"><div class="pl-mix-bar"></div><div class="num"><span class="pct">—</span><span class="amt"></span></div></td>';
+      const pct = p.spend_pct;
+      return `<td class="pl-mix-cell">
+        <div class="pl-mix-bar"><div style="width:${Math.min(pct, 100)}%"></div></div>
+        <div class="num"><span class="pct">${fmtPct(pct)}</span><span class="amt">${fmtCurrency(p.spend)}</span></div>
+      </td>`;
+    };
+    const profClass = c.total_profit > 0 ? 'profit-pos' :
+                      (c.total_profit < 0 ? 'profit-neg' : '');
+    return `<tr>
+      <td class="text-left" title="${c.campaign_name}">
+        <a href="/dashboard/campaigns/${encodeURIComponent(c.campaign_id)}/?mp=${currentMP}"
+           style="color:#0F1111;text-decoration:none">${c.campaign_name}</a>
+      </td>
+      <td>${fmtCurrency(c.total_spend)}</td>
+      ${cellFor('top_of_search')}
+      ${cellFor('rest_of_search')}
+      ${cellFor('product_pages')}
+      <td class="${profClass}">${fmtCurrency(c.total_profit)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadData() {
+  try {
+    const r = await fetch(`/dashboard/api/placements/?mp=${currentMP}&period=${currentPeriod}`);
+    const d = await r.json();
+    lastData = d;
+
+    const warn = document.getElementById('cmWarning');
+    if (d.cm_not_ready_warning) { warn.textContent = d.cm_not_ready_warning; warn.style.display = 'block'; }
+    else                         { warn.style.display = 'none'; }
+
+    if (!d.placements || d.placements.length === 0) {
+      document.getElementById('emptyState').style.display = 'block';
+    } else {
+      document.getElementById('emptyState').style.display = 'none';
+    }
+
+    renderKPI(d);
+    renderViz(d);
+    renderTable(d);
+    renderTopCampaigns(d);
+
+    document.getElementById('footnote').innerHTML =
+      `Window: <strong>${d.period.start}</strong> → <strong>${d.period.end}</strong>. ` +
+      `<em>${d.profit_proxy_note}</em>`;
+  } catch (e) {
+    console.error('loadData failed', e);
+    document.getElementById('emptyMsg').textContent = 'Failed to load: ' + e.message;
+    document.getElementById('emptyState').style.display = 'block';
+  }
+}
+
+loadData();
+</script>
+{% endblock %}

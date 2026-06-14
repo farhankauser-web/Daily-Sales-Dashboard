@@ -1,0 +1,322 @@
+{% extends "base/base.html" %}
+{% block title %}Baskets & Repeat Purchase{% endblock %}
+{% block nav_ba_baskets %}active{% endblock %}
+{% block page_title %}Brand Analytics — Baskets & Repeat Purchase{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<select id="weekPicker" class="form-control"
+        style="margin-left:8px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setWeek(this.value)"></select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .bk-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+                padding:10px 14px; border-radius:6px; margin-bottom:12px;
+                font-size:13px; }
+
+  .bk-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .bk-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:10px 14px; }
+  .bk-kpi .lbl { font-size:11px; color:#8A8A8A; }
+  .bk-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; }
+  .bk-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .bk-kpi.cross  { border-left:4px solid #1B4A75; }
+  .bk-kpi.repeat { border-left:4px solid #067D62; }
+
+  .bk-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+                 padding:14px 18px; margin-bottom:14px; }
+  .bk-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
+  .bk-section .sub { font-size:11px; color:#777; margin-bottom:10px; }
+
+  .bk-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .bk-table thead th { background:#F3F4F5; padding:8px; text-align:right;
+                        font-size:11px; font-weight:600; color:#555; }
+  .bk-table thead th.text-left { text-align:left; }
+  .bk-table tbody td { padding:7px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; font-size:11px; }
+  .bk-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
+                                  max-width:260px; white-space:nowrap;
+                                  overflow:hidden; text-overflow:ellipsis; }
+  .bk-table tbody tr:hover { background:#F8F9FA; }
+
+  .bk-pair-badge { display:inline-block; padding:1px 6px; border-radius:3px;
+                    font-size:9px; font-weight:600; margin-left:4px; }
+  .bk-pair-badge.internal { background:#E0F2EC; color:#067D62; }
+  .bk-pair-badge.external { background:#F3F4F5; color:#555; }
+
+  .bk-combo-cell { padding:0 !important; height:28px; min-width:90px;
+                    position:relative; }
+  .bk-combo-bar { position:absolute; top:6px; bottom:6px; left:4px; right:4px;
+                  background:#F3F4F5; border-radius:3px; overflow:hidden; }
+  .bk-combo-bar > div { height:100%; background:#1B4A75; transition:width 250ms; }
+  .bk-combo-cell .pct { position:relative; z-index:1; padding:6px 8px;
+                        font-family:'DM Mono',monospace; font-weight:600; }
+
+  .bk-tabs { display:flex; gap:2px; border-bottom:1px solid #D5D9D9;
+              margin-bottom:10px; }
+  .bk-tab  { padding:8px 14px; cursor:pointer; font-size:12px; font-weight:600;
+              color:#555; border-bottom:2px solid transparent; user-select:none; }
+  .bk-tab:hover  { color:#0F1111; }
+  .bk-tab.active { color:#0F1111; border-bottom-color:#067D62; }
+  .bk-pane { display:none; }
+  .bk-pane.active { display:block; }
+
+  .bk-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+              padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="banner" class="bk-banner" style="display:none"></div>
+
+<div class="bk-kpi-strip">
+  <div class="bk-kpi cross"><div class="lbl">Co-purchase pairs</div>
+    <div class="val" id="kpi-pairs">—</div>
+    <div class="sub" id="kpi-pairs-sub"></div></div>
+  <div class="bk-kpi"><div class="lbl">Internal (own brand)</div>
+    <div class="val" id="kpi-internal">—</div>
+    <div class="sub" id="kpi-internal-sub"></div></div>
+  <div class="bk-kpi repeat"><div class="lbl">Orders this week</div>
+    <div class="val" id="kpi-orders">—</div>
+    <div class="sub" id="kpi-orders-sub"></div></div>
+  <div class="bk-kpi repeat"><div class="lbl">Unique customers</div>
+    <div class="val" id="kpi-customers">—</div>
+    <div class="sub" id="kpi-customers-sub"></div></div>
+  <div class="bk-kpi repeat"><div class="lbl">Avg repeat rate</div>
+    <div class="val" id="kpi-repeat">—</div>
+    <div class="sub" id="kpi-repeat-sub"></div></div>
+</div>
+
+<div id="emptyState" class="bk-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">🛍️</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No basket data yet</div>
+  <div id="emptyMsg"></div>
+</div>
+
+<div class="bk-tabs">
+  <div class="bk-tab active" data-tab="pairs"    onclick="switchTab('pairs')">Top co-purchase pairs</div>
+  <div class="bk-tab"        data-tab="per_asin" onclick="switchTab('per_asin')">Per-ASIN partner summary</div>
+  <div class="bk-tab"        data-tab="repeat"   onclick="switchTab('repeat')">Repeat purchase</div>
+</div>
+
+<div class="bk-pane active" id="pane-pairs">
+  <div class="bk-section">
+    <h3>Strongest co-purchase pairs — week <span id="pairs-week">—</span></h3>
+    <div class="sub">When a customer buys our ASIN (left), what else lands in the basket. Combo % = Amazon's frequency-of-co-purchase signal.</div>
+    <div style="max-height:calc(100vh - 380px);overflow:auto">
+      <table class="bk-table" id="pairsTable">
+        <thead><tr>
+          <th>Rank</th>
+          <th class="text-left">Our ASIN</th>
+          <th class="text-left">Co-purchased with</th>
+          <th>Combo %</th>
+          <th class="text-left">Title</th>
+        </tr></thead>
+        <tbody id="pairsBody"><tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="bk-pane" id="pane-per_asin">
+  <div class="bk-section">
+    <h3>Cross-sell summary per our ASIN</h3>
+    <div class="sub">How many partner ASINs each of our products gets paired with, plus the strongest pairing.</div>
+    <div style="max-height:calc(100vh - 380px);overflow:auto">
+      <table class="bk-table" id="perAsinTable">
+        <thead><tr>
+          <th class="text-left">Our ASIN</th>
+          <th>Partners</th>
+          <th>Internal</th>
+          <th>External</th>
+          <th>Avg combo %</th>
+          <th class="text-left">Top partner</th>
+          <th>Top combo</th>
+        </tr></thead>
+        <tbody id="perAsinBody"><tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="bk-pane" id="pane-repeat">
+  <div class="bk-section">
+    <h3>Repeat purchase / customer retention</h3>
+    <div class="sub">% of customers buying the same ASIN 2+ times in the week, plus the dollars those repeat buyers brought in.</div>
+    <div style="max-height:calc(100vh - 380px);overflow:auto">
+      <table class="bk-table" id="repeatTable">
+        <thead><tr>
+          <th class="text-left">ASIN</th>
+          <th class="text-left">Title</th>
+          <th>Orders</th>
+          <th>Unique buyers</th>
+          <th>Repeat %</th>
+          <th>Repeat revenue</th>
+          <th>Repeat % of rev</th>
+        </tr></thead>
+        <tbody id="repeatBody"><tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentMP   = '{{ marketplace }}';
+let currentWeek = '';
+let lastData    = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  currentWeek = '';
+  loadData();
+}
+function setWeek(w) { currentWeek = w; loadData(); }
+
+function switchTab(t) {
+  document.querySelectorAll('.bk-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === t));
+  document.querySelectorAll('.bk-pane').forEach(el => el.classList.toggle('active', el.id === 'pane-'+t));
+}
+
+function fmtPct(v) { return v == null ? '—' : v.toFixed(2) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtCurrency(v) {
+  if (v == null) return '—';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(1) + 'k';
+  return '$' + v.toFixed(0);
+}
+
+function renderKPI(d) {
+  const mb = d.market_basket, rp = d.repeat_purchase;
+  document.getElementById('kpi-pairs').textContent     = fmtInt(mb.pair_count);
+  document.getElementById('kpi-pairs-sub').textContent = `${d.week_start} → ${d.week_end}`;
+  document.getElementById('kpi-internal').textContent  = fmtInt(mb.internal_count);
+  document.getElementById('kpi-internal-sub').textContent = `${mb.external_count} external pairs`;
+  document.getElementById('kpi-orders').textContent    = fmtInt(rp.totals.orders);
+  document.getElementById('kpi-orders-sub').textContent = `across ${rp.totals.asin_count} ASINs`;
+  document.getElementById('kpi-customers').textContent = fmtInt(rp.totals.unique_customers);
+  document.getElementById('kpi-customers-sub').textContent = `repeat rev ${fmtCurrency(rp.totals.repeat_revenue)}`;
+  document.getElementById('kpi-repeat').textContent    = fmtPct(rp.totals.avg_repeat_pct);
+  document.getElementById('kpi-repeat-sub').textContent = 'Orders-weighted';
+
+  document.getElementById('pairs-week').textContent = `${d.week_start} → ${d.week_end}`;
+}
+
+function populateWeeks(d) {
+  const w = document.getElementById('weekPicker');
+  if (w.options.length !== d.weeks.length) {
+    w.innerHTML = d.weeks.map(x => `<option value="${x}"${x===d.week_start?' selected':''}>${x}</option>`).join('');
+  } else {
+    w.value = d.week_start;
+  }
+}
+
+function renderPairs(d) {
+  const body = document.getElementById('pairsBody');
+  const pairs = d.market_basket.pairs;
+  if (!pairs || pairs.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">No co-purchase pairs.</td></tr>';
+    return;
+  }
+  body.innerHTML = pairs.map(p => {
+    const badge = p.is_internal ? '<span class="bk-pair-badge internal">our brand</span>' : '<span class="bk-pair-badge external">external</span>';
+    return `<tr>
+      <td>#${p.rank}</td>
+      <td class="text-left"><code>${p.asin}</code></td>
+      <td class="text-left"><code>${p.purchased_asin}</code> ${badge}</td>
+      <td class="bk-combo-cell">
+        <div class="bk-combo-bar"><div style="width:${Math.min(p.combination_pct, 100)}%"></div></div>
+        <div class="pct">${fmtPct(p.combination_pct)}</div>
+      </td>
+      <td class="text-left" title="${p.purchased_title}">${p.purchased_title || '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPerAsin(d) {
+  const body = document.getElementById('perAsinBody');
+  const rows = d.market_basket.per_asin;
+  if (!rows || rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">No data.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(r => {
+    const tp = r.top_partner;
+    const partnerCell = tp ? `<code>${tp.asin}</code> <span class="bk-pair-badge ${tp.internal?'internal':'external'}">${tp.internal?'our brand':'external'}</span> · ${tp.title || ''}` : '—';
+    return `<tr>
+      <td class="text-left"><code>${r.asin}</code></td>
+      <td>${r.partner_count}</td>
+      <td>${r.internal_count}</td>
+      <td>${r.external_count}</td>
+      <td>${fmtPct(r.avg_combo_pct)}</td>
+      <td class="text-left">${partnerCell}</td>
+      <td>${tp ? fmtPct(tp.combo) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderRepeat(d) {
+  const body = document.getElementById('repeatBody');
+  const rows = d.repeat_purchase.rows;
+  if (!rows || rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">No data.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(r => `<tr>
+    <td class="text-left"><code>${r.asin}</code></td>
+    <td class="text-left" title="${r.title}">${r.title || '—'}</td>
+    <td>${fmtInt(r.orders)}</td>
+    <td>${fmtInt(r.unique_customers)}</td>
+    <td>${fmtPct(r.repeat_customers_pct)}</td>
+    <td>${fmtCurrency(r.repeat_revenue)}</td>
+    <td>${fmtPct(r.repeat_revenue_pct)}</td>
+  </tr>`).join('');
+}
+
+async function loadData() {
+  const params = new URLSearchParams({mp: currentMP});
+  if (currentWeek) params.set('week_start', currentWeek);
+  try {
+    const r = await fetch(`/dashboard/api/ba/baskets/?${params}`);
+    const d = await r.json();
+    lastData = d;
+    const banner = document.getElementById('banner');
+    if (d.no_data) {
+      banner.textContent = d.no_data_msg;
+      banner.style.display = 'block';
+      document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('emptyMsg').textContent = d.no_data_msg;
+      return;
+    }
+    banner.style.display = 'none';
+    document.getElementById('emptyState').style.display = 'none';
+    populateWeeks(d);
+    renderKPI(d);
+    renderPairs(d);
+    renderPerAsin(d);
+    renderRepeat(d);
+  } catch (e) {
+    console.error('ba/baskets fetch failed', e);
+  }
+}
+
+loadData();
+</script>
+{% endblock %}

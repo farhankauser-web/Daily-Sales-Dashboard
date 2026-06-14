@@ -1,0 +1,354 @@
+{% extends "base/base.html" %}
+{% block title %}Morning Report{% endblock %}
+{% block nav_morning %}active{% endblock %}
+{% block page_title %}Executive Morning Report{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .mr-as-of { font-size:13px; color:#777; margin-bottom:14px; }
+  .mr-as-of strong { color:#0F1111; font-size:15px; font-weight:700; }
+
+  .ai-panel { background:linear-gradient(135deg, #F8FCFA 0%, #FFFFFF 100%);
+               border:1px solid #D5E2DA; border-left:4px solid #067D62;
+               border-radius:10px; padding:14px 18px; margin-bottom:14px; }
+  .ai-panel .head { display:flex; align-items:center; justify-content:space-between;
+                     margin-bottom:6px; }
+  .ai-panel .ttl  { font-size:12px; color:#067D62; text-transform:uppercase;
+                     letter-spacing:0.4px; font-weight:700; }
+  .ai-panel .meta { font-size:11px; color:#8A8A8A; }
+  .ai-panel .meta button { background:transparent; border:1px solid #D5D9D9;
+                            padding:3px 10px; border-radius:4px; font-size:11px;
+                            cursor:pointer; color:#555; margin-left:6px; }
+  .ai-panel .meta button:hover { background:#FFF; }
+  .ai-panel .body { font-size:13px; color:#0F1111; line-height:1.6;
+                     min-height:60px; white-space:pre-wrap; }
+  .ai-panel .body.err { color:#9C3431; font-size:12px; }
+  .ai-panel .blink::after { content:'▌'; display:inline-block;
+                             animation: ai-blink 1s steps(2,start) infinite;
+                             color:#067D62; font-weight:bold; margin-left:2px; }
+  @keyframes ai-blink { to { visibility:hidden; } }
+
+  .mr-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .mr-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+             padding:14px 16px; }
+  .mr-kpi .lbl { font-size:11px; color:#8A8A8A; text-transform:uppercase;
+                  letter-spacing:0.3px; }
+  .mr-kpi .val { font-size:26px; font-weight:700; color:#0F1111;
+                  font-family:'DM Mono',monospace; margin-top:4px; }
+  .mr-kpi .delta { font-size:12px; margin-top:4px; font-family:'DM Mono',monospace; }
+  .mr-kpi .delta.up   { color:#067D62; }
+  .mr-kpi .delta.down { color:#C40000; }
+  .mr-kpi.profit { border-left:4px solid #067D62; }
+
+  .mr-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+
+  .mr-panel { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+              padding:14px 18px; }
+  .mr-panel.critical    { border-left:4px solid #C40000; }
+  .mr-panel.warning     { border-left:4px solid #B7710E; }
+  .mr-panel.opportunity { border-left:4px solid #067D62; }
+  .mr-panel .ttl { font-size:12px; color:#777; text-transform:uppercase;
+                    letter-spacing:0.3px; margin-bottom:6px; font-weight:600; }
+  .mr-panel .headline { font-size:15px; font-weight:700; color:#0F1111;
+                         margin-bottom:4px; }
+  .mr-panel .body { font-size:13px; color:#333; line-height:1.5; }
+  .mr-panel .meta { font-size:11px; color:#777; margin-top:6px; }
+  .mr-panel a { color:#067D62; text-decoration:none; }
+  .mr-panel a:hover { text-decoration:underline; }
+
+  .mr-movement { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+                  padding:14px 18px; margin-top:14px; }
+  .mr-movement .ttl { font-size:13px; font-weight:700; color:#0F1111;
+                       margin-bottom:8px; }
+  .mr-movement .net { font-family:'DM Mono',monospace; font-size:16px;
+                       font-weight:700; margin-bottom:10px; }
+  .mr-movement .net.up   { color:#067D62; }
+  .mr-movement .net.down { color:#C40000; }
+  .mr-contributors { display:grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+                      gap:6px; }
+  .mr-contrib { background:#F8F9FA; border-radius:6px; padding:8px 10px; }
+  .mr-contrib .nm { font-size:11px; color:#555; }
+  .mr-contrib .vl { font-family:'DM Mono',monospace; font-size:14px;
+                     font-weight:700; margin-top:2px; }
+  .mr-contrib .vl.up { color:#067D62; }
+  .mr-contrib .vl.down { color:#C40000; }
+
+  .mr-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
+              padding:32px; text-align:center; color:#555; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mr-as-of" id="asOf">Loading…</div>
+
+<div class="ai-panel" id="aiPanel">
+  <div class="head">
+    <div class="ttl">🤖 CFO Commentary</div>
+    <div class="meta">
+      <span id="aiModel">Claude</span>
+      <button onclick="regenerateAI()">↻ Regenerate</button>
+    </div>
+  </div>
+  <div class="body" id="aiBody">Streaming…</div>
+</div>
+
+<div class="mr-kpi-strip">
+  <div class="mr-kpi"><div class="lbl">Revenue</div>
+    <div class="val" id="kpi-revenue">—</div><div class="delta" id="delta-revenue"></div></div>
+  <div class="mr-kpi profit"><div class="lbl">Gross Profit</div>
+    <div class="val" id="kpi-profit">—</div><div class="delta" id="delta-profit"></div></div>
+  <div class="mr-kpi"><div class="lbl">Margin %</div>
+    <div class="val" id="kpi-margin">—</div><div class="delta" id="delta-margin"></div></div>
+  <div class="mr-kpi"><div class="lbl">TACoS</div>
+    <div class="val" id="kpi-tacos">—</div><div class="delta" id="delta-tacos"></div></div>
+  <div class="mr-kpi"><div class="lbl">Orders</div>
+    <div class="val" id="kpi-orders">—</div><div class="delta" id="delta-orders"></div></div>
+</div>
+
+<div class="mr-grid">
+  <div class="mr-panel opportunity" id="bestCampPanel">
+    <div class="ttl">🏆 Best campaign yesterday</div>
+    <div class="headline" id="bestCampName">—</div>
+    <div class="body" id="bestCampBody"></div>
+  </div>
+
+  <div class="mr-panel opportunity" id="bestSkuPanel">
+    <div class="ttl">📦 Most profitable SKU yesterday</div>
+    <div class="headline" id="bestSkuName">—</div>
+    <div class="body" id="bestSkuBody"></div>
+  </div>
+
+  <div class="mr-panel critical" id="concernPanel">
+    <div class="ttl">⚠️ Biggest concern</div>
+    <div class="headline" id="concernTitle">—</div>
+    <div class="body" id="concernBody"></div>
+  </div>
+
+  <div class="mr-panel opportunity" id="recoPanel">
+    <div class="ttl">💡 Top recommendation</div>
+    <div class="headline" id="recoTitle">—</div>
+    <div class="body" id="recoBody"></div>
+  </div>
+</div>
+
+<div class="mr-movement" id="movementPanel">
+  <div class="ttl">📊 Profit movement attribution — yesterday vs day before</div>
+  <div class="net" id="movementNet">—</div>
+  <div class="mr-contributors" id="movementContributors"></div>
+</div>
+
+<div id="emptyState" class="mr-empty" style="display:none">
+  <div style="font-size:32px;margin-bottom:8px">📰</div>
+  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No data for yesterday yet</div>
+  <div id="emptyMsg">Yesterday's DailyMetric hasn't been finalised yet. Check back after the 00:45 finalize_yesterday cron.</div>
+</div>
+
+<script>
+let currentMP = '{{ marketplace }}';
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadData();
+}
+
+function fmtCurrency(v, full) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (full) return sign + '$' + a.toLocaleString(undefined, {maximumFractionDigits: 0});
+  if (a >= 1e6) return sign + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a/1e3).toFixed(1) + 'k';
+  return sign + '$' + a.toFixed(0);
+}
+function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function fmtInt(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+
+function renderDelta(id, deltaObj, opts) {
+  const el = document.getElementById(id);
+  if (!el || !deltaObj) { if (el) el.textContent = ''; return; }
+  const isCost = opts && opts.cost;
+  const positive = isCost ? (deltaObj.delta < 0) : (deltaObj.delta > 0);
+  el.className = 'delta ' + (deltaObj.delta === 0 ? '' : (positive ? 'up' : 'down'));
+  const arrow = deltaObj.delta > 0 ? '▲' : (deltaObj.delta < 0 ? '▼' : '—');
+  const fmt = (opts && opts.fmt === 'percent') ? fmtPct
+           : (opts && opts.fmt === 'int')     ? fmtInt
+           : (v => fmtCurrency(v, false));
+  el.textContent = `${arrow} ${fmt(Math.abs(deltaObj.delta))}  (${deltaObj.pct >= 0 ? '+' : ''}${deltaObj.pct.toFixed(1)}%)`;
+}
+
+function render(d) {
+  if (!d.yesterday) {
+    document.getElementById('emptyState').style.display = 'block';
+    return;
+  }
+  document.getElementById('emptyState').style.display = 'none';
+
+  document.getElementById('asOf').innerHTML =
+    `As of <strong>${d.yesterday.date}</strong>  ·  vs day before (${d.day_before ? d.day_before.date : 'n/a'})`;
+
+  // KPI strip
+  document.getElementById('kpi-revenue').textContent = fmtCurrency(d.yesterday.revenue, true);
+  document.getElementById('kpi-profit').textContent  = fmtCurrency(d.yesterday.profit,  true);
+  document.getElementById('kpi-margin').textContent  = fmtPct(d.yesterday.margin_pct);
+  document.getElementById('kpi-tacos').textContent   = fmtPct(d.yesterday.tacos);
+  document.getElementById('kpi-orders').textContent  = fmtInt(d.yesterday.orders);
+
+  if (d.deltas) {
+    renderDelta('delta-revenue', d.deltas.revenue);
+    renderDelta('delta-profit',  d.deltas.profit);
+    renderDelta('delta-margin',  d.deltas.margin_pct, {fmt:'percent'});
+    renderDelta('delta-tacos',   d.deltas.tacos,      {fmt:'percent', cost:true});
+    renderDelta('delta-orders',  d.deltas.orders,     {fmt:'int'});
+  }
+
+  // Best campaign
+  if (d.best_campaign) {
+    document.getElementById('bestCampName').innerHTML =
+      `<a href="/dashboard/campaigns/${encodeURIComponent(d.best_campaign.campaign_id)}/?mp=${currentMP}">${d.best_campaign.campaign_name}</a>`;
+    document.getElementById('bestCampBody').innerHTML =
+      `Profit ${fmtCurrency(d.best_campaign.profit, true)}  ·  ` +
+      `Margin ${fmtPct(d.best_campaign.margin_pct)}  ·  ` +
+      `Revenue ${fmtCurrency(d.best_campaign.revenue, true)}  on  ${fmtCurrency(d.best_campaign.spend, true)} spend`;
+  } else {
+    document.getElementById('bestCampName').textContent = '—';
+    document.getElementById('bestCampBody').textContent = 'No profitable campaigns yesterday.';
+  }
+
+  // Best SKU
+  if (d.best_sku) {
+    document.getElementById('bestSkuName').innerHTML =
+      `${d.best_sku.product_name || d.best_sku.sku} <span style="color:#777;font-size:12px;font-weight:400">(${d.best_sku.sku})</span>`;
+    document.getElementById('bestSkuBody').innerHTML =
+      `Profit ${fmtCurrency(d.best_sku.profit, true)}  ·  ` +
+      `Margin ${fmtPct(d.best_sku.margin_pct)}  ·  ` +
+      `Revenue ${fmtCurrency(d.best_sku.revenue, true)}`;
+  } else {
+    document.getElementById('bestSkuName').textContent = '—';
+    document.getElementById('bestSkuBody').textContent = 'No SKU sales recorded yesterday.';
+  }
+
+  // Concern
+  const concernPanel = document.getElementById('concernPanel');
+  if (d.concern) {
+    concernPanel.className = 'mr-panel ' + (d.concern.severity || 'warning');
+    document.getElementById('concernTitle').textContent = d.concern.title;
+    let body = d.concern.message || '';
+    if (d.concern.campaign_id) {
+      body += `<br/><a href="/dashboard/campaigns/${encodeURIComponent(d.concern.campaign_id)}/?mp=${currentMP}">→ Open campaign</a>`;
+    }
+    document.getElementById('concernBody').innerHTML = body;
+  } else {
+    document.getElementById('concernTitle').textContent = 'No critical issues';
+    document.getElementById('concernBody').textContent  = 'Nothing major flagged for yesterday.';
+    concernPanel.className = 'mr-panel opportunity';
+  }
+
+  // Recommendation
+  if (d.recommendation) {
+    document.getElementById('recoTitle').textContent = d.recommendation.title;
+    let body = d.recommendation.message || '';
+    if (d.recommendation.campaign_id) {
+      body += `<br/><a href="/dashboard/campaigns/${encodeURIComponent(d.recommendation.campaign_id)}/?mp=${currentMP}">→ Open campaign</a>`;
+    }
+    document.getElementById('recoBody').innerHTML = body;
+  } else {
+    document.getElementById('recoTitle').textContent = 'No standout scaling opportunity';
+    document.getElementById('recoBody').textContent  = 'Check Leaderboards for broader candidates.';
+  }
+
+  // Movement
+  if (d.profit_movement) {
+    const net = d.profit_movement.net_change;
+    const netEl = document.getElementById('movementNet');
+    netEl.className = 'net ' + (net > 0 ? 'up' : (net < 0 ? 'down' : ''));
+    const arrow = net > 0 ? '▲' : (net < 0 ? '▼' : '—');
+    netEl.textContent = `${arrow} Net change: ${fmtCurrency(net, true)}`;
+    document.getElementById('movementContributors').innerHTML =
+      d.profit_movement.contributors.map(c => {
+        const cls = c.value > 0 ? 'up' : (c.value < 0 ? 'down' : '');
+        return `<div class="mr-contrib">
+          <div class="nm">${c.sign} ${c.name}</div>
+          <div class="vl ${cls}">${fmtCurrency(c.value, true)}</div>
+        </div>`;
+      }).join('');
+  }
+}
+
+async function loadData() {
+  try {
+    const r = await fetch(`/dashboard/api/morning-report/?mp=${currentMP}`);
+    const d = await r.json();
+    render(d);
+    streamAICommentary();
+  } catch (e) {
+    console.error('morning-report fetch failed', e);
+    document.getElementById('emptyMsg').textContent = 'Failed to load: ' + e.message;
+    document.getElementById('emptyState').style.display = 'block';
+  }
+}
+
+// ── AI Commentary streaming ──────────────────────────────────────────────
+// EventSource consumes the Server-Sent Events from /api/morning-report/ai-commentary/.
+// We append `delta` chunks as Claude generates them, and finalise on `done`.
+let _aiEvents = null;
+function streamAICommentary() {
+  const body = document.getElementById('aiBody');
+  body.className = 'body blink';
+  body.textContent = '';
+  if (_aiEvents) { _aiEvents.close(); _aiEvents = null; }
+  _aiEvents = new EventSource(`/dashboard/api/morning-report/ai-commentary/?mp=${currentMP}`);
+  _aiEvents.onmessage = (msg) => {
+    let payload;
+    try { payload = JSON.parse(msg.data); } catch { return; }
+    if (payload.error) {
+      body.className = 'body err';
+      body.textContent = 'AI commentary unavailable: ' + payload.error;
+      _aiEvents.close(); _aiEvents = null;
+      return;
+    }
+    if (payload.delta) {
+      body.textContent += payload.delta;
+    }
+    if (payload.done) {
+      body.className = 'body';
+      _aiEvents.close(); _aiEvents = null;
+    }
+  };
+  _aiEvents.onerror = () => {
+    // EventSource closes the stream after the server returns; this fires
+    // on both legitimate completion and transient errors. Only show an
+    // error if we have ZERO text so far.
+    if (!body.textContent) {
+      body.className = 'body err';
+      body.textContent = 'AI commentary stream disconnected — refresh to retry.';
+    } else {
+      body.className = 'body';
+    }
+    if (_aiEvents) { _aiEvents.close(); _aiEvents = null; }
+  };
+}
+function regenerateAI() { streamAICommentary(); }
+
+loadData();
+</script>
+{% endblock %}

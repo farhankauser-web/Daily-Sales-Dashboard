@@ -12,6 +12,14 @@
   <form method="post">
     {% csrf_token %}
 
+    {% if form.non_field_errors %}
+    <div class="alert alert-error" style="margin-bottom:14px;background:#FBE2E0;
+                border:1px solid #E5B5B0;color:#7A2B25;padding:10px 14px;
+                border-radius:6px;font-size:13px">
+      {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
     <div class="card" style="margin-bottom:16px">
       <div class="card-header"><div class="card-title">Personal Information</div></div>
       <div class="card-body">
@@ -50,10 +58,18 @@
         </div>
         <div class="form-group">
           <label class="form-label">Allowed Marketplaces</label>
-          <input type="text" name="allowed_marketplaces" class="form-control"
-                 placeholder='["usa","uk","de"] — leave empty for all'
-                 value="{{ form.allowed_marketplaces.value|default:'' }}">
-          <div class="form-hint">JSON array. Leave empty to allow access to all marketplaces.</div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;padding:6px 2px">
+            {% for choice in form.allowed_marketplaces %}
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;
+                          color:#0F1111;cursor:pointer;font-weight:500">
+              {{ choice.tag }} <span>{{ choice.choice_label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="form-hint">Pick the marketplaces this user can see. Leave ALL boxes unchecked to grant access to every marketplace.</div>
+          {% if form.allowed_marketplaces.errors %}
+          <div style="color:var(--red);font-size:11px;margin-top:4px">{{ form.allowed_marketplaces.errors.0 }}</div>
+          {% endif %}
         </div>
         <div class="form-group">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
