@@ -1,0 +1,105 @@
+{% extends "base/base.html" %}
+{% block title %}{{ q.reference }}{% endblock %}
+{% block nav_atlas_quotes %}active{% endblock %}
+{% block page_title %}{{ q.reference }} — {{ q.customer.name }}{% endblock %}
+{% block topbar_actions %}
+<a href="{% url 'atlas:quotations' %}?co={{ company.code }}" class="btn btn-ghost">← Back</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;max-width:1100px">
+  <div>
+    <div class="card"><div class="card-header">
+      <div class="card-title">Lines
+        {% if q.has_stock_shortage %}<span style="color:#C0392B">· ⚑ stock shortage</span>{% endif %}
+      </div></div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:#F4F6F8">
+            <th style="padding:6px 10px;text-align:left">SKU</th>
+            <th style="padding:6px 10px;text-align:left">Description</th>
+            <th style="padding:6px 10px">Qty</th><th style="padding:6px 10px">Kg rate</th>
+            <th style="padding:6px 10px">Weight kg</th><th style="padding:6px 10px">Unit</th>
+            <th style="padding:6px 10px">Disc%</th><th style="padding:6px 10px">Total</th>
+            <th style="padding:6px 10px">Margin</th>
+          </tr></thead>
+          <tbody>
+          {% for ln in q.lines.all %}
+            <tr {% if ln.stock_short %}style="background:#FDF3F2"{% endif %}>
+              <td style="padding:6px 10px;font-family:'DM Mono',monospace">{{ ln.product.sku }}
+                {% if ln.stock_short %}<span style="color:#C0392B" title="{{ ln.stock_short }} units over stock">⚑{{ ln.stock_short }}</span>{% endif %}</td>
+              <td style="padding:6px 10px">{{ ln.product.description|truncatechars:40 }}</td>
+              <td style="padding:6px 10px;text-align:center">{{ ln.quantity }}</td>
+              <td style="padding:6px 10px;text-align:center">{{ ln.kg_rate }}</td>
+              <td style="padding:6px 10px;text-align:center">{{ ln.weight_kg }}</td>
+              <td style="padding:6px 10px;text-align:right">{{ ln.unit_price }}</td>
+              <td style="padding:6px 10px;text-align:center">{{ ln.discount_pct }}</td>
+              <td style="padding:6px 10px;text-align:right;font-weight:600">{{ ln.line_total|floatformat:2 }}</td>
+              <td style="padding:6px 10px;text-align:right">{{ ln.margin|floatformat:2 }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px"><div class="card-header">
+      <div class="card-title">Revision history (internal)</div></div>
+      <div class="card-body" style="font-size:12px">
+        {% for r in revisions %}
+          <div style="padding:6px 0;border-bottom:1px solid #EDEFF1">
+            <b>rev {{ r.number }}</b> · {{ r.created_at|date:"M j, H:i" }} ·
+            {{ r.changed_by|default:"system" }} — {{ r.change_note }}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card"><div class="card-header"><div class="card-title">Summary</div></div>
+      <div class="card-body" style="font-size:13px;line-height:2">
+        Status: <b>{{ q.status|upper }}</b>{% if q.lost_reason %} — {{ q.lost_reason }}{% endif %}<br/>
+        Type: {{ q.get_order_type_display }}{% if q.container_type %} · {{ q.container_type|upper }}{% endif %}<br/>
+        Payment term: {{ q.payment_term|default:"—" }}<br/>
+        Expected delivery: {{ q.expected_delivery|default:"—" }}<br/>
+        {% if q.is_sample_request %}<b>Sample sale request</b><br/>{% endif %}
+        <hr/>
+        Subtotal: {{ totals.subtotal|floatformat:2 }} {{ company.currency }}<br/>
+        Discount: −{{ totals.discount|floatformat:2 }}<br/>
+        Net: <b>{{ totals.net|floatformat:2 }}</b><br/>
+        VAT ({{ company.vat_rate }}): {{ totals.vat|floatformat:2 }}<br/>
+        Total: <b>{{ totals.total|floatformat:2 }} {{ company.currency }}</b><br/>
+        <span style="color:#5A6470">Margin (internal): {{ totals.margin|floatformat:2 }}
+          ({{ totals.margin_pct|floatformat:1 }}%)</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px"><div class="card-header">
+      <div class="card-title">Actions</div></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'atlas:quotation_status' q.pk %}?co={{ company.code }}">
+          {% csrf_token %}
+          <input type="hidden" name="co" value="{{ company.code }}"/>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            {% if q.status == 'draft' %}
+            <button name="status" value="sent" class="btn btn-primary btn-sm">Mark Sent</button>
+            {% endif %}
+            {% if q.status == 'sent' %}
+            <button name="status" value="won" class="btn btn-primary btn-sm">Mark Won</button>
+            <button name="status" value="lost" class="btn btn-secondary btn-sm">Mark Lost</button>
+            {% endif %}
+          </div>
+          <div style="margin-top:8px">
+            <input name="lost_reason" class="form-control" placeholder="Lost reason (if losing)"
+                   style="font-size:12px;margin-bottom:6px"/>
+            <input name="note" class="form-control" placeholder="Change note (kept in history)"
+                   style="font-size:12px"/>
+          </div>
+        </form>
+        {% if q.remarks %}<hr/><div style="font-size:12px"><b>Remarks:</b> {{ q.remarks }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

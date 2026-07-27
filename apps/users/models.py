@@ -143,6 +143,10 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text='Empty list = all marketplaces allowed'
     )
 
+    # Per-user page/permission overrides on top of the role. {flag: bool}.
+    # A flag present here wins over the role; absent → follow the role.
+    perm_overrides = models.JSONField(default=dict, blank=True)
+
     USERNAME_FIELD  = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']
 
@@ -160,9 +164,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         return f'{self.first_name} {self.last_name}'.strip()
 
     def has_perm_flag(self, flag: str) -> bool:
-        """Check a role permission flag. Superusers always True."""
+        """Effective access: superuser → always; a per-user override wins over
+        the role; otherwise the role's flag."""
         if self.is_superuser:
             return True
+        ov = self.perm_overrides or {}
+        if flag in ov:
+            return bool(ov[flag])
         if not self.role:
             return False
         return getattr(self.role, flag, False)

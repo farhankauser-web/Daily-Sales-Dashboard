@@ -12,6 +12,10 @@ urlpatterns = [
     path('dashboard/', include('apps.dashboard.urls',   namespace='dashboard')),
     path('sqp/',       include('apps.sqp.urls',         namespace='sqp')),
     path('api-config/',include('apps.amazon_api.urls',  namespace='amazon_api')),
+    path('walmart/',   include('apps.walmart_mcf.urls', namespace='walmart_mcf')),
+    path('atlas/',     include('apps.atlas.urls',       namespace='atlas')),
+    path('planning/',  include('apps.inventory_planning.urls',
+                               namespace='inventory_planning')),
     path('',           include('apps.core.urls',        namespace='core')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

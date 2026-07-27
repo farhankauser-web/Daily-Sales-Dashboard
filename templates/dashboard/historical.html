@@ -75,6 +75,9 @@
   <div class="kpi-card blue">
     <div class="kpi-label">Total Revenue</div>
     <div class="kpi-val">${{ totals.total_revenue|default:0|floatformat:0 }}</div>
+    {% if vat_rate %}
+    <div class="kpi-sub" style="font-weight:600">after VAT: ${{ totals.total_revenue_net|default:0|floatformat:0 }}</div>
+    {% endif %}
     <div class="kpi-sub">{{ start|date:"M j" }} — {{ end|date:"M j, Y" }}</div>
   </div>
 
@@ -242,6 +245,7 @@
         <th style="text-align:left">Date</th>
         <th>QTY</th>
         <th>Revenue</th>
+        {% if vat_rate %}<th>Rev after VAT</th>{% endif %}
         <th>CGS</th>
         <th>Amz Fee</th>
         <th>Fulfill</th>
@@ -266,6 +270,7 @@
           </td>
           <td>{{ m.units }}</td>
           <td style="font-weight:600">${{ m.revenue|floatformat:0 }}</td>
+          {% if vat_rate %}<td>${{ m.revenue_net|floatformat:0 }}</td>{% endif %}
           <td>${{ m.cgs|floatformat:0 }}</td>
           <td>${{ m.amazon_fee|floatformat:0 }}</td>
           <td>${{ m.fba_fee|floatformat:0 }}</td>
@@ -300,6 +305,7 @@
           <td style="text-align:left">TOTAL</td>
           <td>{{ totals.total_units }}</td>
           <td>${{ totals.total_revenue|floatformat:0 }}</td>
+          {% if vat_rate %}<td>${{ totals.total_revenue_net|floatformat:0 }}</td>{% endif %}
           <td>${{ totals.total_cgs|floatformat:0 }}</td>
           <td>${{ totals.total_amz|floatformat:0 }}</td>
           <td>${{ totals.total_fba|floatformat:0 }}</td>

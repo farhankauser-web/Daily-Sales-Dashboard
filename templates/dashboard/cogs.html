@@ -8,6 +8,18 @@
    download="cogs_template.csv" class="btn btn-secondary">
   ↓ Download CSV Template
 </a>
+<span style="display:inline-flex;align-items:center;gap:6px;margin-left:10px">
+  <input type="month" id="recalcMonth" class="form-control"
+         style="padding:5px 8px;font-size:12px;width:auto"/>
+  <button class="btn btn-secondary" onclick="downloadMissingCogs()"
+          title="Download the SKUs that sold in this month but have no COGS — fill in the Cogs column and upload it back here">
+    ⬇ Missing COGS
+  </button>
+  <button class="btn btn-primary" id="recalcCogsBtn" onclick="recalcCogsMonth()"
+          title="Re-price that month's financials (P&L, dashboards, campaign P&L) using the COGS uploaded here">
+    ↻ Recalculate financials
+  </button>
+</span>
 {% endblock %}
 
 {% block content %}
@@ -348,4 +360,44 @@
   {% endif %}
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('recalcMonth').value = new Date().toISOString().slice(0,7);
+
+async function recalcCogsMonth(){
+  const month = document.getElementById('recalcMonth').value;
+  if (!month){ alert('Pick a month first.'); return; }
+  const btn = document.getElementById('recalcCogsBtn');
+  btn.disabled = true; btn.textContent = '↻ Recalculating…';
+  const csrft = document.cookie.split('; ').find(c=>c.startsWith('csrftoken='))?.split('=')[1] || '';
+  try {
+    const r = await fetch("{% url 'dashboard:api_recalc_cogs' %}", {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken': csrft},
+      body: JSON.stringify({marketplace: 'usa', month: month}),
+    });
+    const j = await r.json();
+    if (j.status === 'ok'){
+      const s = j.summary || {}, p = s.pnl_cogs, d = s.daily_sku || {};
+      let msg = `Financials recalculated for ${month}.\n`;
+      if (p && typeof p === 'object')
+        msg += `Management P&L COGS: ${Number(p.old).toLocaleString()} → ${Number(p.new).toLocaleString()}\n`;
+      else if (p) msg += p + '\n';
+      msg += `Daily SKU rows repriced: ${d.rows||0} (COGS ${Number(d.old_cgs||0).toLocaleString()} → ${Number(d.new_cgs||0).toLocaleString()})`;
+      alert(msg);
+    } else {
+      alert('Recalc failed: ' + (j.error || 'unknown'));
+    }
+  } catch(e){ alert('Recalc failed: ' + e); }
+  btn.disabled = false; btn.textContent = '↻ Recalculate financials';
+}
+
+function downloadMissingCogs(){
+  const month = document.getElementById('recalcMonth').value;
+  if (!month){ alert('Pick a month first.'); return; }
+  window.location = "{% url 'dashboard:cogs_missing_csv' %}" + `?mp=usa&month=${month}`;
+}
+</script>
 {% endblock %}

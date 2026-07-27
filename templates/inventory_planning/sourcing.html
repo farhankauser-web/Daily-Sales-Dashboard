@@ -1,0 +1,178 @@
+{% extends "base/base.html" %}
+{% block title %}Sourcing{% endblock %}
+{% block nav_inv_sourcing %}active{% endblock %}
+{% block page_title %}Sourcing — Supplier PO Balance by SKU{% endblock %}
+
+{% block topbar_actions %}
+<a class="btn btn-ghost btn-sm" href="{% url 'inventory_planning:suppliers' %}">🏭 Suppliers</a>
+<a class="btn btn-ghost btn-sm" style="margin-left:6px" href="{% url 'inventory_planning:allocation' %}">📦 Allocation Workbench</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:12px; }
+  .bar-row input { padding:6px 9px; border:1px solid #D5D9D9; border-radius:5px; font-size:13px; width:280px; }
+  .cat { background:#fff; border:1px solid #D5D9D9; border-radius:8px; margin-bottom:10px; overflow:hidden; }
+  .cat-h { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; font-size:13px; font-weight:600; }
+  .cat-h:hover { background:#F7FAFC; }
+  .cat-h .tw { margin-left:auto; font-weight:400; font-size:11px; color:#5A6470; }
+  table.t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.t th { background:#F4F6F8; text-align:right; padding:6px 10px; font-size:11px;
+               border-top:1px solid #D5D9D9; border-bottom:1px solid #D5D9D9; white-space:nowrap; }
+  table.t th.l, table.t td.l { text-align:left; }
+  table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
+               white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tr.sku { cursor:pointer; }
+  tr.sku:hover { background:#F7FAFC; }
+  tr.sku.open { background:#EEF4FF; }
+  .lnk { color:#0F6FDE; font-weight:600; }
+  .muted { color:#8A94A0; }
+  .zero { color:#B0B8C0; }
+  .badge { display:inline-block; min-width:16px; padding:0 6px; border-radius:9px; font-size:10px; font-weight:700; text-align:center; }
+  .b-ok { background:#E6F4EA; color:#1E6B34; }
+  .b-no { background:#FEE4E2; color:#B42318; }
+  .sup-wrap td { background:#FbFcFd; padding:0; }
+  .sup { padding:8px 14px 12px 34px; }
+  .sup h4 { margin:0 0 6px; font-size:11px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; font-weight:600; }
+  .p-alloc { background:#E6F4EA; color:#1E6B34; }
+  .p-cand { background:#EDEFF1; color:#5A6470; }
+  .potbl td { border-bottom:1px solid #EDEFF1; }
+  .po { font-size:10px; color:#5A6470; line-height:1.7; }
+  .rbtn { color:#0F6FDE; cursor:pointer; font-weight:600; }
+  .rbtn:hover { text-decoration:underline; }
+  .rchip { display:inline-block; background:#EEF4FF; color:#0B4FA8; padding:0 5px; border-radius:8px; font-weight:600; }
+  .rx { cursor:pointer; color:#B42318; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bar-row">
+  <input id="q" placeholder="Filter by SKU, name or product type…" oninput="render()">
+  <span class="muted" id="meta" style="font-size:11px;margin-left:auto"></span>
+</div>
+<div id="cats"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const N = n => (n||0).toLocaleString();
+const M = n => '$'+(n||0).toFixed(2);
+const CAN_EDIT = {% if can_edit %}true{% else %}false{% endif %};
+let CATS = [], DETAIL = {};
+function csrf(){ const m=document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)'); return m?m.pop():''; }
+async function reserve(lineId, avail){
+  const region = prompt('Reserve to which region? (usa / uk / ae / sa)', 'usa');
+  if(!region) return;
+  const units = parseInt(prompt(`How many units? (up to ${avail} available)`, avail)||0);
+  if(!units) return;
+  const r = await (await fetch('{% url "inventory_planning:api_reserve" %}',{method:'POST',
+    body:JSON.stringify({po_line_id:lineId, region:region.trim().toLowerCase(), units}),
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}})).json();
+  alert(r.message); DETAIL={}; if(curSup) openSupplier(curSup.id);
+}
+async function unreserve(id){
+  if(!confirm('Remove this reservation?')) return;
+  const r = await (await fetch('{% url "inventory_planning:api_reserve" %}',{method:'POST',
+    body:JSON.stringify({delete_id:id}), headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}})).json();
+  alert(r.message); DETAIL={}; if(curSup) openSupplier(curSup.id);
+}
+
+async function load(){
+  const d = await (await fetch('{% url "inventory_planning:api_sourcing" %}')).json();
+  CATS = d.categories;
+  document.getElementById('meta').textContent =
+    `${CATS.length} product types · ${CATS.reduce((s,c)=>s+c.sku_count,0)} SKUs`;
+  render();
+}
+
+function match(c, term){
+  if (!term) return c;
+  const t = term.toLowerCase();
+  if (c.category.toLowerCase().includes(t)) return c;
+  const skus = c.skus.filter(s => s.sku.toLowerCase().includes(t)
+                               || (s.name||'').toLowerCase().includes(t));
+  return skus.length ? {...c, skus} : null;
+}
+
+function render(){
+  const term = document.getElementById('q').value;
+  const shown = CATS.map(c=>match(c,term)).filter(Boolean);
+  document.getElementById('cats').innerHTML = shown.map(c => `
+    <div class="cat">
+      <div class="cat-h" onclick="tog('c${cid(c.category)}')">
+        <span id="ac${cid(c.category)}">▸</span> ${c.category}
+        <span class="tw">${c.sku_count} SKUs · ${N(c.remaining)} units open ·
+          ${c.open_suppliers} supplier${c.open_suppliers===1?'':'s'} with balance</span>
+      </div>
+      <div id="c${cid(c.category)}" style="display:${term?'':'none'}">
+        <table class="t"><thead><tr>
+          <th class="l">SKU</th><th class="l">Name</th>
+          <th>Ordered</th><th>Allocated</th><th>Open balance</th>
+          <th>Suppliers w/ balance</th><th></th>
+        </tr></thead><tbody>
+        ${c.skus.map(s=>skuRow(s)).join('')}
+        </tbody></table>
+      </div>
+    </div>`).join('') || '<div class="muted" style="padding:14px">No matches.</div>';
+  if (term) shown.forEach(c=>{ const a=document.getElementById('ac'+cid(c.category)); if(a)a.textContent='▾'; });
+}
+
+function skuRow(s){
+  const oid = 's'+cid(s.sku);
+  return `<tr class="sku" id="row${oid}" onclick="openSku('${s.sku.replace(/'/g,"\\'")}','${oid}')">
+      <td class="l"><b>${s.sku}</b></td><td class="l">${s.name||''}</td>
+      <td>${N(s.ordered)}</td><td>${N(s.allocated)}</td>
+      <td><b>${s.remaining?N(s.remaining):'<span class=zero>0</span>'}</b></td>
+      <td><span class="badge ${s.open_suppliers?'b-ok':'b-no'}">${s.open_suppliers}</span></td>
+      <td class="l lnk">view suppliers ▸</td></tr>
+    <tr class="sup-wrap" id="${oid}" style="display:none"><td colspan="7"><div class="sup" id="${oid}b">…</div></td></tr>`;
+}
+
+async function openSku(sku, oid){
+  const wrap=document.getElementById(oid), row=document.getElementById('row'+oid);
+  if (wrap.style.display!=='none'){ wrap.style.display='none'; row.classList.remove('open'); return; }
+  row.classList.add('open'); wrap.style.display='';
+  const box=document.getElementById(oid+'b'); box.textContent='Loading…';
+  const d = DETAIL[sku] || (DETAIL[sku] = await (await fetch(
+    `{% url "inventory_planning:api_sku_sourcing" %}?sku=${encodeURIComponent(sku)}`)).json());
+  box.innerHTML = renderSup(d);
+}
+
+function renderSup(d){
+  const open = d.suppliers.filter(s=>s.has_open);
+  const cand = d.suppliers.filter(s=>!s.has_open);
+  let h = `<h4>${d.sku} — ${N(d.total_open)} units open across ${d.open_supplier_count} supplier(s)</h4>`;
+  h += `<table class="t potbl"><thead><tr>
+      <th class="l">Supplier</th><th class="l"></th><th>Ordered</th><th>Allocated</th>
+      <th>Open balance</th><th>Avg FOB</th><th>Lead days</th><th class="l">POs</th>
+    </tr></thead><tbody>`;
+  const line = (s, tag) => `<tr>
+      <td class="l"><b>${s.supplier}</b></td>
+      <td class="l"><span class="pill ${tag==='alloc'?'p-alloc':'p-cand'}">${tag==='alloc'?'allocate from':'candidate for PP'}</span></td>
+      <td>${N(s.ordered)}</td><td>${N(s.allocated)}</td>
+      <td><b>${s.remaining?N(s.remaining):'<span class=zero>0</span>'}</b></td>
+      <td>${s.avg_fob?M(s.avg_fob):'—'}</td><td>${s.lead}</td>
+      <td class="l"><span class="po">${s.pos.map(p=>{
+        const resv=(p.reservations||[]).map(rv=>`<span class="rchip" title="reserved to ${rv.region.toUpperCase()}">${rv.region.toUpperCase()} ${N(rv.units)}${CAN_EDIT?` <span class="rx" onclick="unreserve(${rv.id})">✕</span>`:''}</span>`).join(' ');
+        const btn=(CAN_EDIT && p.available>0)?` <span class="rbtn" onclick="reserve(${p.po_line_id},${p.available})">reserve</span>`:'';
+        return `${p.po} (${p.remaining?N(p.remaining)+' open':p.status})${p.available!=null&&p.remaining?` · avail ${N(p.available)}`:''}${btn} ${resv}`;
+      }).join('<br>')}</span></td>
+    </tr>`;
+  if (open.length) h += open.map(s=>line(s,'alloc')).join('');
+  else h += `<tr><td colspan="8" class="l muted">No supplier currently holds open PO balance — issue a new Production Plan to one of the candidates below.</td></tr>`;
+  if (cand.length){
+    h += `<tr><td colspan="8" class="l muted" style="padding-top:8px">Candidates (supplied before, no open balance now):</td></tr>`;
+    h += cand.map(s=>line(s,'cand')).join('');
+  }
+  h += `</tbody></table>`;
+  return h;
+}
+
+function cid(s){ return s.replace(/[^a-zA-Z0-9]/g,'_'); }
+function tog(id){ const e=document.getElementById(id);
+  const open=e.style.display==='none'; e.style.display=open?'':'none';
+  const arrow=document.getElementById('a'+id); if(arrow)arrow.textContent=open?'▾':'▸'; }
+load();
+</script>
+{% endblock %}

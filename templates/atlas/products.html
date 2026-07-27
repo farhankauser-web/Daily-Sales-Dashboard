@@ -1,0 +1,101 @@
+{% extends "base/base.html" %}
+{% block title %}Atlas Products{% endblock %}
+{% block nav_atlas_products %}active{% endblock %}
+{% block page_title %}Products — {{ company.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="mp-switcher">
+  {% for c in companies %}
+  <a href="{% url 'atlas:products' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:14px">
+  <div class="card"><div class="card-header"><div class="card-title">Products</div></div>
+    <div class="card-body" style="padding:0;max-height:640px;overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#F4F6F8">
+          <th style="padding:6px 10px;text-align:left">SKU</th>
+          <th style="padding:6px 10px;text-align:left">Quality</th>
+          <th style="padding:6px 10px">Size (cm)</th><th style="padding:6px 10px">GSM</th>
+          <th style="padding:6px 10px">Weight kg</th><th style="padding:6px 10px">Cost</th>
+          <th style="padding:6px 10px">Stock</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for p in rows %}
+          <tr {% if not p.is_active %}style="opacity:.5"{% endif %}>
+            <td style="padding:6px 10px;font-family:'DM Mono',monospace">{{ p.sku }}
+              <div style="font-size:10px;color:#5A6470">{{ p.description|truncatechars:36 }}</div></td>
+            <td style="padding:6px 10px">{{ p.quality }}</td>
+            <td style="padding:6px 10px;text-align:center">{{ p.length_cm }}×{{ p.width_cm }}</td>
+            <td style="padding:6px 10px;text-align:center">{{ p.gsm }}</td>
+            <td style="padding:6px 10px;text-align:center">{{ p.weight_kg|floatformat:5 }}</td>
+            <td style="padding:6px 10px;text-align:right">{{ p.cost }}</td>
+            <td style="padding:6px 10px;text-align:center;{% if p.stock_qty <= 0 %}color:#C0392B;font-weight:700{% endif %}">{{ p.stock_qty }}</td>
+            <td style="padding:6px 10px">
+              <a class="btn btn-ghost btn-sm" href="{% url 'atlas:product_edit' p.pk %}?co={{ company.code }}">Edit</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" style="text-align:center;color:#8A8A8A;padding:24px">No products yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">{% if edit %}Edit — {{ edit.sku }}{% else %}New Product{% endif %}</div></div>
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="co" value="{{ company.code }}"/>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="form-group"><label class="form-label">SKU * (e.g. BT-HSP-20D-600)</label>
+            <input name="sku" class="form-control" value="{{ edit.sku|default:'' }}" required/></div>
+          <div class="form-group"><label class="form-label">Quality family</label>
+            <input name="quality" class="form-control" list="qualList" value="{{ edit.quality|default:'' }}"/>
+            <datalist id="qualList">{% for ql in qualities %}<option value="{{ ql }}">{% endfor %}</datalist></div>
+        </div>
+        <div class="form-group"><label class="form-label">Description</label>
+          <input name="description" class="form-control" value="{{ edit.description|default:'' }}"/></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          <div class="form-group"><label class="form-label">Length cm *</label>
+            <input name="length_cm" type="number" step="0.01" class="form-control" value="{{ edit.length_cm|default:'' }}" required/></div>
+          <div class="form-group"><label class="form-label">Width cm *</label>
+            <input name="width_cm" type="number" step="0.01" class="form-control" value="{{ edit.width_cm|default:'' }}" required/></div>
+          <div class="form-group"><label class="form-label">GSM *</label>
+            <input name="gsm" type="number" class="form-control" value="{{ edit.gsm|default:'' }}" required/></div>
+          <div class="form-group"><label class="form-label">Yarn</label>
+            <input name="yarn" class="form-control" value="{{ edit.yarn|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Size label</label>
+            <input name="size_label" class="form-control" value="{{ edit.size_label|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Colour</label>
+            <input name="colour" class="form-control" value="{{ edit.colour|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Dyeing</label>
+            <select name="dyeing" class="form-control">
+              <option value="">—</option>
+              <option value="vat" {% if edit.dyeing == 'vat' %}selected{% endif %}>VAT</option>
+              <option value="reactive" {% if edit.dyeing == 'reactive' %}selected{% endif %}>Reactive</option>
+            </select></div>
+          <div class="form-group"><label class="form-label">Structure</label>
+            <select name="structure" class="form-control">
+              <option value="">—</option>
+              <option value="plain" {% if edit.structure == 'plain' %}selected{% endif %}>Plain</option>
+              <option value="dobby" {% if edit.structure == 'dobby' %}selected{% endif %}>Dobby</option>
+              <option value="jacquard" {% if edit.structure == 'jacquard' %}selected{% endif %}>Jacquard</option>
+            </select></div>
+          <div class="form-group"><label class="form-label">Unit cost</label>
+            <input name="cost" type="number" step="0.0001" class="form-control" value="{{ edit.cost|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Stock qty</label>
+            <input name="stock_qty" type="number" class="form-control" value="{{ edit.stock_qty|default:0 }}"/></div>
+        </div>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:10px">
+          <input type="checkbox" name="is_active" {% if not edit or edit.is_active %}checked{% endif %}/> Active</label>
+        <button class="btn btn-primary">{% if edit %}Save changes{% else %}Create product{% endif %}</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

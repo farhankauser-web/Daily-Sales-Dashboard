@@ -30,6 +30,9 @@ INSTALLED_APPS = [
     'apps.dashboard',
     'apps.amazon_api',
     'apps.sqp',
+    'apps.walmart_mcf',
+    'apps.atlas',
+    'apps.inventory_planning',
 ]
 
 MIDDLEWARE = [
@@ -66,12 +69,43 @@ TEMPLATES = [{
 
 WSGI_APPLICATION = 'infinitee.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME':   BASE_DIR / 'db.sqlite3',
+# ── Database ──────────────────────────────────────────────────────────────────
+# Local dev defaults to SQLite (zero-config). Production (EC2) sets DATABASE_URL
+# to a Postgres DSN, e.g.
+#     DATABASE_URL=postgres://user:pass@host:5432/infinitee?sslmode=require
+# and installs psycopg2-binary. Nothing else changes — see deploy/DATABASE.md
+# for the SQLite → Postgres cutover runbook.
+def _database_from_env():
+    import urllib.parse as _url
+    dsn = os.environ.get('DATABASE_URL', '').strip()
+    if not dsn:
+        return {'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3'}
+    p = _url.urlparse(dsn)
+    scheme = p.scheme.split('+')[0]
+    engine = {'postgres': 'django.db.backends.postgresql',
+              'postgresql': 'django.db.backends.postgresql',
+              'sqlite': 'django.db.backends.sqlite3'}.get(scheme)
+    if not engine:
+        raise ValueError(f'Unsupported DATABASE_URL scheme: {scheme!r}')
+    if engine.endswith('sqlite3'):
+        return {'ENGINE': engine, 'NAME': p.path or str(BASE_DIR / 'db.sqlite3')}
+    cfg = {
+        'ENGINE':       engine,
+        'NAME':         _url.unquote((p.path or '').lstrip('/')),
+        'USER':         _url.unquote(p.username or ''),
+        'PASSWORD':     _url.unquote(p.password or ''),
+        'HOST':         p.hostname or '',
+        'PORT':         str(p.port or ''),
+        'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '60')),
     }
-}
+    opts = {k: v[0] for k, v in _url.parse_qs(p.query).items()}
+    if opts:                                   # e.g. ?sslmode=require
+        cfg['OPTIONS'] = opts
+    return cfg
+
+
+DATABASES = {'default': _database_from_env()}
 
 AUTH_USER_MODEL = 'users.User'
 AUTH_PASSWORD_VALIDATORS = [
@@ -89,7 +123,11 @@ SESSION_COOKIE_HTTPONLY   = True
 SESSION_COOKIE_SECURE     = not DEBUG
 SESSION_COOKIE_AGE        = 28800
 CSRF_COOKIE_SECURE        = not DEBUG
-CSRF_COOKIE_HTTPONLY      = True
+# NOT HttpOnly: the dashboard's fetch() buttons read the CSRF token from
+# document.cookie. Django docs: hiding the CSRF cookie from JS provides no
+# practical security benefit (the token is intentionally non-secret; the
+# session cookie above stays HttpOnly).
+CSRF_COOKIE_HTTPONLY      = False
 X_FRAME_OPTIONS           = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
@@ -113,12 +151,12 @@ CRISPY_ALLOWED_TEMPLATE_PACKS = 'bootstrap5'
 CRISPY_TEMPLATE_PACK          = 'bootstrap5'
 
 AMAZON_MARKETPLACES = {
-    'usa': {'id': 'ATVPDKIKX0DER',  'region': 'us-east-1', 'endpoint': 'https://sellingpartnerapi-na.amazon.com', 'timezone': 'America/Los_Angeles'},
-    'ca':  {'id': 'A2EUQ1WTGCTBG2', 'region': 'us-east-1', 'endpoint': 'https://sellingpartnerapi-na.amazon.com', 'timezone': 'America/Toronto'},
-    'uk':  {'id': 'A1F83G8C2ARO7P', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Europe/London'},
-    'de':  {'id': 'A1PA6795UKMFR9', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Europe/Berlin'},
-    'ae':  {'id': 'A2VIGQ35RCS4UG', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Asia/Dubai'},
-    'sa':  {'id': 'A17E79C6D8DWNP', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Asia/Riyadh'},
+    'usa': {'id': 'ATVPDKIKX0DER',  'region': 'us-east-1', 'endpoint': 'https://sellingpartnerapi-na.amazon.com', 'timezone': 'America/Los_Angeles', 'currency': 'USD'},
+    'ca':  {'id': 'A2EUQ1WTGCTBG2', 'region': 'us-east-1', 'endpoint': 'https://sellingpartnerapi-na.amazon.com', 'timezone': 'America/Toronto', 'currency': 'CAD'},
+    'uk':  {'id': 'A1F83G8C2ARO7P', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Europe/London', 'currency': 'GBP', 'vat': 0.20},
+    'de':  {'id': 'A1PA6795UKMFR9', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Europe/Berlin', 'currency': 'EUR', 'vat': 0.19},
+    'ae':  {'id': 'A2VIGQ35RCS4UG', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Asia/Dubai', 'currency': 'AED', 'vat': 0.05},
+    'sa':  {'id': 'A17E79C6D8DWNP', 'region': 'eu-west-1', 'endpoint': 'https://sellingpartnerapi-eu.amazon.com', 'timezone': 'Asia/Riyadh', 'currency': 'SAR', 'vat': 0.15},
 }
 
 # ── Amazon Marketing Stream (AMS) — S3 destination per marketplace ─────────
@@ -138,6 +176,24 @@ AMS_S3 = {
 #   s3:GetObject + s3:ListBucket on the AMS buckets above.
 AWS_ACCESS_KEY_ID     = os.environ.get('AWS_ACCESS_KEY_ID',     '')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
+
+# ── Walmart Marketplace → Amazon MCF automation ────────────────────────────
+WALMART_API_BASE      = os.environ.get('WALMART_API_BASE',
+                                       'https://marketplace.walmartapis.com')
+WALMART_CLIENT_ID     = os.environ.get('WALMART_CLIENT_ID', '')
+WALMART_CLIENT_SECRET = os.environ.get('WALMART_CLIENT_SECRET', '')
+WALMART_SVC_NAME      = os.environ.get('WALMART_SVC_NAME', 'Walmart Marketplace')
+# Packaging compliance: BLANK_BOX keeps Amazon branding off the box;
+# BLOCK_AMZL keeps Amazon Logistics (TBA tracking Walmart can't track) off
+# the order. 'Required' | 'NotRequired'. Order-level values override the
+# Seller Central defaults.
+WALMART_MCF_FEATURES  = {
+    'BLANK_BOX':  os.environ.get('WALMART_MCF_BLANK_BOX',  'Required'),
+    'BLOCK_AMZL': os.environ.get('WALMART_MCF_BLOCK_AMZL', 'Required'),
+}
+WALMART_MCF_MARKETPLACE   = os.environ.get('WALMART_MCF_MARKETPLACE', 'usa')
+WALMART_MCF_ALERT_EMAILS  = [e for e in os.environ.get(
+    'WALMART_MCF_ALERT_EMAILS', '').split(',') if e.strip()]
 
 CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 

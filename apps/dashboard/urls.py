@@ -9,6 +9,32 @@ urlpatterns = [
     path('historical/',          views.historical,         name='historical'),
     path('cogs/',                views.cogs,               name='cogs'),
     path('cogs/fba-template/',   views.fba_rates_template_xlsx, name='fba_template'),
+    path('cogs/missing/',        views.cogs_missing_csv,   name='cogs_missing_csv'),
+
+    # FBA Fee Drift (settlement-actual vs uploaded)
+    path('fba-drift/',                  views.fba_fee_drift,            name='fba_fee_drift'),
+    path('api/fba-drift/',              views.api_fba_fee_drift,        name='api_fba_fee_drift'),
+    path('fba-drift/corrected-xlsx/',   views.fba_drift_corrected_xlsx, name='fba_drift_corrected_xlsx'),
+
+    # Management P&L (settlement + COGS + PPC + manual overhead)
+    path('pnl-statement/',              views.pnl_statement,            name='pnl_statement'),
+    path('api/pnl-statement/',          views.api_pnl_statement,        name='api_pnl_statement'),
+    path('api/pnl-statement/entry/',    views.save_pnl_entry,           name='save_pnl_entry'),
+    path('api/pnl-statement/fx/',       views.save_fx_rate,             name='save_fx_rate'),
+    path('api/pnl-statement/import/',   views.import_pnl_xlsx,          name='import_pnl_xlsx'),
+    path('api/pnl-statement/import-unified/', views.import_unified_txn,  name='import_unified_txn'),
+    path('api/cogs/recalc/',            views.api_recalc_cogs,          name='api_recalc_cogs'),
+    path('api/pnl-statement/sync/',     views.api_sync_pnl_month,       name='api_sync_pnl_month'),
+
+    # Cash Flow & Balance (Amazon payouts)
+    path('cash-flow/',                  views.cash_flow,                name='cash_flow'),
+    path('api/cash-flow/',              views.api_cash_flow,            name='api_cash_flow'),
+
+    # MCF Orders (multi-channel fulfillment tracking)
+    path('mcf/',                        views.mcf_orders,               name='mcf_orders'),
+    path('api/mcf/',                    views.api_mcf_orders,           name='api_mcf_orders'),
+    path('api/mcf/sync/',               views.api_mcf_sync,             name='api_mcf_sync'),
+    path('mcf/export/',                 views.mcf_export_csv,           name='mcf_export_csv'),
     path('targets/',             views.targets,            name='targets'),
     path('targets/template/',    views.targets_template_xlsx, name='targets_template'),
     path('catalog/',             views.catalog,            name='catalog'),

@@ -1,0 +1,346 @@
+{% extends "base/base.html" %}
+{% block title %}FBA Fee Drift{% endblock %}
+{% block nav_fba_drift %}active{% endblock %}
+{% block page_title %}FBA Fee Drift{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+{% if can_export_cogs %}
+<button class="btn btn-primary btn-sm" onclick="downloadCorrected()"
+        style="margin-left:10px">⬇ Corrected COGS XLSX</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .fd-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
+                   margin-bottom:14px; }
+  .fd-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+            padding:11px 14px; }
+  .fd-kpi .lbl { font-size:11px; color:#8A8A8A; text-transform:uppercase;
+                  letter-spacing:0.3px; }
+  .fd-kpi .val { font-size:22px; font-weight:700; color:#0F1111; margin-top:2px; }
+  .fd-kpi .sub { font-size:11px; color:#8A8A8A; margin-top:2px; }
+  .fd-kpi.danger  { border-top:3px solid #B12704; }
+  .fd-kpi.warn    { border-top:3px solid #D17B00; }
+  .fd-kpi.success { border-top:3px solid #067D62; }
+
+  .fd-filters { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+                 padding:10px 14px; margin-bottom:14px;
+                 display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .fd-filters label { font-size:11px; color:#555; }
+  .fd-filters select, .fd-filters input { padding:5px 8px; font-size:12px;
+                                            border:1px solid #D5D9D9;
+                                            border-radius:5px; }
+
+  .fd-table { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+              overflow:hidden; }
+  .fd-table table { width:100%; border-collapse:collapse; font-size:12px; }
+  .fd-table th { background:#F4F6F8; padding:8px 10px; text-align:left;
+                  font-weight:600; color:#0F1111; border-bottom:1px solid #D5D9D9;
+                  cursor:pointer; user-select:none; white-space:nowrap; }
+  .fd-table th:hover { background:#EAEEF1; }
+  .fd-table th.num, .fd-table td.num { text-align:right; }
+  .fd-table td { padding:7px 10px; border-bottom:1px solid #F0F2F4; }
+  .fd-table tr:hover td { background:#FAFBFC; }
+
+  .fd-status { display:inline-block; padding:2px 8px; border-radius:10px;
+               font-size:10px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.4px; }
+  .fd-status.ok        { background:#E0F2EC; color:#067D62; }
+  .fd-status.warn      { background:#FFF4DC; color:#9D6500; }
+  .fd-status.critical  { background:#FBE2E0; color:#B12704; }
+  .fd-status.no_upload { background:#EEF1F4; color:#5A6470; }
+
+  .fd-delta.pos { color:#B12704; font-weight:600; }   /* actual > uploaded — over-spending */
+  .fd-delta.neg { color:#067D62; font-weight:600; }   /* actual < uploaded — under-spending */
+
+  .fd-meta { font-size:11px; color:#8A8A8A; margin-top:8px; }
+  .fd-empty { padding:60px 20px; text-align:center; color:#8A8A8A; }
+
+  .fd-drill { display:none; background:#F9FAFB; border-top:1px solid #D5D9D9; }
+  .fd-drill.show { display:table-row; }
+  .fd-drill td { padding:12px 16px; }
+  .fd-drill-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:18px;
+                    font-size:12px; color:#333; }
+  .fd-drill-grid .k { color:#8A8A8A; font-size:10px; text-transform:uppercase;
+                       letter-spacing:0.3px; }
+  .fd-drill-grid .v { font-size:14px; font-weight:600; color:#0F1111; margin-top:2px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="fd-kpi-strip">
+  <div class="fd-kpi danger">
+    <div class="lbl">Monthly margin at risk</div>
+    <div class="val" id="kMargin">—</div>
+    <div class="sub">Δ-fee × units, projected 30d</div>
+  </div>
+  <div class="fd-kpi warn">
+    <div class="lbl">SKUs drifting</div>
+    <div class="val" id="kDrifting">—</div>
+    <div class="sub" id="kDriftingSub">— of — SKUs</div>
+  </div>
+  <div class="fd-kpi danger">
+    <div class="lbl">SKUs needing action (🔴)</div>
+    <div class="val" id="kCritical">—</div>
+    <div class="sub">>8% drift or >$500 impact</div>
+  </div>
+  <div class="fd-kpi success">
+    <div class="lbl">Last settlement</div>
+    <div class="val" id="kSettleDate">—</div>
+    <div class="sub" id="kSettleSub">—</div>
+  </div>
+</div>
+
+<div class="fd-filters">
+  <label>Status:</label>
+  <select id="fStatus" onchange="reloadTable()">
+    <option value="critical,warn">Drifting only (default)</option>
+    <option value="critical">Critical only (🔴)</option>
+    <option value="warn">Warning only (🟡)</option>
+    <option value="">All including OK</option>
+    <option value="no_upload">No uploaded fee</option>
+  </select>
+
+  <label>Brand:</label>
+  <select id="fBrand" onchange="reloadTable()"><option value="">All</option></select>
+
+  <label>Family:</label>
+  <select id="fFamily" onchange="reloadTable()"><option value="">All</option></select>
+
+  <label>Min $ impact:</label>
+  <input type="number" id="fMinImpact" value="0" min="0" step="10" style="width:80px"
+         onchange="reloadTable()" onkeydown="if(event.key==='Enter')reloadTable()"/>
+
+  <span style="margin-left:auto;font-size:11px;color:#8A8A8A">
+    <span id="fRowCount">—</span> rows · window: last
+    <span id="fWindow">14</span> days
+  </span>
+</div>
+
+<div class="fd-table">
+  <table id="driftTable">
+    <thead>
+      <tr>
+        <th data-sort="sku">SKU</th>
+        <th>Product</th>
+        <th>Brand</th>
+        <th class="num" data-sort="uploaded_fee">Uploaded</th>
+        <th class="num" data-sort="actual_fee_avg">Actual 14d</th>
+        <th class="num" data-sort="actual_fee_latest">Latest</th>
+        <th class="num" data-sort="delta">Δ</th>
+        <th class="num" data-sort="pct">Δ %</th>
+        <th class="num" data-sort="actual_units">Units 14d</th>
+        <th class="num" data-sort="dollar_impact">$ Impact</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="driftBody"></tbody>
+  </table>
+  <div id="emptyState" class="fd-empty" style="display:none">
+    No drifting SKUs in this window — every uploaded fee is within tolerance.
+  </div>
+</div>
+
+<div class="fd-meta">
+  Thresholds — 🟢 OK · 🟡 ≥<span id="tWarnPct">2</span>% drift AND ≥$<span id="tWarnImpact">50</span> impact ·
+  🔴 ≥<span id="tCritPct">8</span>% drift OR ≥$<span id="tCritImpact">500</span> impact ·
+  Volume floor: <span id="tVolFloor">10</span> units (below = hidden).
+  Positive Δ means Amazon billed more than what you uploaded (you're over-reporting margin).
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const URL_API  = "{% url 'dashboard:api_fba_fee_drift' %}";
+const URL_XLSX = "{% url 'dashboard:fba_drift_corrected_xlsx' %}";
+
+let currentMP   = "{{ marketplace }}";
+let driftData   = null;
+let sortField   = 'dollar_impact';
+let sortDir     = 'desc';
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadDrift();
+}
+
+function downloadCorrected() {
+  window.location = URL_XLSX + '?mp=' + encodeURIComponent(currentMP);
+}
+
+function reloadTable() {
+  if (!driftData) return loadDrift();
+  renderTable();
+}
+
+async function loadDrift() {
+  const status     = document.getElementById('fStatus').value;
+  const brand      = document.getElementById('fBrand').value;
+  const family     = document.getElementById('fFamily').value;
+  const minImpact  = document.getElementById('fMinImpact').value || 0;
+
+  const qs = new URLSearchParams({mp: currentMP, status, brand, family, min_impact: minImpact});
+  const r  = await fetch(URL_API + '?' + qs.toString());
+  driftData = await r.json();
+  populateFilters();
+  renderSummary();
+  renderTable();
+}
+
+function populateFilters() {
+  // Brand dropdown — preserve current selection
+  const brandSel = document.getElementById('fBrand');
+  const cur = brandSel.value;
+  brandSel.innerHTML = '<option value="">All</option>'
+    + driftData.brand_options.map(b => `<option value="${b}">${b}</option>`).join('');
+  if ([...brandSel.options].some(o => o.value === cur)) brandSel.value = cur;
+
+  // Family dropdown
+  const famSel = document.getElementById('fFamily');
+  const curF = famSel.value;
+  famSel.innerHTML = '<option value="">All</option>'
+    + driftData.family_options.map(f => `<option value="${f}">${f}</option>`).join('');
+  if ([...famSel.options].some(o => o.value === curF)) famSel.value = curF;
+}
+
+function renderSummary() {
+  const s = driftData.summary;
+  document.getElementById('kMargin').textContent =
+    (s.monthly_at_risk >= 0 ? '+' : '−') + '$' +
+    Math.abs(s.monthly_at_risk).toLocaleString('en-US', {maximumFractionDigits: 0});
+  document.getElementById('kDrifting').textContent = s.skus_drifting;
+  document.getElementById('kDriftingSub').textContent =
+    `${s.skus_drifting} of ${s.skus_total} SKUs`;
+  document.getElementById('kCritical').textContent = s.skus_critical;
+
+  const ls = driftData.last_settlement;
+  if (ls && ls.end_date) {
+    document.getElementById('kSettleDate').textContent = ls.end_date;
+    document.getElementById('kSettleSub').textContent =
+      'ingested ' + (ls.synced_at ? ls.synced_at.slice(0, 10) : '—');
+  } else {
+    document.getElementById('kSettleDate').textContent = '—';
+    document.getElementById('kSettleSub').textContent = 'no settlements ingested yet';
+  }
+
+  document.getElementById('fWindow').textContent      = s.window_days;
+  document.getElementById('tWarnPct').textContent     = s.thresholds.warn_pct;
+  document.getElementById('tWarnImpact').textContent  = s.thresholds.warn_impact;
+  document.getElementById('tCritPct').textContent     = s.thresholds.critical_pct;
+  document.getElementById('tCritImpact').textContent  = s.thresholds.critical_impact;
+  document.getElementById('tVolFloor').textContent    = s.thresholds.volume_floor;
+}
+
+function renderTable() {
+  const rows = (driftData.rows || []).slice();
+  rows.sort((a, b) => {
+    const va = a[sortField] ?? 0, vb = b[sortField] ?? 0;
+    if (typeof va === 'string') return sortDir === 'asc'
+      ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortDir === 'asc' ? va - vb : vb - va;
+  });
+
+  const tbody = document.getElementById('driftBody');
+  const empty = document.getElementById('emptyState');
+  document.getElementById('fRowCount').textContent = rows.length;
+
+  if (!rows.length) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = rows.map(r => {
+    const deltaCls = r.delta > 0 ? 'pos' : (r.delta < 0 ? 'neg' : '');
+    return `
+      <tr onclick="toggleDrill('${r.sku}')">
+        <td><strong>${r.sku}</strong>${r.asin ? `<br><span style="font-size:10px;color:#8A8A8A">${r.asin}</span>` : ''}</td>
+        <td style="max-width:280px">${r.product_name || '—'}</td>
+        <td style="font-size:11px;color:#555">${r.brand || '—'}</td>
+        <td class="num">${r.uploaded_fee ? '$' + r.uploaded_fee.toFixed(2) : '—'}</td>
+        <td class="num">${r.actual_fee_avg ? '$' + r.actual_fee_avg.toFixed(2) : '—'}</td>
+        <td class="num">${r.actual_fee_latest ? '$' + r.actual_fee_latest.toFixed(2) : '—'}</td>
+        <td class="num fd-delta ${deltaCls}">${r.delta !== 0 ? (r.delta > 0 ? '+' : '') + '$' + r.delta.toFixed(2) : '—'}</td>
+        <td class="num fd-delta ${deltaCls}">${r.pct !== 0 ? (r.pct > 0 ? '+' : '') + r.pct.toFixed(1) + '%' : '—'}</td>
+        <td class="num">${r.actual_units.toLocaleString('en-US')}</td>
+        <td class="num"><strong>$${r.dollar_impact.toFixed(0)}</strong></td>
+        <td><span class="fd-status ${r.status}">${
+          r.status === 'critical'  ? '🔴 Action' :
+          r.status === 'warn'      ? '🟡 Drift'  :
+          r.status === 'no_upload' ? 'No upload' :
+          '🟢 OK'
+        }</span></td>
+      </tr>
+      <tr class="fd-drill" id="drill-${r.sku.replace(/[^a-z0-9]/gi, '_')}">
+        <td colspan="11">
+          <div class="fd-drill-grid">
+            <div>
+              <div class="k">Uploaded fee</div>
+              <div class="v">${r.uploaded_fee ? '$' + r.uploaded_fee.toFixed(4) : '— (no rate uploaded)'}</div>
+            </div>
+            <div>
+              <div class="k">14-day weighted actual</div>
+              <div class="v">$${r.actual_fee_avg.toFixed(4)} <span style="font-size:11px;color:#8A8A8A">across ${r.actual_units} units</span></div>
+            </div>
+            <div>
+              <div class="k">Latest settlement (${r.actual_latest_date || '—'})</div>
+              <div class="v">$${r.actual_fee_latest.toFixed(4)}</div>
+            </div>
+            <div>
+              <div class="k">Suggested COGS update</div>
+              <div class="v" style="color:#067D62">$${r.actual_fee_avg.toFixed(2)}</div>
+            </div>
+            <div>
+              <div class="k">Monthly $ exposure</div>
+              <div class="v ${deltaCls}">${r.delta > 0 ? '+' : ''}$${(r.delta * r.actual_units * (30 / 14)).toFixed(0)}</div>
+            </div>
+            <div>
+              <div class="k">ASIN · Family</div>
+              <div class="v" style="font-size:12px">${r.asin || '—'} · ${r.product_family || '—'}</div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function toggleDrill(sku) {
+  const id = 'drill-' + sku.replace(/[^a-z0-9]/gi, '_');
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('show');
+}
+
+// Sortable headers
+document.querySelectorAll('#driftTable th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const f = th.dataset.sort;
+    if (sortField === f) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+    else { sortField = f; sortDir = 'desc'; }
+    renderTable();
+  });
+});
+
+loadDrift();
+</script>
+{% endblock %}

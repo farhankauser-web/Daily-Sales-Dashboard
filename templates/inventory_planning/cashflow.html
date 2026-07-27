@@ -1,0 +1,262 @@
+{% extends "base/base.html" %}
+{% block title %}Cash Flow{% endblock %}
+{% block nav_inv_cashflow %}active{% endblock %}
+{% block page_title %}Cash Flow Planner{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="regionSel">
+  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if can_edit %}
+<button class="btn btn-secondary btn-sm" onclick="refresh()">🔄 Refresh from containers + payouts</button>
+<button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="openEntry(null)">➕ Add line</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:19px; font-weight:700; }
+  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card.short .v { color:#B42318; }
+  .open-card { display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #D5D9D9;
+               border-radius:8px; padding:8px 12px; margin-bottom:12px; font-size:12px; }
+  .open-card input { padding:5px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:12px; }
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.t th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px;
+               border-bottom:1px solid #D5D9D9; white-space:nowrap; position:sticky; top:0; z-index:1; }
+  table.t th.l, table.t td.l { text-align:left; }
+  table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
+               white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tr.opening td { background:#DCEBFB; font-weight:700; }
+  tr.r-amazon td { background:#E7F4E4; }
+  tr.r-injection td { background:#F6E7F5; }
+  tr.neg td.bal { color:#B42318; font-weight:700; }
+  tr:hover td { background:#F0F6FF; }
+  .in { color:#1E6B34; font-weight:600; } .out { color:#232F3E; }
+  .lock { color:#8A5A00; font-size:10px; }
+  .fobline { font-size:10px; color:#5A6470; margin-top:1px; }
+  .act { font-size:11px; color:#0F6FDE; cursor:pointer; margin-left:6px; }
+  .act:hover { text-decoration:underline; }
+  .act.warn { color:#B42318; }
+  .muted { color:#8A94A0; }
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:99; align-items:center; justify-content:center; }
+  .modal.on { display:flex; }
+  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:480px; max-width:94vw; }
+  .modal-card h3 { margin:0 0 12px; font-size:15px; }
+  .f { margin-bottom:10px; } .f label { display:block; font-size:11px; color:#5A6470; margin-bottom:3px; }
+  .f input, .f select { width:100%; padding:6px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:13px; box-sizing:border-box; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v" id="k_open">–</div><div class="l">Opening balance</div></div>
+  <div class="kpi-card"><div class="v in" id="k_in">–</div><div class="l">Projected inflow</div></div>
+  <div class="kpi-card"><div class="v out" id="k_out">–</div><div class="l">Projected outflow</div></div>
+  <div class="kpi-card"><div class="v" id="k_end">–</div><div class="l">Ending balance</div></div>
+  <div class="kpi-card short" id="k_short_card"><div class="v" id="k_short">–</div><div class="l" id="k_short_l">Lowest balance</div></div>
+</div>
+
+{% if can_edit %}
+<div class="open-card">
+  <b>Opening bank balance</b>
+  <input type="number" id="o_bal" step="0.01" style="width:130px" placeholder="0.00">
+  <span>as on</span>
+  <input type="date" id="o_date">
+  <span style="margin-left:14px">Pay</span>
+  <input type="number" id="o_lead" min="0" style="width:52px" value="0">
+  <span>days before port</span>
+  <button class="btn btn-secondary btn-sm" onclick="saveOpening()">Save</button>
+  <span class="muted" id="o_msg"></span>
+</div>
+{% endif %}
+
+<div class="panel"><table class="t" id="tbl"><thead><tr>
+  <th class="l">Particulars</th><th class="l">Description</th><th class="l">Vendor</th>
+  <th>Inflow</th><th>OutFlow</th><th>Balance</th>
+  <th class="l">Port Date</th><th class="l">Payment date</th><th class="l"></th>
+</tr></thead><tbody></tbody></table></div>
+<div class="muted" id="foot" style="font-size:11px;margin-top:8px;line-height:1.6"></div>
+
+<!-- entry modal -->
+<div class="modal" id="mdl"><div class="modal-card">
+  <h3 id="mdlTitle">Add cash-flow line</h3>
+  <input type="hidden" id="e_id">
+  <div class="row2">
+    <div class="f"><label>Date</label><input type="date" id="e_date"></div>
+    <div class="f"><label>Direction</label><select id="e_dir">
+      <option value="out">Outflow (payment)</option><option value="in">Inflow (receipt)</option></select></div>
+  </div>
+  <div class="row2">
+    <div class="f"><label>Category</label><select id="e_cat">
+      <option value="injection">Funds Injection</option>
+      <option value="amazon">Amazon Inflow</option>
+      <option value="freight">Freight / Duty</option>
+      <option value="hr">HR Cost</option>
+      <option value="storage">Storage</option>
+      <option value="container">Container Payment</option>
+      <option value="other">Other</option></select></div>
+    <div class="f"><label>Amount</label><input type="number" id="e_amt" step="0.01" placeholder="0.00"></div>
+  </div>
+  <div class="row2">
+    <div class="f"><label>Description</label><input id="e_desc" placeholder="e.g. Funds Injection"></div>
+    <div class="f"><label>Vendor</label><input id="e_vendor" placeholder="e.g. Paklink"></div>
+  </div>
+  <div id="lockNote" class="muted" style="font-size:11px;display:none">✎ Editing an auto-generated line locks it — future refreshes won't overwrite it.</div>
+  <div style="text-align:right;margin-top:12px">
+    <button class="btn btn-ghost btn-sm" onclick="mdl.classList.remove('on')">Cancel</button>
+    <button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="saveEntry()">Save</button>
+  </div>
+</div></div>
+
+<!-- freight modal -->
+<div class="modal" id="frMdl"><div class="modal-card" style="width:400px">
+  <h3>Container payment <span id="frCno" class="muted" style="font-weight:400"></span></h3>
+  <p style="font-size:11px;color:#5A6470" id="frNote"></p>
+  <input type="hidden" id="fr_id">
+  <div class="f"><label id="frLbl">Freight + duty (USD)</label><input type="number" id="fr_amt" step="0.01"></div>
+  <div style="text-align:right;margin-top:12px">
+    <button class="btn btn-ghost btn-sm" onclick="frMdl.classList.remove('on')">Cancel</button>
+    <button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="saveFreight()">Save</button>
+  </div>
+</div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const M = n => '$'+Math.abs(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+// accounting style: negatives in ( )
+const B = n => n<0 ? '('+M(n)+')' : M(n);
+const D = s => { if(!s) return ''; const [y,m,d]=s.split('-');
+  return d+'-'+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+'-'+y.slice(2); };
+let REGION='usa', DATA=null;
+const CAN_EDIT = {% if can_edit %}true{% else %}false{% endif %};
+function setRegion(r,btn){ REGION=r;
+  document.querySelectorAll('#regionSel .mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); load(); }
+function getCookie(n){ const m=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)'); return m?m.pop():''; }
+async function post(u,b){ return (await fetch(u,{method:'POST',body:JSON.stringify(b),
+  headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')}})).json(); }
+
+async function load(){
+  DATA = await (await fetch('{% url "inventory_planning:api_cashflow" %}?region='+REGION)).json();
+  k_open.textContent = M(DATA.opening);
+  k_in.textContent = M(DATA.total_in); k_out.textContent = M(DATA.total_out);
+  k_end.textContent = M(DATA.ending);
+  const short = DATA.shortfall>0;
+  document.getElementById('k_short_card').classList.toggle('short', short || DATA.min_balance<0);
+  k_short.textContent = M(DATA.min_balance);
+  document.getElementById('k_short_l').textContent = short
+    ? `Shortfall ${M(DATA.shortfall)} · ${DATA.min_date}` : `Lowest balance · ${DATA.min_date}`;
+  if (CAN_EDIT){ o_bal.value = DATA.opening||''; o_date.value = DATA.as_of||'';
+                 o_lead.value = DATA.pay_lead_days||0; }
+  render();
+}
+
+function particulars(r){
+  if (r.direction==='in') return 'InFlow';
+  return 'Payments';
+}
+function actions(r){
+  if (!CAN_EDIT) return '';
+  let h = `<span class="act" onclick="openEntry(${r.id})">edit</span>`;
+  if (r.category==='container' && r.container_id)
+    h += `<span class="act" onclick="openFreight(${r.container_id},'${(r.description||'').replace(/'/g,"")}')">freight</span>`;
+  h += `<span class="act warn" onclick="delEntry(${r.id})">×</span>`;
+  return h;
+}
+function render(){
+  let h = `<tr class="opening"><td class="l">Opening Bank Balance</td>
+    <td class="l">as on ${D(DATA.as_of)}</td><td></td>
+    <td class="in">${M(DATA.opening)}</td><td></td><td class="bal">${M(DATA.opening)}</td>
+    <td></td><td></td><td></td></tr>`;
+  h += DATA.rows.map(r => `<tr class="${r.balance<0?'neg ':''}r-${r.category}">
+      <td class="l">${particulars(r)}</td>
+      <td class="l">${r.description||''} ${r.locked?'<span class="lock">🔒</span>':''}
+        ${r.category==='container' ? `<div class="fobline">FOB ${M(r.fob)}${r.freight ? ' + freight '+M(r.freight) : ' <span class="muted">+ freight —</span>'}</div>` : ''}</td>
+      <td class="l">${r.vendor||''}</td>
+      <td class="in">${r.inflow?M(r.inflow):''}</td>
+      <td class="out">${r.outflow?M(r.outflow):''}</td>
+      <td class="bal">${B(r.balance)}</td>
+      <td class="l muted">${D(r.port_date)}</td>
+      <td class="l">${D(r.date)}</td>
+      <td class="l">${actions(r)}</td></tr>`).join('');
+  document.querySelector('#tbl tbody').innerHTML = h;
+  document.getElementById('foot').innerHTML =
+    `Container payments post on each container's <b>Port/ETA date</b> = FOB (from allocations) + freight/duty (set via “freight”).
+     Amazon inflows are estimated from payout history. Rows marked 🔒 were hand-edited and survive refreshes.
+     Negative balances (red) show when an injection is needed.`;
+}
+
+async function refresh(){
+  const r = await post('{% url "inventory_planning:api_cashflow_refresh" %}', {region:REGION});
+  alert(r.message); load();
+}
+async function saveOpening(){
+  const prevLead = DATA ? (DATA.pay_lead_days||0) : 0;
+  const lead = parseInt(o_lead.value||0);
+  await post('{% url "inventory_planning:api_cashflow_opening" %}',
+    {region:REGION, opening_balance:parseFloat(o_bal.value||0), as_of:o_date.value,
+     pay_lead_days:lead});
+  document.getElementById('o_msg').textContent = '✓ saved';
+  setTimeout(()=>o_msg.textContent='',1500);
+  // pay-lead change moves container payment dates → re-derive them
+  if (lead !== prevLead)
+    await post('{% url "inventory_planning:api_cashflow_refresh" %}', {region:REGION});
+  load();
+}
+
+function openEntry(id){
+  const r = id ? DATA.rows.find(x=>x.id===id) : null;
+  e_id.value = id||''; mdlTitle.textContent = id?'Edit line':'Add cash-flow line';
+  document.getElementById('lockNote').style.display = (r && r.auto && !r.locked)?'':'none';
+  e_date.value = r?r.date:new Date().toISOString().slice(0,10);
+  e_dir.value = r?r.direction:'out'; e_cat.value = r?r.category:'injection';
+  e_amt.value = r?(r.inflow||r.outflow):''; e_desc.value = r?r.description:''; e_vendor.value = r?r.vendor:'';
+  mdl.classList.add('on');
+}
+async function saveEntry(){
+  const b = {id:e_id.value||null, region:REGION, date:e_date.value, direction:e_dir.value,
+    category:e_cat.value, amount:parseFloat(e_amt.value||0), description:e_desc.value, vendor:e_vendor.value};
+  if(!b.date){ alert('Pick a date.'); return; }
+  const r = await post('{% url "inventory_planning:api_cashflow_entry" %}', b);
+  if(r.status!=='ok'){ alert(r.message); return; }
+  mdl.classList.remove('on'); load();
+}
+async function delEntry(id){
+  if(!confirm('Remove this line?')) return;
+  await post('{% url "inventory_planning:api_cashflow_entry" %}', {action:'delete', id}); load();
+}
+function openFreight(cid, cno){
+  fr_id.value=cid; document.getElementById('frCno').textContent=cno?('· '+cno):'';
+  const row=(DATA.rows||[]).find(r=>r.container_id===cid) || {};
+  fr_amt.value = row.freight || '';
+  const hasFob = (row.fob||0) > 0;
+  document.getElementById('frLbl').textContent = hasFob
+    ? 'Freight + duty (USD) — added to FOB' : 'Container payment (USD)';
+  document.getElementById('frNote').innerHTML = hasFob
+    ? `FOB ${M(row.fob)} comes from the PO. Enter freight/duty to add on top.`
+    : `This container isn't linked to a PO (no FOB), so enter the full payment amount here.`;
+  frMdl.classList.add('on');
+}
+async function saveFreight(){
+  const r = await post('{% url "inventory_planning:api_container_freight" %}',
+    {id:parseInt(fr_id.value), freight_cost:parseFloat(fr_amt.value||0)});
+  if(r.status!=='ok'){ alert(r.message); return; }
+  frMdl.classList.remove('on');
+  await post('{% url "inventory_planning:api_cashflow_refresh" %}', {region:REGION});
+  load();
+}
+load();
+</script>
+{% endblock %}

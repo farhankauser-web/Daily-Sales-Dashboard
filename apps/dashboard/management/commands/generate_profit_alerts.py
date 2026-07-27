@@ -243,6 +243,54 @@ class Command(BaseCommand):
                     threshold=f'{_WASTED_TERM_SPEND}',
                 )
 
+        # ── 4. FBA fee drift roll-up ────────────────────────────────────────
+        # Surface settlement-actual vs uploaded fee gaps on the Alerts page,
+        # so the team isn't required to remember to check the dedicated page.
+        try:
+            from apps.dashboard.fba_drift import compute_drift, summarize
+            rows    = compute_drift(mp)
+            summary = summarize(rows)
+        except Exception as exc:
+            self.stdout.write(self.style.WARNING(
+                f'  ⚠ fba_drift compute failed: {exc}'))
+        else:
+            n_crit = summary['skus_critical']
+            n_drift = summary['skus_drifting']
+            risk = summary['monthly_at_risk']
+            if n_crit > 0:
+                # Pick top 3 drifting SKUs for the message body
+                top = sorted(
+                    (r for r in rows if r.status == 'critical'),
+                    key=lambda r: r.dollar_impact, reverse=True)[:3]
+                top_str = ', '.join(
+                    f'{r.sku} ({r.pct:+.1f}%, ${r.dollar_impact:.0f})'
+                    for r in top)
+                n += self._upsert_alert(Alert, mp,
+                    severity='warning', category='performance',
+                    metric_key=f'fba_drift:{mp}:critical_skus',
+                    title=f'FBA fee drift on {n_crit} SKU(s)',
+                    message=(
+                        f'{n_crit} SKU(s) show >8% drift between uploaded FBA fee and '
+                        f'last-14-day settlement actuals. Projected monthly margin '
+                        f'exposure: ${risk:+,.0f}. Top offenders: {top_str}. '
+                        f'See /dashboard/fba-drift/ for the full list and to '
+                        f'download a corrected COGS XLSX.'),
+                    metric_value=f'{n_crit}',
+                    threshold='0',
+                )
+            elif n_drift > 0:
+                n += self._upsert_alert(Alert, mp,
+                    severity='info', category='performance',
+                    metric_key=f'fba_drift:{mp}:warn_skus',
+                    title=f'{n_drift} SKU(s) with minor FBA fee drift',
+                    message=(
+                        f'{n_drift} SKU(s) show 2–8% drift between uploaded FBA fee '
+                        f'and last-14-day actuals. No urgent action needed; review '
+                        f'on /dashboard/fba-drift/ when convenient.'),
+                    metric_value=f'{n_drift}',
+                    threshold='0',
+                )
+
         return n
 
     # ── Helpers ─────────────────────────────────────────────────────────────

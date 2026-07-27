@@ -1,0 +1,143 @@
+{% extends "base/base.html" %}
+{% block title %}Atlas RFQs{% endblock %}
+{% block nav_atlas_rfqs %}active{% endblock %}
+{% block page_title %}RFQs — {{ company.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="mp-switcher">
+  {% for c in companies %}
+  <a href="{% url 'atlas:rfqs' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
+  {% endfor %}
+</div>
+{% if overdue_count %}<span style="margin-left:10px;background:#FDE8E6;color:#C0392B;font-weight:700;
+  padding:4px 10px;border-radius:10px;font-size:11px">⏰ {{ overdue_count }} past 24h TAT</span>{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  table.atl { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
+              border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.atl th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
+                 text-transform:uppercase; color:#5A6470; }
+  table.atl td { padding:7px 10px; border-bottom:1px solid #EDEFF1; vertical-align:top; }
+  .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
+  .st.open { background:#FFF4DC; color:#9D6500; } .st.responded { background:#E0F2EC; color:#067D62; }
+  .st.revalidation { background:#EDF2FB; color:#2456A6; } .st.closed { background:#EAEDED; color:#555; }
+  .ovd { color:#C0392B; font-weight:700; }
+  details.resp { margin-top:4px; } details.resp summary { cursor:pointer; color:#007185; font-size:11px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:14px">
+  <div>
+    <table class="atl">
+      <thead><tr>
+        <th>Reference</th><th>Status</th><th>Customer / Item</th><th>Qty</th>
+        <th>Port</th><th>TAT deadline</th><th>Latest response</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td style="font-family:'DM Mono',monospace">{{ r.reference }}</td>
+          <td><span class="st {{ r.status }}">{{ r.get_status_display }}</span></td>
+          <td>{{ r.customer.name|default:"—" }}<br/>
+              <span style="color:#5A6470;font-size:11px">
+                {{ r.product.sku|default:r.description }} · {{ r.size }} {% if r.gsm %}{{ r.gsm }}gsm{% endif %}</span></td>
+          <td>{{ r.quantity }}</td>
+          <td>{{ r.port|default:"—" }}</td>
+          <td class="{% if r.is_overdue %}ovd{% endif %}">
+            {% if r.status == 'open' or r.status == 'revalidation' %}
+              {{ r.tat_deadline|date:"M j H:i" }}{% if r.is_overdue %} ⏰ OVERDUE{% endif %}
+            {% else %}—{% endif %}</td>
+          <td>
+            {% with resp=r.responses.last %}
+            {% if resp %}
+              #{{ resp.number }} · {{ resp.get_kind_display }} ·
+              FOB {{ resp.fob_rate|default:"—" }} / CNF {{ resp.cnf_rate|default:"—" }} / DDP {{ resp.ddp_rate|default:"—" }}
+              {% if resp.applied_to_cost %}<span style="color:#067D62">✓ cost applied ({{ resp.applied_rate|upper }})</span>
+              {% elif r.product %}
+              <form method="post" style="display:inline">{% csrf_token %}
+                <input type="hidden" name="co" value="{{ company.code }}"/>
+                <input type="hidden" name="action" value="apply_cost"/>
+                <input type="hidden" name="response_id" value="{{ resp.pk }}"/>
+                <select name="rate_field" style="font-size:10px"><option value="fob">FOB</option>
+                  <option value="cnf">CNF</option><option value="ddp">DDP</option></select>
+                <button class="btn btn-ghost btn-sm">Apply → cost</button>
+              </form>
+              {% endif %}
+              <details class="resp"><summary>details</summary>
+                <div style="font-size:11px;color:#5A6470">
+                  MOQ {{ resp.moq|default:"—" }} · lead {{ resp.lead_time_days|default:"—" }}d ·
+                  vendor kg {{ resp.vendor_kg_rate|default:"—" }} ·
+                  constr. {{ resp.manufacturer_construction|default:"—" }}<br/>
+                  {{ resp.remarks }}</div></details>
+            {% else %}—{% endif %}
+            {% endwith %}
+          </td>
+          <td>
+            {% if r.status == 'responded' %}
+            <form method="post">{% csrf_token %}
+              <input type="hidden" name="co" value="{{ company.code }}"/>
+              <input type="hidden" name="action" value="revalidate"/>
+              <input type="hidden" name="rfq_id" value="{{ r.pk }}"/>
+              <button class="btn btn-ghost btn-sm" title="Ask supply chain to re-confirm (24h TAT)">↻ Revalidate</button>
+            </form>
+            {% endif %}
+            {% if r.status == 'open' or r.status == 'revalidation' %}
+            <details><summary style="cursor:pointer;color:#007185;font-size:11px">Respond…</summary>
+              <form method="post" style="display:grid;gap:4px;margin-top:6px;font-size:11px">
+                {% csrf_token %}
+                <input type="hidden" name="co" value="{{ company.code }}"/>
+                <input type="hidden" name="action" value="respond"/>
+                <input type="hidden" name="rfq_id" value="{{ r.pk }}"/>
+                <select name="kind"><option value="actual">Actual</option><option value="budgetary">Budgetary</option></select>
+                <input name="manufacturer_construction" placeholder="Manufacturer construction"/>
+                <input name="moq" type="number" placeholder="MOQ"/>
+                <input name="lead_time_days" type="number" placeholder="Lead time (days)"/>
+                <input name="fob_rate" type="number" step="0.0001" placeholder="FOB rate"/>
+                <input name="cnf_rate" type="number" step="0.0001" placeholder="CNF rate"/>
+                <input name="ddp_rate" type="number" step="0.0001" placeholder="DDP rate"/>
+                <input name="vendor_kg_rate" type="number" step="0.0001" placeholder="Vendor KG rate"/>
+                <input name="rates_received_date" type="date" title="Date rates received"/>
+                <input name="remarks" placeholder="Remarks"/>
+                <button class="btn btn-primary btn-sm">Submit response</button>
+              </form>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" style="text-align:center;color:#8A8A8A;padding:24px">No RFQs yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card"><div class="card-header"><div class="card-title">New RFQ (→ supply chain, 24h TAT)</div></div>
+    <div class="card-body">
+      <form method="post" enctype="multipart/form-data" style="display:grid;gap:8px">
+        {% csrf_token %}
+        <input type="hidden" name="co" value="{{ company.code }}"/>
+        <input type="hidden" name="action" value="create"/>
+        <div><label class="form-label">Customer</label>
+          <select name="customer" class="form-control"><option value="">—</option>
+            {% for c in customers %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select></div>
+        <div><label class="form-label">Existing product (or describe below)</label>
+          <select name="product" class="form-control"><option value="">—</option>
+            {% for p in products_list %}<option value="{{ p.pk }}">{{ p.sku }}</option>{% endfor %}</select></div>
+        <input name="description" class="form-control" placeholder="New product description"/>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <input name="size" class="form-control" placeholder="Size (e.g. 70×140)"/>
+          <input name="gsm" type="number" class="form-control" placeholder="GSM"/>
+          <input name="construction" class="form-control" placeholder="Required construction"/>
+          <input name="quantity" type="number" class="form-control" placeholder="Qty per article" required/>
+          <input name="port" class="form-control" placeholder="Port / city"/>
+          <input type="file" name="attachment" class="form-control"/>
+        </div>
+        <button class="btn btn-primary">Send RFQ</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

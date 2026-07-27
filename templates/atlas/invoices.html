@@ -1,0 +1,82 @@
+{% extends "base/base.html" %}
+{% block title %}Atlas Invoices{% endblock %}
+{% block nav_atlas_invoices %}active{% endblock %}
+{% block page_title %}Invoices — {{ company.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="mp-switcher">
+  {% for c in companies %}
+  <a href="{% url 'atlas:invoices' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
+  {% endfor %}
+</div>
+<a class="btn btn-ghost btn-sm" style="margin-left:8px" href="{% url 'atlas:ar_aging' %}?co={{ company.code }}">📊 AR Aging</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; max-width:820px; }
+  .kpi-card { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:20px; font-weight:700; } .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card.od .v { color:#B42318; }
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; margin-bottom:14px; }
+  .panel h3 { margin:0; padding:9px 14px; font-size:13px; border-bottom:1px solid #EDEFF1; }
+  table.atl { width:100%; border-collapse:collapse; font-size:12px; }
+  table.atl th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px; border-bottom:1px solid #D5D9D9; white-space:nowrap; }
+  table.atl th.l, table.atl td.l { text-align:left; }
+  table.atl td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  table.atl tbody tr:hover { background:#F7FAFC; }
+  a.num { color:#0F6FDE; font-weight:600; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; font-weight:600; }
+  .p-draft { background:#EDEFF1; color:#5A6470; } .p-sent { background:#E7F1FD; color:#0B4FA8; }
+  .p-part_paid { background:#FFF4DC; color:#8A5A00; } .p-paid { background:#E6F4EA; color:#1E6B34; }
+  .p-void { background:#FEE4E2; color:#B42318; text-decoration:line-through; }
+  .od { color:#B42318; font-weight:700; }
+  .cre { background:#F7FAFC; padding:8px 14px; }
+  .cre form { display:inline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v">{{ kpi.count }}</div><div class="l">Invoices</div></div>
+  <div class="kpi-card"><div class="v">{{ company.currency }} {{ kpi.outstanding|floatformat:0 }}</div><div class="l">Outstanding</div></div>
+  <div class="kpi-card od"><div class="v">{{ company.currency }} {{ kpi.overdue|floatformat:0 }}</div><div class="l">Overdue</div></div>
+  <div class="kpi-card"><div class="v">{{ invoiceable|length }}</div><div class="l">Won quotes to invoice</div></div>
+</div>
+
+{% if invoiceable %}
+<div class="panel">
+  <h3>➕ Raise an invoice from a won quotation</h3>
+  <div class="cre">
+    {% for q in invoiceable %}
+    <form method="post" action="{% url 'atlas:invoice_create' %}?co={{ company.code }}">
+      {% csrf_token %}<input type="hidden" name="co" value="{{ company.code }}">
+      <input type="hidden" name="quotation" value="{{ q.id }}">
+      <button class="btn btn-secondary btn-sm" style="margin:2px">{{ q.ref }} · {{ q.customer }} · {{ company.currency }} {{ q.total|floatformat:0 }} →</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3>All invoices</h3>
+  <table class="atl"><thead><tr>
+    <th class="l">Invoice #</th><th class="l">Customer</th><th class="l">Date</th>
+    <th class="l">Due</th><th>Total</th><th>Paid</th><th>Balance</th><th class="l">Status</th>
+  </tr></thead><tbody>
+  {% for r in rows %}
+    <tr>
+      <td class="l"><a class="num" href="{% url 'atlas:invoice_detail' r.id %}?co={{ company.code }}">{{ r.number }}</a></td>
+      <td class="l">{{ r.customer }}</td><td class="l">{{ r.date|date:'d-M-y' }}</td>
+      <td class="l {% if r.overdue %}od{% endif %}">{{ r.due|date:'d-M-y'|default:'—' }}{% if r.overdue %} ⏰{% endif %}</td>
+      <td>{{ r.total|floatformat:0 }}</td><td>{{ r.paid|floatformat:0 }}</td>
+      <td><b>{{ r.balance|floatformat:0 }}</b></td>
+      <td class="l"><span class="pill p-{{ r.status }}">{{ r.status|cut:'_' }}</span></td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="8" class="l" style="padding:16px;color:#8A94A0">No invoices yet. Raise one from a won quotation above.</td></tr>
+  {% endfor %}
+  </tbody></table>
+</div>
+{% endblock %}

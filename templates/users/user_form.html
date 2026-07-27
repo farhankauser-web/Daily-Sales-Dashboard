@@ -80,6 +80,32 @@
       </div>
     </div>
 
+    {% if access %}
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Page Access</div></div>
+      <div class="card-body">
+        <input type="hidden" name="access_submitted" value="1">
+        <div class="form-hint" style="margin-bottom:10px">
+          Ticked = this user can open the page. Boxes start from the <b>role</b> above —
+          tick or untick to tailor this specific person. A box highlighted
+          <b style="background:#FFF7E6;padding:0 4px">amber</b> differs from the role.
+          Leave everything as-is to simply follow the role.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          {% for a in access %}
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:8px;border:1px solid var(--border);border-radius:var(--r);{% if a.overridden %}background:#FFF7E6{% endif %}">
+            <input type="checkbox" name="access:{{ a.flag }}" {% if a.on %}checked{% endif %} style="margin-top:2px">
+            <div>
+              <div style="font-size:12px;font-weight:600">{{ a.label }}</div>
+              <div style="font-size:10px;color:var(--muted)">{{ a.desc }}</div>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     {% if form.password1 %}
     <div class="card" style="margin-bottom:16px">
       <div class="card-header"><div class="card-title">Set Password</div></div>

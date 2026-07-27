@@ -1,0 +1,156 @@
+{% extends "base/base.html" %}
+{% block title %}Goods-Receipt Variance{% endblock %}
+{% block nav_inv_variance %}active{% endblock %}
+{% block page_title %}Goods-Receipt Variance{% endblock %}
+
+{% block topbar_actions %}
+{% if can_edit %}
+<button class="btn btn-secondary btn-sm" onclick="bulkClose()">✓ Short-close delivered POs</button>
+{% endif %}
+<a class="btn btn-ghost btn-sm" style="margin-left:6px" id="dl" href="#" onclick="dl_();return false">⬇ Export</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:19px; font-weight:700; } .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card.ps .v { color:#B42318; } .kpi-card.ts .v { color:#B25E09; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tab { padding:6px 14px; border:1px solid #D5D9D9; border-radius:6px; font-size:12px; cursor:pointer; background:#fff; }
+  .tab.on { background:#232F3E; color:#fff; border-color:#232F3E; }
+  .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+  .bar-row select, .bar-row label { font-size:12px; }
+  .bar-row select { padding:5px 8px; border:1px solid #D5D9D9; border-radius:5px; }
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; }
+  table.t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.t th { background:#F4F6F8; text-align:right; padding:7px 9px; font-size:11px; border-bottom:1px solid #D5D9D9; white-space:nowrap; position:sticky; top:0; }
+  table.t th.l, table.t td.l { text-align:left; }
+  table.t td { padding:6px 9px; text-align:right; border-bottom:1px solid #EDEFF1; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  table.t tbody tr:hover { background:#F7FAFC; }
+  .ps { color:#B42318; font-weight:700; } .ts { color:#B25E09; font-weight:700; }
+  .zero { color:#B0B8C0; } .muted { color:#8A94A0; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; font-weight:600; }
+  .p-open { background:#E7F1FD; color:#0B4FA8; } .p-closed,.p-short_closed { background:#EDEFF1; color:#5A6470; }
+  .p-allocated,.p-ready { background:#E6F4EA; color:#1E6B34; } .p-partial { background:#FFF4DC; color:#8A5A00; }
+  .act { font-size:11px; color:#0F6FDE; cursor:pointer; } .act:hover { text-decoration:underline; }
+  .rsel { font-size:11px; padding:2px 4px; border:1px solid #D5D9D9; border-radius:4px; }
+  .cont-h { background:#F7FAFC; font-weight:600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v" id="k_ord">–</div><div class="l">Units ordered</div></div>
+  <div class="kpi-card"><div class="v" id="k_rec">–</div><div class="l">Received at FC</div></div>
+  <div class="kpi-card ps"><div class="v" id="k_ps">–</div><div class="l">🔴 Production shortage</div></div>
+  <div class="kpi-card ts"><div class="v" id="k_ts">–</div><div class="l">🟠 Transit shortage</div></div>
+  <div class="kpi-card"><div class="v" id="k_val">–</div><div class="l">Shortage value (FOB)</div></div>
+  <div class="kpi-card"><div class="v" id="k_fill">–</div><div class="l">Fill rate</div></div>
+</div>
+
+<div class="bar-row">
+  <label>Supplier <select id="fSup" onchange="load()"><option value="">All</option></select></label>
+  <label>PO <select id="fPo" onchange="load()"><option value="">All</option></select></label>
+  <label><input type="checkbox" id="fVar" onchange="load()"> variance only</label>
+  <span class="muted" id="meta" style="margin-left:auto"></span>
+</div>
+
+<div class="tabs">
+  <div class="tab on" id="tabA" onclick="showTab('A')">By PO Line (funnel)</div>
+  <div class="tab" id="tabB" onclick="showTab('B')">By Container (receipt)</div>
+</div>
+
+<div class="panel" id="paneA">
+  <table class="t"><thead><tr>
+    <th class="l">PO</th><th class="l">SKU</th><th>Ordered</th><th>Wastage</th>
+    <th>Allocated</th><th>Loaded</th><th>Received</th><th>Remaining</th>
+    <th>Prod short</th><th>Transit short</th><th>Over</th><th class="l">Status</th>
+    {% if can_edit %}<th class="l"></th>{% endif %}
+  </tr></thead><tbody id="tbA"></tbody></table>
+</div>
+
+<div class="panel" id="paneB" style="display:none">
+  <table class="t"><thead><tr>
+    <th class="l">Container</th><th class="l">Region</th><th class="l">SKU</th>
+    <th>Shipped</th><th>Received</th><th>Discrepancy</th><th class="l">Reason</th>
+  </tr></thead><tbody id="tbB"></tbody></table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const N=n=>(n||0).toLocaleString(); const M=n=>'$'+(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+const CAN_EDIT={% if can_edit %}true{% else %}false{% endif %};
+let DATA=null, TAB='A';
+function csrf(){ const m=document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)'); return m?m.pop():''; }
+async function post(u,b){ return (await fetch(u,{method:'POST',body:JSON.stringify(b),headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}})).json(); }
+function pill(s){ return `<span class="pill p-${s||'open'}">${(s||'open').replace(/_/g,' ')}</span>`; }
+function qs(){ const p=new URLSearchParams(); if(fSup.value)p.set('supplier',fSup.value);
+  if(fPo.value)p.set('po',fPo.value); if(fVar.checked)p.set('variance_only','1'); return p.toString(); }
+function dl_(){ location='{% url "inventory_planning:goods_receipt_export" %}?'+qs(); }
+function showTab(t){ TAB=t; tabA.classList.toggle('on',t==='A'); tabB.classList.toggle('on',t==='B');
+  paneA.style.display=t==='A'?'':'none'; paneB.style.display=t==='B'?'':'none'; }
+
+async function boot(){
+  const s=await (await fetch('{% url "inventory_planning:api_suppliers" %}')).json();
+  fSup.innerHTML='<option value="">All suppliers</option>'+s.rows.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
+  const p=await (await fetch('{% url "inventory_planning:api_purchase_orders" %}')).json();
+  fPo.innerHTML='<option value="">All POs</option>'+p.rows.map(x=>`<option value="${x.id}">${x.po_number}</option>`).join('');
+  load();
+}
+async function load(){
+  DATA=await (await fetch('{% url "inventory_planning:api_goods_receipt" %}?'+qs())).json();
+  const t=DATA.totals;
+  k_ord.textContent=N(t.ordered); k_rec.textContent=N(t.received);
+  k_ps.textContent=N(t.prod_short); k_ts.textContent=N(t.transit_short);
+  k_val.textContent=M(t.value_short); k_fill.textContent=t.fill_rate!=null?t.fill_rate+'%':'—';
+  document.getElementById('meta').textContent=`${DATA.lines.length} PO lines · ${DATA.containers.length} received containers`;
+  renderA(); renderB();
+}
+function renderA(){
+  tbA.innerHTML = DATA.lines.map(r=>`<tr>
+    <td class="l">${r.po}</td><td class="l"><b>${r.sku}</b><div class="muted" style="font-size:10px">${r.name||''}</div></td>
+    <td>${N(r.ordered)}</td><td>${r.wastage?N(r.wastage):'<span class=zero>0</span>'}</td>
+    <td>${N(r.allocated)}</td><td>${N(r.loaded)}</td><td>${N(r.received)}</td>
+    <td>${N(r.remaining)}</td>
+    <td class="${r.prod_short?'ps':'zero'}">${r.prod_short?N(r.prod_short):'0'}</td>
+    <td class="${r.transit_short?'ts':'zero'}">${r.transit_short?N(r.transit_short):'0'}</td>
+    <td>${r.over?N(r.over):'<span class=zero>0</span>'}</td>
+    <td class="l">${pill(r.status)}</td>
+    ${CAN_EDIT?`<td class="l">${r.closed?'':`<span class="act" onclick="closeLine(${r.id})">short-close</span>`}</td>`:''}
+  </tr>`).join('') || `<tr><td colspan="13" class="l muted" style="padding:16px">No PO lines${fVar.checked?' with variance':''}. Variance fills in once POs flow through the Allocation Workbench and containers are received.</td></tr>`;
+}
+function renderB(){
+  let h='';
+  for(const c of DATA.containers){
+    h+=`<tr class="cont-h"><td class="l"><b>${c.container_no}</b></td><td class="l">${(c.region||'').toUpperCase()}</td>
+      <td class="l muted">${c.vendor||''}${c.received_date?' · rec '+c.received_date:''}</td>
+      <td>${N(c.shipped)}</td><td>${N(c.received)}</td>
+      <td class="${c.disc<0?'ts':''}">${c.disc}</td><td></td></tr>`;
+    for(const l of c.lines){
+      const opts=['','damage','short_ship','lost','miscount','other'];
+      const lbl={'':'—',damage:'Damage',short_ship:'Short-ship',lost:'Lost in transit',miscount:'Miscount',other:'Other'};
+      const sel=CAN_EDIT
+        ? `<select class="rsel" onchange="setReason(${l.line_id},this.value)">`+opts.map(o=>`<option value="${o}" ${o===l.reason?'selected':''}>${lbl[o]}</option>`).join('')+'</select>'
+        : (lbl[l.reason]||'—');
+      h+=`<tr><td class="l"></td><td></td><td class="l">${l.sku}</td>
+        <td>${N(l.shipped)}</td><td>${N(l.received)}</td>
+        <td class="${l.disc<0?'ts':''}">${l.disc}</td><td class="l">${l.disc<0?sel:''}</td></tr>`;
+    }
+  }
+  tbB.innerHTML = h || `<tr><td colspan="7" class="l muted" style="padding:16px">No received PO-linked containers yet.</td></tr>`;
+}
+async function closeLine(id){
+  if(!confirm('Short-close this line? Unallocated units become production shortage.')) return;
+  const r=await post('{% url "inventory_planning:api_short_close" %}',{line_id:id}); alert(r.message); load();
+}
+async function bulkClose(){
+  if(!confirm('Short-close every open PO line that has nothing left in transit? Unallocated remainders book as production shortage.')) return;
+  const r=await post('{% url "inventory_planning:api_short_close" %}',
+    {bulk:true, supplier:fSup.value||null, po:fPo.value||null}); alert(r.message); load();
+}
+async function setReason(id,reason){ await post('{% url "inventory_planning:api_receipt_reason" %}',{line_id:id,reason}); }
+boot();
+</script>
+{% endblock %}

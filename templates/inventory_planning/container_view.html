@@ -1,0 +1,61 @@
+{% extends "base/base.html" %}
+{% block title %}Container {{ sh.container_no|default:sh.pk }}{% endblock %}
+{% block page_title %}Container — {{ sh.container_no|default:"(no number)" }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .detail { display:grid; grid-template-columns:repeat(4,auto); gap:6px 28px; font-size:12px;
+            background:#F4F6F8; border:1px solid #D5D9D9; border-radius:8px; padding:12px 16px; margin-bottom:14px; }
+  .detail .k { color:#5A6470; font-size:10px; text-transform:uppercase; }
+  .detail .v { font-weight:600; }
+  table.cv { width:100%; max-width:760px; border-collapse:collapse; font-size:12px; background:#fff;
+             border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.cv th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
+                text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9; }
+  table.cv td { padding:6px 10px; border-bottom:1px solid #EDEFF1; }
+  table.cv td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .mono { font-family:'DM Mono',monospace; }
+  .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; background:#EDF2FB; color:#2456A6; }
+  tfoot td { font-weight:700; background:#F7F9FB; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="detail">
+  <div><div class="k">Container No.</div><div class="v mono">{{ sh.container_no|default:"—" }}</div></div>
+  <div><div class="k">Shipment ID</div><div class="v mono">{{ sh.shipment_id|default:"—" }}</div></div>
+  <div><div class="k">PO Number</div><div class="v">{{ sh.po_number|default:"—" }}</div></div>
+  <div><div class="k">Vendor / Supplier</div><div class="v">{{ sh.vendor|default:"—" }}</div></div>
+  <div><div class="k">Destination</div><div class="v">{{ sh.destination.name|default:"—" }}</div></div>
+  <div><div class="k">Departure</div><div class="v">{{ sh.departure_date|date:"Y-m-d"|default:"—" }}</div></div>
+  <div><div class="k">ETA Port</div><div class="v">{{ sh.eta_port|date:"Y-m-d"|default:"—" }}</div></div>
+  <div><div class="k">ETA → FC</div><div class="v">{{ sh.eta_destination|date:"Y-m-d"|default:"—" }}</div></div>
+  <div><div class="k">Status</div><div class="v"><span class="st">{{ sh.get_status_display }}</span></div></div>
+  {% if archived %}
+  <div><div class="k">Arrival</div><div class="v">{{ sh.received_date|date:"Y-m-d"|default:"—" }}</div></div>
+  <div><div class="k">Confirmed by</div><div class="v">{% if sh.received_by %}{{ sh.received_by.full_name|default:sh.received_by.email }}{% else %}—{% endif %}</div></div>
+  <div><div class="k">Confirmed at</div><div class="v">{{ sh.received_at|date:"Y-m-d H:i"|default:"—" }}</div></div>
+  {% endif %}
+</div>
+
+<table class="cv">
+  <thead><tr><th>Type</th><th>Name</th><th>SKU</th><th style="text-align:right">Units</th>
+    {% if archived %}<th style="text-align:right">Received</th>{% endif %}</tr></thead>
+  <tbody>
+    {% for l in lines %}
+    <tr>
+      <td style="color:#5A6470">{{ l.type }}</td>
+      <td>{{ l.name|default:"—" }}</td>
+      <td class="mono">{{ l.sku }}</td>
+      <td class="num">{{ l.units }}</td>
+      {% if archived %}<td class="num">{{ l.received }}{% if l.disc %} <span style="color:#C0392B">({% if l.disc > 0 %}+{% endif %}{{ l.disc }})</span>{% endif %}</td>{% endif %}
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">No SKUs on this container.</td></tr>
+    {% endfor %}
+  </tbody>
+  <tfoot><tr><td colspan="3">Total ({{ lines|length }} SKUs)</td>
+    <td class="num">{{ sh.total_units }}</td>
+    {% if archived %}<td class="num">{{ sh.total_received }}</td>{% endif %}</tr></tfoot>
+</table>
+{% endblock %}

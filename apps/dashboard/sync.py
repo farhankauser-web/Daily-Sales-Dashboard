@@ -27,16 +27,37 @@ def _local_zone(marketplace: str) -> ZoneInfo:
     return ZoneInfo(tz_name)
 
 
-def _iter_clean_rows(rows, local_zone):
+# sales-channel value per marketplace. The flat file from a unified account
+# contains every marketplace in the region (e.g. amazon.de rows in the UK
+# account's report) plus 'Non-Amazon' (MCF) — count only the right domain.
+_CHANNEL_DOMAINS = {
+    'usa': 'amazon.com',   'ca': 'amazon.ca',    'mx': 'amazon.com.mx',
+    'uk':  'amazon.co.uk', 'de': 'amazon.de',    'fr': 'amazon.fr',
+    'it':  'amazon.it',    'es': 'amazon.es',
+    'ae':  'amazon.ae',    'sa': 'amazon.sa',
+}
+
+
+def _expected_channel(marketplace: str) -> str:
+    return _CHANNEL_DOMAINS.get(marketplace, 'amazon.com')
+
+
+def _vat_rate(marketplace: str) -> float:
+    """VAT rate for VAT-inclusive marketplaces (UK 20%, AE 5%, SA 15%…).
+    Amazon's item-price includes VAT there; net revenue = gross / (1 + rate)."""
+    return float(settings.AMAZON_MARKETPLACES.get(marketplace, {}).get('vat', 0) or 0)
+
+
+def _iter_clean_rows(rows, local_zone, channel_domain='amazon.com'):
     """Yield (purchase_local_date, sku, asin, qty, revenue) for valid rows.
-    Skips Cancelled and Non-Amazon channels — matches Sales Snapshot."""
+    Skips Cancelled and non-matching channels — matches Sales Snapshot."""
     for row in rows:
         if (row.get('order-status') or '').strip().lower() == 'cancelled':
             continue
         if (row.get('item-status') or '').strip().lower() == 'cancelled':
             continue
         channel = (row.get('sales-channel') or '').strip().lower()
-        if channel and channel != 'amazon.com':
+        if channel and channel != channel_domain:
             continue
 
         pd_str = row.get('purchase-date') or ''
@@ -164,11 +185,12 @@ def aggregate_rows_by_day(rows, marketplace: str, day_start: date_cls, day_end: 
         if asin_db:
             prod_id_by_asin[asin_db.upper()] = pid
 
+    net_factor = 1.0 / (1.0 + _vat_rate(marketplace))
     buckets = defaultdict(lambda: {
-        'revenue': 0.0, 'units': 0, 'orders': set(),
+        'revenue': 0.0, 'revenue_net': 0.0, 'units': 0, 'orders': set(),
         'cgs': 0.0, 'amz_fee': 0.0, 'fulfill': 0.0,
     })
-    for d, sku, asin, qty, rev, oid in _iter_clean_rows(rows, local_zone):
+    for d, sku, asin, qty, rev, oid in _iter_clean_rows(rows, local_zone, _expected_channel(marketplace)):
         if d < day_start or d > day_end:
             continue
         purchase_month = d.replace(day=1)
@@ -191,6 +213,7 @@ def aggregate_rows_by_day(rows, marketplace: str, day_start: date_cls, day_end: 
 
         b = buckets[d]
         b['revenue'] += rev
+        b['revenue_net'] += rev * net_factor
         b['units']   += qty
         b['cgs']     += cgs_unit * qty
         b['amz_fee'] += rev * 0.15
@@ -198,9 +221,10 @@ def aggregate_rows_by_day(rows, marketplace: str, day_start: date_cls, day_end: 
         if oid:
             b['orders'].add(oid)
 
-    # Materialise gm/cm
+    # Materialise gm/cm — margins are computed on VAT-exclusive revenue
+    # (VAT collected is owed to the tax authority, never margin).
     for b in buckets.values():
-        gm = b['revenue'] - b['cgs'] - b['amz_fee'] - b['fulfill']
+        gm = b['revenue_net'] - b['cgs'] - b['amz_fee'] - b['fulfill']
         b['gm']     = gm
         b['cm']     = gm     # No PPC yet — CM == GM until Ads API connects
         b['orders'] = len(b['orders'])
@@ -230,23 +254,25 @@ def upsert_daily_metrics(marketplace: str, by_day: dict, full_window: tuple[date
             continue
 
         b = by_day.get(d) or {
-            'revenue': 0.0, 'units': 0, 'orders': 0,
+            'revenue': 0.0, 'revenue_net': 0.0, 'units': 0, 'orders': 0,
             'cgs': 0.0, 'amz_fee': 0.0, 'fulfill': 0.0, 'gm': 0.0, 'cm': 0.0,
         }
         rev = b['revenue']
+        rev_net = b.get('revenue_net', rev)
         gm  = b['gm']   # = CM before PPC known
         cm  = b['cm']
         obj, _ = DailyMetric.objects.update_or_create(
             marketplace=marketplace, date=d,
             defaults={
                 'revenue':             Decimal(f'{rev:.2f}'),
+                'revenue_net':         Decimal(f'{rev_net:.2f}'),
                 'units':               int(b['units']),
                 'orders':              int(b['orders']),
                 'cgs':                 Decimal(f'{b["cgs"]:.2f}'),
                 'amazon_fee':          Decimal(f'{b["amz_fee"]:.2f}'),
                 'fba_fee':             Decimal(f'{b["fulfill"]:.2f}'),
                 'contribution_margin': Decimal(f'{cm:.2f}'),
-                'cm_pct':              Decimal(f'{(cm / rev) if rev else 0:.4f}'),
+                'cm_pct':              Decimal(f'{(cm / rev_net) if rev_net else 0:.4f}'),
                 # gross_margin and PPC fields updated after, preserving existing PPC data
             },
         )
@@ -254,7 +280,7 @@ def upsert_daily_metrics(marketplace: str, by_day: dict, full_window: tuple[date
         # This preserves any PPC data already written by backfill_ppc.
         ppc_val  = float(obj.ppc_spend or 0)
         gm_final = cm - ppc_val
-        rev_f    = rev or float(obj.revenue or 0)
+        rev_f    = rev_net or float(obj.revenue_net or obj.revenue or 0)
         DailyMetric.objects.filter(pk=obj.pk).update(
             gross_margin = Decimal(f'{gm_final:.2f}'),
             gm_pct       = Decimal(f'{(gm_final / rev_f) if rev_f else 0:.4f}'),
@@ -283,8 +309,9 @@ def aggregate_rows_by_sku(rows, marketplace: str, day_start: date_cls, day_end: 
         if sku_db: prod_id_by_sku[sku_db.upper()]  = pid
         if asin_db: prod_id_by_asin[asin_db.upper()] = pid
 
+    net_factor = 1.0 / (1.0 + _vat_rate(marketplace))
     buckets: dict = {}
-    for d, sku, asin, qty, rev, oid in _iter_clean_rows(rows, local_zone):
+    for d, sku, asin, qty, rev, oid in _iter_clean_rows(rows, local_zone, _expected_channel(marketplace)):
         if d < day_start or d > day_end:
             continue
         purchase_month = d.replace(day=1)
@@ -303,17 +330,19 @@ def aggregate_rows_by_sku(rows, marketplace: str, day_start: date_cls, day_end: 
             continue
         if key not in buckets:
             buckets[key] = {'asin': asin, 'qty': 0, 'revenue': 0.0,
+                            'revenue_net': 0.0,
                             'cgs': 0.0, 'amz_fee': 0.0, 'fulfill': 0.0}
         b = buckets[key]
         b['asin']    = b['asin'] or asin
         b['qty']     += qty
         b['revenue'] += rev
+        b['revenue_net'] += rev * net_factor
         b['cgs']     += cgs_unit * qty
         b['amz_fee'] += rev * 0.15
         b['fulfill'] += fba_unit * qty
 
     for b in buckets.values():
-        b['cm'] = b['revenue'] - b['cgs'] - b['amz_fee'] - b['fulfill']
+        b['cm'] = b['revenue_net'] - b['cgs'] - b['amz_fee'] - b['fulfill']
     return buckets
 
 
@@ -480,7 +509,7 @@ def configured_marketplaces() -> list[str]:
 # Per-hour delta buckets in marketplace local TZ. Powered by the same
 # FlatFileAllOrdersReport fetch used for daily aggregates.
 # ═══════════════════════════════════════════════════════════════════════════
-def _iter_clean_rows_with_hour(rows, local_zone):
+def _iter_clean_rows_with_hour(rows, local_zone, channel_domain='amazon.com'):
     """
     Same filtering as _iter_clean_rows but yields hour-resolution rows.
     Yields (local_date, hour, sku, asin, qty, rev, order_id).
@@ -491,7 +520,7 @@ def _iter_clean_rows_with_hour(rows, local_zone):
         if (row.get('item-status') or '').strip().lower() == 'cancelled':
             continue
         channel = (row.get('sales-channel') or '').strip().lower()
-        if channel and channel != 'amazon.com':
+        if channel and channel != channel_domain:
             continue
 
         pd_str = row.get('purchase-date') or ''
@@ -555,7 +584,7 @@ def aggregate_rows_by_hour(rows, marketplace: str, day: date_cls):
         'asin': '',
     })
 
-    for d, hour, sku, asin, qty, rev, oid in _iter_clean_rows_with_hour(rows, local_zone):
+    for d, hour, sku, asin, qty, rev, oid in _iter_clean_rows_with_hour(rows, local_zone, _expected_channel(marketplace)):
         if d != day:
             continue
 
@@ -748,8 +777,17 @@ def finalize_day(marketplace: str, day: date_cls,
     """
     from django.utils import timezone
     from .models import DailyMetric, DailySkuSnapshot
+    from .completeness import log_sync
 
     if is_finalized(marketplace, day):
+        # Day is already locked → the order data exists. Make sure the
+        # 'orders' completeness entry exists so the Hourly Patterns gate opens
+        # even if it was finalized before this writer existed (self-heal).
+        try:
+            log_sync(marketplace, day, 'orders', 'ok',
+                     error_message='finalized (backfilled completeness)')
+        except Exception:
+            pass
         return {'status': 'already_finalized', 'marketplace': marketplace,
                 'date': str(day), 'days_written': 0, 'sku_rows_written': 0}
 
@@ -774,6 +812,17 @@ def finalize_day(marketplace: str, day: date_cls,
     n_sku = DailySkuSnapshot.objects.filter(
         marketplace=marketplace, date=day,
     ).update(finalized_at=now)
+
+    # Authoritatively record orders-completeness for this day. finalize_day is
+    # the single source of truth for "this day's order data is locked & good",
+    # so the Hourly Patterns core gate ('orders') should key off it. Without
+    # this, a day finalized before the hourly cron logged 'orders' stays
+    # "core missing (Orders)" forever.
+    try:
+        log_sync(marketplace, day, 'orders', 'ok',
+                 rows_received=int(res.get('rows', 0) or 0))
+    except Exception:
+        pass
 
     return {
         'status':            'finalized',

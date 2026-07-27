@@ -1,0 +1,103 @@
+{% extends "base/base.html" %}
+{% block title %}Reorder Suggestions{% endblock %}
+{% block nav_inv_reorder %}active{% endblock %}
+{% block page_title %}Reorder Suggestions → Draft PO{% endblock %}
+
+{% block topbar_actions %}
+{% if can_edit %}
+<button class="btn btn-secondary btn-sm" onclick="regen()">🔄 Regenerate</button>
+<button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="approve()">✓ Approve selected → Draft PO</button>
+<button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="dismiss()">Dismiss selected</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; max-width:760px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:20px; font-weight:700; } .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; }
+  table.t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.t th { background:#F4F6F8; text-align:right; padding:7px 9px; font-size:11px; border-bottom:1px solid #D5D9D9; white-space:nowrap; }
+  table.t th.l,table.t td.l { text-align:left; }
+  table.t td { padding:6px 9px; text-align:right; border-bottom:1px solid #EDEFF1; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  table.t tbody tr:hover { background:#F7FAFC; }
+  .muted { color:#8A94A0; } .zero { color:#B0B8C0; }
+  .warn { color:#B42318; font-weight:600; }
+  .reg { font-size:10px; color:#5A6470; }
+  .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+  .bar-row select { padding:5px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v" id="k_n">–</div><div class="l">Suggestions</div></div>
+  <div class="kpi-card"><div class="v" id="k_u">–</div><div class="l">Units to order</div></div>
+  <div class="kpi-card"><div class="v" id="k_v">–</div><div class="l">Order value (FOB)</div></div>
+  <div class="kpi-card"><div class="v" id="k_ns">–</div><div class="l">⚠ No supplier set</div></div>
+</div>
+
+<div class="bar-row">
+  <label style="font-size:11px;color:#5A6470">Target cover
+    <select id="fCover" onchange="regen()">
+      <option value="">Tier default (ship-lead + tier)</option>
+      <option value="90">90 days</option><option value="100">100 days</option>
+      <option value="120">120 days</option><option value="150">150 days</option>
+    </select></label>
+  <span class="muted" style="font-size:11px;margin-left:auto">Pooled across all regions · nets on-hand + in-transit + open PO</span>
+</div>
+
+<div class="panel"><table class="t"><thead><tr>
+  <th class="l"><input type="checkbox" id="all" onclick="toggleAll(this)"></th>
+  <th class="l">SKU</th><th class="l">Supplier</th><th>Demand/day</th>
+  <th>On hand</th><th>In transit</th><th>Open PO</th>
+  <th>RECOMMEND</th><th>FOB value</th><th class="l">Target ready</th>
+</tr></thead><tbody id="tb"></tbody></table></div>
+<div class="muted" style="font-size:11px;margin-top:8px">
+  Recommended = pooled demand × target cover − (on-hand + in-transit + open PO), rounded to carton/MSQ.
+  Approve turns selected rows into a <b>draft Purchase Order</b> per supplier (visible in Purchase Orders).
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const N=n=>(n||0).toLocaleString(); const M=n=>'$'+(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+const CAN_EDIT={% if can_edit %}true{% else %}false{% endif %};
+let ROWS=[];
+function csrf(){ const m=document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)'); return m?m.pop():''; }
+async function post(u,b){ return (await fetch(u,{method:'POST',body:JSON.stringify(b),headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}})).json(); }
+function sel(){ return [...document.querySelectorAll('.rc:checked')].map(c=>+c.value); }
+function toggleAll(c){ document.querySelectorAll('.rc').forEach(x=>x.checked=c.checked); }
+
+async function load(){
+  const d=await (await fetch('{% url "inventory_planning:api_reorder" %}')).json();
+  ROWS=d.rows; const t=d.totals;
+  k_n.textContent=N(t.count); k_u.textContent=N(t.units); k_v.textContent=M(t.value); k_ns.textContent=N(t.no_supplier);
+  document.getElementById('tb').innerHTML = ROWS.map(r=>{
+    const reg=Object.entries(r.regions||{}).map(([k,v])=>`${k.toUpperCase()} ${v.demand}/d`).join(' · ');
+    return `<tr>
+      <td class="l"><input type="checkbox" class="rc" value="${r.id}"></td>
+      <td class="l"><b>${r.sku}</b><div class="reg">${reg}</div></td>
+      <td class="l ${r.supplier_id?'':'warn'}">${r.supplier}</td>
+      <td>${r.demand.toFixed(1)}</td><td>${N(r.on_hand)}</td><td>${N(r.transit)}</td>
+      <td>${r.open_po?N(r.open_po):'<span class=zero>0</span>'}</td>
+      <td><b>${N(r.qty)}</b></td><td>${M(r.value)}</td><td class="l">${r.ready||'—'}</td></tr>`;
+  }).join('') || '<tr><td colspan="10" class="l muted" style="padding:16px">No suggestions — everything is covered, or hit Regenerate. (Needs sales/PDS + inventory data per region.)</td></tr>';
+}
+async function regen(){
+  const r=await post('{% url "inventory_planning:api_reorder_regenerate" %}',{cover_days:fCover.value||null});
+  alert(r.message); load();
+}
+async function approve(){
+  const ids=sel(); if(!ids.length){ alert('Select rows first.'); return; }
+  if(!confirm(`Create draft PO(s) from ${ids.length} suggestion(s)?`)) return;
+  const r=await post('{% url "inventory_planning:api_reorder_action" %}',{action:'approve',ids}); alert(r.message); load();
+}
+async function dismiss(){
+  const ids=sel(); if(!ids.length){ alert('Select rows first.'); return; }
+  const r=await post('{% url "inventory_planning:api_reorder_action" %}',{action:'dismiss',ids}); alert(r.message); load();
+}
+load();
+</script>
+{% endblock %}

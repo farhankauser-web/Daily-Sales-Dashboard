@@ -107,7 +107,14 @@ a:hover { text-decoration: underline; color: var(--accent2); }
   padding: 16px 14px 4px;
   font-size: 10px; font-weight: 600; letter-spacing: 1px;
   text-transform: uppercase; color: rgba(255,255,255,.4);
+  cursor: pointer; user-select: none;
+  display: flex; align-items: center; justify-content: space-between;
 }
+.nav-section:hover { color: rgba(255,255,255,.7); }
+.nav-section::after {
+  content: '▾'; font-size: 9px; transition: transform .15s;
+}
+.nav-section.collapsed::after { transform: rotate(-90deg); }
 .nav-item {
   display: flex; align-items: center; gap: 9px;
   padding: 8px 14px; cursor: pointer;
@@ -508,6 +515,43 @@ tfoot td:first-child { text-align: left; }
   <a href="{% url 'dashboard:hourly_patterns' %}" class="nav-item {% block nav_hourly %}{% endblock %}">
     <span class="nav-icon">⏰</span> Hourly Patterns
   </a>
+  <a href="{% url 'dashboard:morning_report' %}" class="nav-item {% block nav_morning %}{% endblock %}">
+    <span class="nav-icon">📰</span> Morning Report
+  </a>
+
+  <div class="nav-section">Financials</div>
+  <a href="{% url 'dashboard:pnl_statement' %}" class="nav-item {% block nav_pnl_statement %}{% endblock %}">
+    <span class="nav-icon">📑</span> Management P&L
+  </a>
+  <a href="{% url 'dashboard:pnl_daily' %}" class="nav-item {% block nav_pnl %}{% endblock %}">
+    <span class="nav-icon">💵</span> Daily P&L
+  </a>
+  <a href="{% url 'dashboard:pnl_skus' %}" class="nav-item {% block nav_pnl_skus %}{% endblock %}">
+    <span class="nav-icon">📦</span> SKU Profitability
+  </a>
+  <a href="{% url 'dashboard:pnl_breakdown' %}" class="nav-item {% block nav_pnl_breakdown %}{% endblock %}">
+    <span class="nav-icon">🌐</span> P&L Breakdown
+  </a>
+  <a href="{% url 'dashboard:cash_flow' %}" class="nav-item {% block nav_cash_flow %}{% endblock %}">
+    <span class="nav-icon">🏦</span> Cash Flow
+  </a>
+  {% if user|has_perm:'can_manage_cogs' %}
+  <a href="{% url 'dashboard:cogs' %}" class="nav-item {% block nav_cogs %}{% endblock %}">
+    <span class="nav-icon">💲</span> COGS Upload
+  </a>
+  {% endif %}
+  {% if user|has_perm:'can_view_dashboard' %}
+  <a href="{% url 'dashboard:fba_fee_drift' %}" class="nav-item {% block nav_fba_drift %}{% endblock %}">
+    <span class="nav-icon">⚖️</span> FBA Fee Drift
+  </a>
+  {% endif %}
+  {% if user|has_perm:'can_manage_targets' %}
+  <a href="{% url 'dashboard:targets' %}" class="nav-item {% block nav_targets %}{% endblock %}">
+    <span class="nav-icon">🎯</span> Monthly Targets
+  </a>
+  {% endif %}
+
+  <div class="nav-section">Marketing</div>
   <a href="{% url 'dashboard:campaigns_list' %}" class="nav-item {% block nav_campaigns %}{% endblock %}">
     <span class="nav-icon">🎯</span> Campaigns
   </a>
@@ -520,53 +564,97 @@ tfoot td:first-child { text-align: left; }
   <a href="{% url 'dashboard:leaderboards' %}" class="nav-item {% block nav_leaderboards %}{% endblock %}">
     <span class="nav-icon">🏆</span> Leaderboards
   </a>
-  <a href="{% url 'dashboard:morning_report' %}" class="nav-item {% block nav_morning %}{% endblock %}">
-    <span class="nav-icon">📰</span> Morning Report
-  </a>
-  <a href="{% url 'dashboard:ba_queries' %}" class="nav-item {% block nav_ba_queries %}{% endblock %}">
-    <span class="nav-icon">🔎</span> BA: Search Queries
-  </a>
-  <a href="{% url 'dashboard:ba_baskets' %}" class="nav-item {% block nav_ba_baskets %}{% endblock %}">
-    <span class="nav-icon">🛍️</span> BA: Baskets & Repeat
-  </a>
-  <a href="{% url 'dashboard:ba_market_share' %}" class="nav-item {% block nav_ba_market_share %}{% endblock %}">
-    <span class="nav-icon">📊</span> BA: Market Share
-  </a>
-  <a href="{% url 'dashboard:ba_share_trend' %}" class="nav-item {% block nav_ba_share_trend %}{% endblock %}">
-    <span class="nav-icon">📈</span> BA: Share Trend
-  </a>
-  <a href="{% url 'dashboard:ai_recommendations' %}" class="nav-item {% block nav_ai_recs %}{% endblock %}">
-    <span class="nav-icon">🤖</span> AI Recommendations
-  </a>
-  <a href="{% url 'dashboard:pnl_daily' %}" class="nav-item {% block nav_pnl %}{% endblock %}">
-    <span class="nav-icon">💵</span> Daily P&L
-  </a>
-  <a href="{% url 'dashboard:pnl_skus' %}" class="nav-item {% block nav_pnl_skus %}{% endblock %}">
-    <span class="nav-icon">📦</span> SKU Profitability
-  </a>
-  <a href="{% url 'dashboard:pnl_breakdown' %}" class="nav-item {% block nav_pnl_breakdown %}{% endblock %}">
-    <span class="nav-icon">🌐</span> P&L Breakdown
-  </a>
   {% if user|has_perm:'can_view_ppc' %}
   <a href="{% url 'dashboard:ppc' %}" class="nav-item {% block nav_ppc %}{% endblock %}">
     <span class="nav-icon">📣</span> PPC Analytics
   </a>
   {% endif %}
-  {% if user|has_perm:'can_view_inventory' %}
-  <a href="{% url 'dashboard:inventory' %}" class="nav-item {% block nav_inventory %}{% endblock %}">
-    <span class="nav-icon">📦</span> Inventory
-  </a>
-  {% endif %}
 
-  <div class="nav-section">Data</div>
-  {% if user|has_perm:'can_manage_cogs' %}
-  <a href="{% url 'dashboard:cogs' %}" class="nav-item {% block nav_cogs %}{% endblock %}">
-    <span class="nav-icon">💲</span> COGS Upload
+  <div class="nav-section">Brand Analytics</div>
+  <a href="{% url 'dashboard:ba_queries' %}" class="nav-item {% block nav_ba_queries %}{% endblock %}">
+    <span class="nav-icon">🔎</span> Search Queries
   </a>
-  {% endif %}
-  {% if user|has_perm:'can_manage_targets' %}
-  <a href="{% url 'dashboard:targets' %}" class="nav-item {% block nav_targets %}{% endblock %}">
-    <span class="nav-icon">🎯</span> Monthly Targets
+  <a href="{% url 'dashboard:ba_baskets' %}" class="nav-item {% block nav_ba_baskets %}{% endblock %}">
+    <span class="nav-icon">🛍️</span> Baskets & Repeat
+  </a>
+  <a href="{% url 'dashboard:ba_market_share' %}" class="nav-item {% block nav_ba_market_share %}{% endblock %}">
+    <span class="nav-icon">📊</span> Market Share
+  </a>
+  <a href="{% url 'dashboard:ba_share_trend' %}" class="nav-item {% block nav_ba_share_trend %}{% endblock %}">
+    <span class="nav-icon">📈</span> Share Trend
+  </a>
+
+  <div class="nav-section">Walmart</div>
+  <a href="{% url 'walmart_mcf:orders' %}" class="nav-item {% block nav_walmart %}{% endblock %}">
+    <span class="nav-icon">🛒</span> Walmart Orders
+  </a>
+  <a href="{% url 'dashboard:mcf_orders' %}" class="nav-item {% block nav_mcf %}{% endblock %}">
+    <span class="nav-icon">📦</span> MCF Orders
+  </a>
+
+  <div class="nav-section">Supply Chain</div>
+  <a href="{% url 'atlas:quotations' %}" class="nav-item {% block nav_atlas_quotes %}{% endblock %}">
+    <span class="nav-icon">🧾</span> Quotations
+  </a>
+  <a href="{% url 'atlas:customers' %}" class="nav-item {% block nav_atlas_customers %}{% endblock %}">
+    <span class="nav-icon">🤝</span> B2B Customers
+  </a>
+  <a href="{% url 'atlas:products' %}" class="nav-item {% block nav_atlas_products %}{% endblock %}">
+    <span class="nav-icon">🧺</span> B2B Products
+  </a>
+  <a href="{% url 'atlas:rfqs' %}" class="nav-item {% block nav_atlas_rfqs %}{% endblock %}">
+    <span class="nav-icon">📨</span> RFQs
+  </a>
+  <a href="{% url 'atlas:purchase_orders' %}" class="nav-item {% block nav_atlas_pos %}{% endblock %}">
+    <span class="nav-icon">📋</span> Purchase Orders
+  </a>
+  <a href="{% url 'atlas:forecast' %}" class="nav-item {% block nav_atlas_forecast %}{% endblock %}">
+    <span class="nav-icon">🔮</span> Forecast
+  </a>
+  <a href="{% url 'atlas:invoices' %}" class="nav-item {% block nav_atlas_invoices %}{% endblock %}">
+    <span class="nav-icon">🧾</span> Invoices &amp; Billing
+  </a>
+
+  <div class="nav-section">Inventory</div>
+  {% if user|has_perm:'can_view_inventory' %}
+  <a href="{% url 'inventory_planning:planner' %}" class="nav-item {% block nav_inv_planner %}{% endblock %}">
+    <span class="nav-icon">📅</span> Inventory Planner
+  </a>
+  <a href="{% url 'inventory_planning:runway' %}" class="nav-item {% block nav_inv_runway %}{% endblock %}">
+    <span class="nav-icon">📉</span> Stock Runway
+  </a>
+  <a href="{% url 'inventory_planning:loading_plan' %}" class="nav-item {% block nav_inv_loading %}{% endblock %}">
+    <span class="nav-icon">🧮</span> Loading Plan
+  </a>
+  <a href="{% url 'inventory_planning:reorder' %}" class="nav-item {% block nav_inv_reorder %}{% endblock %}">
+    <span class="nav-icon">🛒</span> Reorder Suggestions
+  </a>
+  <a href="{% url 'inventory_planning:suppliers' %}" class="nav-item {% block nav_inv_suppliers %}{% endblock %}">
+    <span class="nav-icon">🏭</span> Suppliers
+  </a>
+  <a href="{% url 'inventory_planning:purchase_orders' %}" class="nav-item {% block nav_inv_pos %}{% endblock %}">
+    <span class="nav-icon">📋</span> Purchase Orders
+  </a>
+  <a href="{% url 'inventory_planning:sourcing' %}" class="nav-item {% block nav_inv_sourcing %}{% endblock %}">
+    <span class="nav-icon">🧭</span> Sourcing
+  </a>
+  <a href="{% url 'inventory_planning:allocation' %}" class="nav-item {% block nav_inv_alloc %}{% endblock %}">
+    <span class="nav-icon">📦</span> Allocation Workbench
+  </a>
+  <a href="{% url 'inventory_planning:containers' %}" class="nav-item {% block nav_inv_containers %}{% endblock %}">
+    <span class="nav-icon">🚢</span> Containers
+  </a>
+  <a href="{% url 'inventory_planning:fba_transfers' %}" class="nav-item {% block nav_inv_fbatransfer %}{% endblock %}">
+    <span class="nav-icon">🔁</span> FBA Transfers
+  </a>
+  <a href="{% url 'inventory_planning:goods_receipt' %}" class="nav-item {% block nav_inv_variance %}{% endblock %}">
+    <span class="nav-icon">📋</span> Goods-Receipt Variance
+  </a>
+  <a href="{% url 'inventory_planning:cashflow' %}" class="nav-item {% block nav_inv_cashflow %}{% endblock %}">
+    <span class="nav-icon">💵</span> Cash Flow Planner
+  </a>
+  <a href="{% url 'inventory_planning:container_history' %}" class="nav-item {% block nav_inv_history %}{% endblock %}">
+    <span class="nav-icon">🗂</span> Container History
   </a>
   {% endif %}
   {% if user|has_perm:'can_manage_catalog' %}
@@ -576,6 +664,9 @@ tfoot td:first-child { text-align: left; }
   {% endif %}
 
   <div class="nav-section">Intelligence</div>
+  <a href="{% url 'dashboard:ai_recommendations' %}" class="nav-item {% block nav_ai_recs %}{% endblock %}">
+    <span class="nav-icon">🤖</span> AI Recommendations
+  </a>
   {% if user|has_perm:'can_generate_ai_summary' %}
   <a href="{% url 'dashboard:summary' %}" class="nav-item {% block nav_summary %}{% endblock %}">
     <span class="nav-icon">✨</span> AI Summary
@@ -667,6 +758,30 @@ function getCookie(n){
   const v = document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');
   return v ? v.pop() : '';
 }
+
+// Collapsible sidebar sections (state remembered per section in localStorage;
+// a section containing the current page never starts collapsed)
+document.querySelectorAll('.nav-section').forEach(sec => {
+  const items = [];
+  let el = sec.nextElementSibling;
+  while (el && !el.classList.contains('nav-section')) {
+    items.push(el);
+    el = el.nextElementSibling;
+  }
+  if (!items.length) return;
+  const key = 'navsec:' + sec.textContent.trim();
+  const hasActive = items.some(i => i.classList && i.classList.contains('active'));
+  const apply = c => {
+    items.forEach(i => { i.style.display = c ? 'none' : ''; });
+    sec.classList.toggle('collapsed', c);
+  };
+  apply(localStorage.getItem(key) === '1' && !hasActive);
+  sec.addEventListener('click', () => {
+    const c = !sec.classList.contains('collapsed');
+    apply(c);
+    localStorage.setItem(key, c ? '1' : '0');
+  });
+});
 
 // Alerts badge
 (async function pollAlerts(){

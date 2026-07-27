@@ -1,0 +1,271 @@
+{% extends "base/base.html" %}
+{% block title %}Stock Runway{% endblock %}
+{% block nav_inv_runway %}active{% endblock %}
+{% block page_title %}Stock Runway — when do we run short?{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="regionSel">
+  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; cursor:pointer; }
+  .kpi-card .v { font-size:22px; font-weight:700; }
+  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card.gap .v { color:#C0392B; }
+  .kpi-card.tr  .v { color:#9D6500; }
+  .kpi-card.safe .v { color:#067D62; }
+
+  .legend { font-size:11px; color:#5A6470; margin-bottom:10px; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+  .legend .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
+
+  .rwtable { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
+             border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  .rwtable th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
+                text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9; }
+  .rwtable td { padding:6px 10px; border-bottom:1px solid #EDEFF1; vertical-align:middle; }
+  tr.rw:hover { background:#F8FAFB; }
+  .mono { font-family:'DM Mono',monospace; }
+
+  /* the runway track */
+  .track { position:relative; height:24px; background:#F0F2F4; border-radius:5px; overflow:visible; }
+  .track .cover { position:absolute; top:0; bottom:0; background:#4FB68A; }
+  .track .short { position:absolute; top:0; bottom:0; background:repeating-linear-gradient(45deg,#F7C6C0,#F7C6C0 5px,#F3B0A8 5px,#F3B0A8 10px); }
+  .track .arr { position:absolute; top:-3px; width:0;height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:8px solid #2456A6; transform:translateX(-5px); }
+  .track .arr.late { border-bottom-color:#9D6500; }
+  .track .tick { position:absolute; top:0; bottom:0; width:1px; background:#DFE3E6; }
+  .track .stockout { position:absolute; top:-2px; bottom:-2px; width:2px; background:#C0392B; }
+  .badge { display:inline-block; padding:2px 7px; border-radius:9px; font-size:10px; font-weight:700; }
+  .badge.gap { background:#FDE8E6; color:#C0392B; }
+  .badge.tr  { background:#FFF4DC; color:#9D6500; }
+  .badge.safe{ background:#E0F2EC; color:#067D62; }
+  .badge.nopds{ background:#EAEDED; color:#777; }
+  .sorth { cursor:pointer; user-select:none; white-space:nowrap; }
+  .sorth:hover { background:#E9EDF1; }
+  .ar { font-size:9px; color:#0F6FDE; }
+  .track { cursor:help; }
+  #rwTip { position:fixed; z-index:9999; display:none; pointer-events:none;
+           background:#232F3E; color:#fff; font-size:11px; line-height:1.5;
+           padding:8px 10px; border-radius:6px; max-width:280px;
+           box-shadow:0 4px 16px rgba(0,0,0,.25); }
+  #rwTip b { color:#fff; } #rwTip .g { color:#9FB0C0; }
+  #rwTip .rc { color:#F7C6C0; } #rwTip .ok { color:#7FD6AE; }
+</style>
+<div id="rwTip"></div>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip" style="grid-template-columns:repeat(5,1fr)">
+  <div class="kpi-card gap" onclick="setFilter('expedite')"><div class="v" id="k_nr">–</div><div class="l">🔴 Expedite — sea freight too late</div></div>
+  <div class="kpi-card tr" onclick="setFilter('ship_now')"><div class="v" id="k_order">–</div><div class="l">🟠 Ship now — nothing inbound</div></div>
+  <div class="kpi-card tr" onclick="setFilter('short_transit')"><div class="v" id="k_tr">–</div><div class="l">🟡 Short — inbound won't cover</div></div>
+  <div class="kpi-card safe" onclick="setFilter('safe')"><div class="v" id="k_safe">–</div><div class="l">🟢 Covered for the window</div></div>
+  <div class="kpi-card" onclick="setFilter('')"><div class="v" id="k_total">–</div><div class="l">SKUs (with a PDS)</div></div>
+</div>
+
+<div class="legend">
+  <span><span class="sw" style="background:#4FB68A"></span>Covered (stock on hand)</span>
+  <span><span class="sw" style="background:#F3B0A8"></span>Shortfall (out of stock)</span>
+  <span><span style="color:#2456A6">▲</span> Transit arrives (in time)</span>
+  <span><span style="color:#9D6500">▲</span> Transit arrives (after stockout)</span>
+  <span><span style="display:inline-block;width:2px;height:12px;background:#C0392B;vertical-align:-2px"></span> Stockout day</span>
+  <span><span style="display:inline-block;width:2px;height:12px;background:#9D6500;vertical-align:-2px"></span> Ship-by (last day to ship & still arrive)</span>
+  <span style="margin-left:auto">Timeline: today → +<span id="horiz">120</span> days · demand = PDS from Inventory Planner (or 7-day sales if no PDS)</span>
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+  <select id="fCat" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="render()"><option value="">All categories</option></select>
+  <input id="fQ" class="form-control" style="width:220px;padding:5px 8px;font-size:12px" placeholder="Search SKU / name…" oninput="render()"/>
+  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+</div>
+
+<table class="rwtable">
+  <thead><tr>
+    <th style="width:230px" class="sorth" onclick="sortBy('sku')">SKU <span class="ar" data-k="sku"></span></th>
+    <th style="width:60px" class="sorth" onclick="sortBy('pds')">PDS <span class="ar" data-k="pds"></span></th>
+    <th style="width:72px" class="sorth" onclick="sortBy('onhand')">On-hand <span class="ar" data-k="onhand"></span></th>
+    <th style="width:70px" class="sorth" onclick="sortBy('transit')">Transit <span class="ar" data-k="transit"></span></th>
+    <th style="width:110px" class="sorth" onclick="sortBy('runs')">Runs out <span class="ar" data-k="runs"></span></th>
+    <th>Runway (next <span id="horiz2">120</span> days)</th>
+  </tr></thead>
+  <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr></tbody>
+</table>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const U_API = "{% url 'inventory_planning:api_planner' %}";
+const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
+let curRegion='usa', data=null, horizon=120, curFilter='', sortKey='', sortDir=1;
+const FLAG={usa:'🇺🇸',uk:'🇬🇧',ae:'🇦🇪',sa:'🇸🇦'};
+function csrf(){ return document.cookie.split('; ').find(c=>c.startsWith('csrftoken='))?.split('=')[1]||''; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+function n(v){ return (v===null||v===undefined||v==='')?'—':Number(v).toLocaleString('en-US'); }
+function withR(u){ return u+(u.includes('?')?'&':'?')+'region='+curRegion; }
+function setRegion(r,btn){ curRegion=r; document.querySelectorAll('#regionSel .mp-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); load(); }
+function setFilter(f){ curFilter=f; render(); }
+
+// category of each SKU for the runway
+function cat(r){
+  if (r.demand_basis<=0) return 'nopds';
+  if (!r.stockout_date) return 'safe';
+  if (r.point_of_no_return) return 'expedite';    // sea freight too late
+  return r.has_transit ? 'short_transit' : 'ship_now';
+}
+function sortBy(k){ if(sortKey===k){ sortDir=-sortDir; } else { sortKey=k; sortDir=1; } render(); }
+
+async function load(){
+  data = await (await fetch(withR(U_API))).json();
+  horizon = data.horizon || 120;
+  document.getElementById('horiz').textContent = horizon;
+  document.getElementById('horiz2').textContent = horizon;
+  const rows = data.rows.filter(r=>r.demand_basis>0);
+  document.getElementById('k_nr').textContent    = rows.filter(r=>cat(r)==='expedite').length;
+  document.getElementById('k_order').textContent = rows.filter(r=>cat(r)==='ship_now').length;
+  document.getElementById('k_tr').textContent    = rows.filter(r=>cat(r)==='short_transit').length;
+  document.getElementById('k_safe').textContent  = rows.filter(r=>cat(r)==='safe').length;
+  document.getElementById('k_total').textContent = rows.length;
+  const cats=[...new Set(data.rows.map(r=>r.category).filter(Boolean))].sort();
+  document.getElementById('fCat').innerHTML='<option value="">All categories</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
+  render();
+}
+
+async function editPds(sku, cur){
+  const v = prompt('PDS (potential units/day) for '+sku+' — updates the Inventory Planner too:', cur===null?'':cur);
+  if (v===null || v==='') return;
+  const r = await fetch("{% url 'inventory_planning:save_pds' %}", {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body: JSON.stringify({sku, pds: parseFloat(v), region: curRegion})});
+  if (r.ok) load(); else alert('Save failed');
+}
+
+function offset(dateStr){
+  if(!dateStr) return null;
+  const t=new Date(data.today), d=new Date(dateStr);
+  return Math.round((d-t)/86400000);
+}
+
+function track(r){
+  const s = r.series || [];
+  const H = s.length || horizon;
+  let html = '<div class="track">';
+  for(let d=30; d<H; d+=30) html += `<div class="tick" style="left:${d/H*100}%"></div>`;
+  // segment the actual depletion series: covered (>0) vs short (<=0). This
+  // shows the GAP between running out and a container landing at FC, and the
+  // recovery when it arrives.
+  let i=0;
+  while(i<H){
+    const shortSeg = s[i] <= 0;
+    let j=i; while(j<H && (s[j]<=0)===shortSeg) j++;
+    const left=i/H*100, w=(j-i)/H*100;
+    html += `<div class="${shortSeg?'short':'cover'}" style="left:${left}%;width:${w}%"></div>`;
+    i=j;
+  }
+  const so = offset(r.stockout_date);
+  if (so!==null && so<H) html += `<div class="stockout" style="left:${so/H*100}%"></div>`;
+  const sb = offset(r.ship_by);
+  if (sb!==null && sb>=0 && sb<H)
+    html += `<div class="stockout" style="left:${sb/H*100}%;background:#9D6500" title="Ship by ${r.ship_by}"></div>`;
+  (r.arrival_markers||[]).forEach(m=>{
+    if (m.offset<=H){
+      const late = so!==null && m.offset>so;
+      const conts = (m.containers||[]).map(c=>c.container).join(', ');
+      html += `<div class="arr ${late?'late':''}" style="left:${m.offset/H*100}%" title="${conts||'Inbound'} — +${n(m.units)} units, ${m.date||('day '+m.offset)} (+${m.offset}d)"></div>`;
+    }
+  });
+  html += '</div>';
+  return html;
+}
+
+// concise hover summary for a SKU's runway bar
+function tipHtml(r){
+  const so = offset(r.stockout_date);
+  let h = `<b>${FLAG[curRegion]||''} ${esc(r.sku)}</b> <span class="g">${esc((r.name||'').slice(0,32))}</span><br>`;
+  h += `<span class="g">Demand</span> ${n(r.demand_basis)}/day · <span class="g">on-hand</span> ${n(r.total_amazon+r.total_wh)} (${r.cover_onhand_days??'—'}d)<br>`;
+  if (r.stockout_date)
+    h += `<span class="rc">Runs out ${r.stockout_date} — in ${so}d</span>`;
+  else h += `<span class="ok">Covered through +${horizon}d</span>`;
+  if (r.ship_by) h += `<br><span class="g">Ship by ${r.ship_by}</span> (last day sea can still arrive)`;
+  const arr = (r.arrival_markers||[]);
+  if (arr.length){
+    h += `<br><span class="g">Inbound:</span>`;
+    arr.slice(0,4).forEach(m=>{
+      const late = so!==null && m.offset>so;
+      (m.containers&&m.containers.length?m.containers:[{container:'container',units:m.units}]).forEach(c=>{
+        h += `<br>&nbsp;<span class="${late?'rc':'ok'}">▲</span> ${esc(c.container)} · +${n(c.units)} · ${m.date||('+'+m.offset+'d')} (+${m.offset}d)`;
+      });
+    });
+  } else if (r.stockout_date) {
+    h += `<br><span class="rc">Nothing inbound</span>`;
+  }
+  return h;
+}
+
+function render(){
+  if(!data) return;
+  const q=document.getElementById('fQ').value.toLowerCase();
+  const fc=document.getElementById('fCat').value;
+  let rows=data.rows.filter(r=>r.demand_basis>0
+    && (!curFilter || cat(r)===curFilter)
+    && (!fc || r.category===fc)
+    && (!q || r.sku.toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q)));
+  if (sortKey){
+    const val=r=>({sku:r.sku, pds:r.pds??-1, onhand:(r.total_amazon+r.total_wh),
+                   transit:r.transit, runs:(offset(r.stockout_date)??1e9)})[sortKey];
+    rows.sort((a,b)=>{ const x=val(a),y=val(b);
+      return (typeof x==='string'? x.localeCompare(y): x-y)*sortDir; });
+  } else {
+    const rank={expedite:0,ship_now:1,short_transit:2,safe:3,nopds:4};
+    rows.sort((a,b)=>{ const ra=rank[cat(a)], rb=rank[cat(b)];
+      if(ra!==rb) return ra-rb;
+      return (offset(a.stockout_date)??9999)-(offset(b.stockout_date)??9999); });
+  }
+  document.querySelectorAll('.ar').forEach(s=>s.textContent =
+    s.dataset.k===sortKey ? (sortDir>0?'▲':'▼') : '');
+  document.getElementById('countLbl').textContent = rows.length+' SKU(s)';
+  const badge={expedite:'gap',ship_now:'tr',short_transit:'tr',safe:'safe',nopds:'nopds'};
+  const label={expedite:'EXPEDITE',ship_now:'SHIP NOW',short_transit:'SHORT',safe:'OK',nopds:'—'};
+  document.getElementById('tbody').innerHTML = rows.length ? rows.map(r=>{
+    const c=cat(r);
+    const runs = r.stockout_date ? `${r.stockout_date}<br><span style="font-size:10px;color:#8A8A8A">in ${offset(r.stockout_date)}d</span>` : '<span style="color:#067D62">120d+</span>';
+    const pdsCell = CAN_EDIT
+      ? `<span class="pdsedit" onclick="editPds('${r.sku}',${r.pds===null?'null':r.pds})">${r.pds===null?'set':n(r.pds)}</span>`
+      : n(r.pds);
+    return `<tr class="rw">
+      <td><span class="mono">${esc(r.sku)}</span> <span class="badge ${badge[c]}">${label[c]}</span>
+        <div style="font-size:10px;color:#8A8A8A">${esc((r.name||'').slice(0,40))}</div></td>
+      <td>${pdsCell}</td>
+      <td title="Amazon ${n(r.total_amazon)} + WH ${n(r.total_wh)} = ${r.cover_onhand_days??'—'}d cover">${n(r.total_amazon + r.total_wh)}</td>
+      <td>${r.transit?n(r.transit):'<span style="color:#C0392B">0</span>'}</td>
+      <td>${runs}</td>
+      <td data-tip="${encodeURIComponent(tipHtml(r))}">${track(r)}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:30px">No SKUs match.</td></tr>';
+  wireTips();
+}
+
+// ── hover tooltip on the runway bars ──
+const TIP = document.getElementById('rwTip');
+function wireTips(){
+  document.querySelectorAll('#tbody td[data-tip]').forEach(td=>{
+    td.onmousemove = e=>{
+      TIP.innerHTML = decodeURIComponent(td.dataset.tip);
+      TIP.style.display='block';
+      const pad=14, w=TIP.offsetWidth, h=TIP.offsetHeight;
+      let x=e.clientX+pad, y=e.clientY+pad;
+      if (x+w>window.innerWidth) x=e.clientX-w-pad;
+      if (y+h>window.innerHeight) y=e.clientY-h-pad;
+      TIP.style.left=x+'px'; TIP.style.top=y+'px';
+    };
+    td.onmouseleave = ()=>{ TIP.style.display='none'; };
+  });
+}
+load();
+</script>
+{% endblock %}

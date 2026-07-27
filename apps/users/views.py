@@ -86,7 +86,17 @@ def user_edit(request, pk):
     target = get_object_or_404(User, pk=pk)
     form = UserEditForm(request.POST or None, instance=target)
     if request.method == 'POST' and form.is_valid():
-        form.save()
+        u = form.save()
+        # ── per-user page-access overrides (checkboxes named access:<flag>) ──
+        if request.POST.get('access_submitted'):
+            ov = {}
+            for flag, _l, _d in PERMISSION_AREAS:
+                checked = request.POST.get(f'access:{flag}') == 'on'
+                role_val = getattr(u.role, flag, False) if u.role else False
+                if checked != role_val:            # store only the delta
+                    ov[flag] = checked
+            u.perm_overrides = ov
+            u.save(update_fields=['perm_overrides'])
         AuditLog.objects.create(
             user=request.user, action='update',
             resource=f'user:{target.email}',
@@ -94,8 +104,16 @@ def user_edit(request, pk):
         )
         messages.success(request, f'User {target.email} updated.')
         return redirect('users:list')
+    # effective page access for the form (override → role)
+    ov = target.perm_overrides or {}
+    access = [{'flag': f, 'label': l, 'desc': d,
+               'on': (bool(ov[f]) if f in ov
+                      else (getattr(target.role, f, False) if target.role else False)),
+               'overridden': f in ov}
+              for f, l, d in PERMISSION_AREAS]
     return render(request, 'users/user_form.html',
-                  {'form': form, 'action': 'Edit', 'target': target})
+                  {'form': form, 'action': 'Edit', 'target': target,
+                   'access': access})
 
 
 # ── USER DEACTIVATE ───────────────────────────────────────────────────────────
@@ -164,3 +182,28 @@ def profile(request):
 def audit_log(request):
     logs = AuditLog.objects.select_related('user').order_by('-created_at')[:500]
     return render(request, 'users/audit_log.html', {'logs': logs})
+
+
+# ── Access Control: per-email page assignment ───────────────────────────────
+
+# Each permission flag → the pages it unlocks (shown to the admin as "pages").
+PERMISSION_AREAS = [
+    ('can_view_dashboard', 'Dashboard & Sales',
+     'Daily dashboard · Hourly patterns · Morning report'),
+    ('can_view_financials', 'Financials',
+     'P&L · Cash Flow · SKU profitability · FBA fee drift'),
+    ('can_view_ppc', 'PPC / Advertising',
+     'Campaign center · Search terms · Placements · Leaderboards'),
+    ('can_view_inventory', 'Inventory & Supply Chain',
+     'Planner · Runway · Loading Plan · Suppliers · POs · Sourcing · '
+     'Allocation · Containers · FBA Transfers · Cash Flow · Goods Receipt · Reorder'),
+    ('can_view_historical', 'Historical data', 'Historical trends & archives'),
+    ('can_manage_cogs', 'Edit / manage inventory & COGS',
+     'Editing rights across inventory, POs, cash flow'),
+    ('can_manage_targets', 'Manage targets', 'Sales & inventory targets'),
+    ('can_manage_catalog', 'Manage catalog', 'Product catalog editing'),
+    ('can_configure_api', 'API configuration', 'Amazon / Walmart API keys'),
+    ('can_manage_users', 'User & access management', 'Users, roles & per-user access'),
+    ('can_view_audit_log', 'Audit log', 'Security & change audit'),
+    ('can_generate_ai_summary', 'AI summaries', 'Claude-generated insights'),
+]

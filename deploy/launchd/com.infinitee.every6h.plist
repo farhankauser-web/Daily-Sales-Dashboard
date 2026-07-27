@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.infinitee.every6h</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string>
+    <string>/Users/farhankauser/Library/Application Support/infinitee/run_group.sh</string>
+    <string>every6h</string>
+  </array>
+  <key>StartInterval</key><integer>21600</integer>
+  <key>RunAtLoad</key><false/>
+  <key>StandardErrorPath</key><string>/Users/farhankauser/Desktop/project/infinitee_app/logs/launchd_every6h.err</string>
+</dict></plist>

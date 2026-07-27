@@ -1,0 +1,178 @@
+{% extends "base/base.html" %}
+{% block title %}New Quotation{% endblock %}
+{% block nav_atlas_quotes %}active{% endblock %}
+{% block page_title %}New Quotation — {{ company.name }}{% endblock %}
+{% block topbar_actions %}
+<a href="{% url 'atlas:quotations' %}?co={{ company.code }}" class="btn btn-ghost">← Back</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .wiz { max-width:1000px; }
+  .wiz .card { margin-bottom:14px; }
+  table.pick { width:100%; border-collapse:collapse; font-size:12px; }
+  table.pick th { background:#F4F6F8; text-align:left; padding:6px 8px; font-size:10px;
+                  text-transform:uppercase; color:#5A6470; }
+  table.pick td { padding:6px 8px; border-bottom:1px solid #EDEFF1; }
+  .low { color:#C0392B; font-weight:600; }
+  #cartTable td input { width:70px; padding:3px 5px; font-size:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="post" class="wiz" id="quoteForm">
+  {% csrf_token %}
+  <input type="hidden" name="co" value="{{ company.code }}"/>
+  <input type="hidden" name="items_json" id="itemsJson"/>
+
+  <div class="card"><div class="card-header"><div class="card-title">1 · Order</div></div>
+    <div class="card-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div><label class="form-label">Customer *</label>
+        <select name="customer" id="fCustomer" class="form-control" required onchange="loadProducts()">
+          <option value="">— select —</option>
+          {% for c in customers %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
+        </select></div>
+      <div><label class="form-label">Order type *</label>
+        <select name="order_type" id="fOrderType" class="form-control" onchange="onOrderType()">
+          <option value="local">Local Order</option>
+          <option value="container">Container Order</option>
+        </select></div>
+      <div id="containerTypeWrap" style="display:none"><label class="form-label">Container basis</label>
+        <select name="container_type" class="form-control">
+          <option value="fob">FOB</option><option value="cnf">CNF</option><option value="ddp">DDP</option>
+        </select></div>
+      <div><label class="form-label">Payment term</label>
+        <select name="payment_term" class="form-control">
+          <option value="">Customer default</option>
+          {% for t in terms %}<option value="{{ t.pk }}">{{ t.name }}</option>{% endfor %}
+        </select></div>
+      <div><label class="form-label">Expected delivery</label>
+        <input type="date" name="expected_delivery" class="form-control"/></div>
+      <div><label class="form-label">Global discount %</label>
+        <input type="number" step="0.001" min="0" name="discount_pct" class="form-control" value="0"/></div>
+      <div><label class="form-label">Discount amount ({{ company.currency }})</label>
+        <input type="number" step="0.01" min="0" name="discount_amount" class="form-control" value="0"/></div>
+      <div style="display:flex;align-items:end;padding-bottom:6px">
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center">
+          <input type="checkbox" name="is_sample_request"/> Sample sale request</label></div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-header"><div class="card-title">2 · Pick products (quality first)</div></div>
+    <div class="card-body">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="fQuality" class="form-control" style="width:auto" onchange="loadProducts()">
+          <option value="">All qualities</option>
+          {% for ql in qualities %}<option value="{{ ql }}">{{ ql }}</option>{% endfor %}
+        </select>
+        <span id="pickHint" style="font-size:11px;color:#5A6470;align-self:center">
+          Select a customer to see live prices.</span>
+      </div>
+      <div style="max-height:280px;overflow:auto">
+        <table class="pick"><thead><tr>
+          <th></th><th>SKU</th><th>Description</th><th>Quality</th><th>Size / GSM</th>
+          <th>Stock</th><th>Weight kg</th><th>Kg rate</th><th>Unit price</th>
+        </tr></thead><tbody id="pickBody">
+          <tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:16px">—</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-header"><div class="card-title">3 · Lines</div></div>
+    <div class="card-body">
+      <table class="pick" id="cartTable"><thead><tr>
+        <th>SKU</th><th>Qty</th><th>Unit price (override)</th><th>Line disc %</th>
+        <th>Line total</th><th>Stock flag</th><th></th>
+      </tr></thead><tbody id="cartBody"></tbody></table>
+      <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+        <div><label class="form-label">Remarks</label>
+          <textarea name="remarks" class="form-control" rows="2" style="width:420px"></textarea></div>
+        <div style="text-align:right">
+          <div style="font-size:13px">Subtotal: <b id="tSub">0.00</b> {{ company.currency }}</div>
+          <button type="submit" class="btn btn-primary" style="margin-top:8px">Create Quotation</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const API = "{% url 'atlas:api_products_priced' %}";
+const CO  = "{{ company.code }}";
+let CATALOG = {};        // id -> product row
+let CART = {};           // id -> {qty, price_override, disc}
+
+function onOrderType(){
+  document.getElementById('containerTypeWrap').style.display =
+    document.getElementById('fOrderType').value === 'container' ? '' : 'none';
+  loadProducts();
+}
+
+async function loadProducts(){
+  const cust = document.getElementById('fCustomer').value;
+  const q = document.getElementById('fQuality').value;
+  const ot = document.getElementById('fOrderType').value;
+  const r = await fetch(`${API}?co=${CO}&customer=${cust}&quality=${encodeURIComponent(q)}&order_type=${ot}`);
+  const j = await r.json();
+  CATALOG = {};
+  const tb = document.getElementById('pickBody');
+  document.getElementById('pickHint').style.display = cust ? 'none' : '';
+  tb.innerHTML = j.products.length ? j.products.map(p => {
+    CATALOG[p.id] = p;
+    const price = p.unit_price != null ? p.unit_price.toFixed(4) : '—';
+    const lowCls = p.stock <= 0 ? 'low' : '';
+    return `<tr>
+      <td><button type="button" class="btn btn-secondary btn-sm" onclick="addLine(${p.id})">Add</button></td>
+      <td style="font-family:'DM Mono',monospace">${p.sku}</td>
+      <td>${p.description}</td><td>${p.quality||''}</td>
+      <td>${p.size} · ${p.gsm}gsm</td>
+      <td class="${lowCls}">${p.stock}</td>
+      <td>${p.weight_kg.toFixed(5)}</td>
+      <td>${p.kg_rate != null ? p.kg_rate : '—'}</td>
+      <td style="font-weight:600">${price}</td></tr>`;
+  }).join('') :
+  '<tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:16px">No products for this quality.</td></tr>';
+}
+
+function addLine(id){
+  if (!CART[id]) CART[id] = {qty: 1, price: '', disc: 0};
+  renderCart();
+}
+function rmLine(id){ delete CART[id]; renderCart(); }
+function upd(id, field, val){ CART[id][field] = val; renderCart(); }
+
+function renderCart(){
+  const tb = document.getElementById('cartBody');
+  let sub = 0;
+  tb.innerHTML = Object.entries(CART).map(([id, c]) => {
+    const p = CATALOG[id] || {sku:'?', unit_price:0, stock:0};
+    const unit = c.price !== '' ? parseFloat(c.price) : (p.unit_price || 0);
+    const total = unit * c.qty * (100 - (c.disc||0)) / 100;
+    sub += total;
+    const short = Math.max(c.qty - Math.max(p.stock,0), 0);
+    return `<tr>
+      <td style="font-family:'DM Mono',monospace">${p.sku}</td>
+      <td><input type="number" min="1" value="${c.qty}" onchange="upd(${id},'qty',parseInt(this.value)||1)"/></td>
+      <td><input type="number" step="0.0001" placeholder="${(p.unit_price??0).toFixed(4)}" value="${c.price}"
+                 onchange="upd(${id},'price',this.value)"/></td>
+      <td><input type="number" step="0.001" min="0" max="100" value="${c.disc}"
+                 onchange="upd(${id},'disc',parseFloat(this.value)||0)"/></td>
+      <td style="font-weight:600">${total.toFixed(2)}</td>
+      <td>${short > 0 ? `<span class="low">⚑ short ${short}</span>` : 'ok'}</td>
+      <td><button type="button" class="btn btn-ghost btn-sm" onclick="rmLine(${id})">✕</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('tSub').textContent = sub.toFixed(2);
+}
+
+document.getElementById('quoteForm').addEventListener('submit', () => {
+  const items = Object.entries(CART).map(([id, c]) => ({
+    product_id: parseInt(id), quantity: c.qty,
+    unit_price: c.price === '' ? null : c.price, discount_pct: c.disc || 0}));
+  document.getElementById('itemsJson').value = JSON.stringify(items);
+});
+</script>
+{% endblock %}

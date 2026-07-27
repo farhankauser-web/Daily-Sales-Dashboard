@@ -1,0 +1,67 @@
+{% extends "base/base.html" %}
+{% block title %}AR Aging{% endblock %}
+{% block nav_atlas_invoices %}active{% endblock %}
+{% block page_title %}Accounts Receivable — {{ company.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="mp-switcher">
+  {% for c in companies %}
+  <a href="{% url 'atlas:ar_aging' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
+  {% endfor %}
+</div>
+<a class="btn btn-ghost btn-sm" style="margin-left:8px" href="{% url 'atlas:invoices' %}?co={{ company.code }}">← Invoices</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
+  .kpi-card { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:18px; font-weight:700; } .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card.d60 .v { color:#B25E09; } .kpi-card.d90 .v, .kpi-card.d90p .v { color:#B42318; }
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; }
+  table.atl { width:100%; border-collapse:collapse; font-size:12px; }
+  table.atl th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px; border-bottom:1px solid #D5D9D9; }
+  table.atl th.l, table.atl td.l { text-align:left; }
+  table.atl td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1; font-variant-numeric:tabular-nums; }
+  table.atl tfoot td { font-weight:700; background:#F4F6F8; }
+  .over { color:#B42318; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v">{{ company.currency }} {{ total|floatformat:0 }}</div><div class="l">Total outstanding</div></div>
+  <div class="kpi-card"><div class="v">{{ buckets.current|floatformat:0 }}</div><div class="l">Current</div></div>
+  <div class="kpi-card"><div class="v">{{ buckets.d30|floatformat:0 }}</div><div class="l">1–30 days</div></div>
+  <div class="kpi-card d60"><div class="v">{{ buckets.d60|floatformat:0 }}</div><div class="l">31–60 days</div></div>
+  <div class="kpi-card d90"><div class="v">{{ buckets.d90|floatformat:0 }}</div><div class="l">61–90 days</div></div>
+  <div class="kpi-card d90p"><div class="v">{{ buckets.d90p|floatformat:0 }}</div><div class="l">90+ days</div></div>
+</div>
+
+<div class="panel">
+  <table class="atl"><thead><tr>
+    <th class="l">Customer</th><th>Current</th><th>1–30</th><th>31–60</th>
+    <th>61–90</th><th>90+</th><th>Total due</th>
+  </tr></thead><tbody>
+  {% for c in customers %}
+    <tr>
+      <td class="l">{{ c.name }}</td>
+      <td>{{ c.current|floatformat:0 }}</td><td>{{ c.d30|floatformat:0 }}</td>
+      <td class="{% if c.d60 %}over{% endif %}">{{ c.d60|floatformat:0 }}</td>
+      <td class="{% if c.d90 %}over{% endif %}">{{ c.d90|floatformat:0 }}</td>
+      <td class="{% if c.d90p %}over{% endif %}">{{ c.d90p|floatformat:0 }}</td>
+      <td><b>{{ c.total|floatformat:0 }}</b></td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="7" class="l" style="padding:16px;color:#8A94A0">No outstanding receivables. 🎉</td></tr>
+  {% endfor %}
+  </tbody>
+  {% if customers %}<tfoot><tr>
+    <td class="l">All customers</td><td>{{ buckets.current|floatformat:0 }}</td>
+    <td>{{ buckets.d30|floatformat:0 }}</td><td>{{ buckets.d60|floatformat:0 }}</td>
+    <td>{{ buckets.d90|floatformat:0 }}</td><td>{{ buckets.d90p|floatformat:0 }}</td>
+    <td>{{ total|floatformat:0 }}</td>
+  </tr></tfoot>{% endif %}
+  </table>
+</div>
+{% endblock %}

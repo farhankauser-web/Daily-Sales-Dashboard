@@ -1,0 +1,109 @@
+{% extends "base/base.html" %}
+{% block title %}Atlas Quotations{% endblock %}
+{% block nav_atlas_quotes %}active{% endblock %}
+{% block page_title %}Quotations — {{ company.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="mp-switcher">
+  {% for c in companies %}
+  <a href="?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
+  {% endfor %}
+</div>
+<a class="btn btn-primary btn-sm" style="margin-left:10px"
+   href="{% url 'atlas:quotation_new' %}?co={{ company.code }}">＋ New Quotation</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .fun-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
+  .fun-card { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .fun-card .v { font-size:20px; font-weight:700; }
+  .fun-card .s { font-size:11px; color:#5A6470; }
+  .fun-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  table.atl { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
+              border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.atl th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
+                 text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9; }
+  table.atl td { padding:7px 10px; border-bottom:1px solid #EDEFF1; }
+  .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
+  .st.draft { background:#EDF2FB; color:#2456A6; }
+  .st.sent  { background:#FFF4DC; color:#9D6500; }
+  .st.won   { background:#E0F2EC; color:#067D62; }
+  .st.lost  { background:#FDE8E6; color:#C0392B; }
+  .shortage { color:#C0392B; font-weight:700; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fun-grid">
+  <div class="fun-card"><div class="l">Sent (incl. decided)</div>
+    <div class="v">{{ funnel.sent_total }}</div></div>
+  <div class="fun-card"><div class="l">Won</div>
+    <div class="v" style="color:#067D62">{{ funnel.won.count }}</div>
+    <div class="s">{{ company.currency }} {{ funnel.won.value|floatformat:0 }}</div></div>
+  <div class="fun-card"><div class="l">Lost</div>
+    <div class="v" style="color:#C0392B">{{ funnel.lost.count }}</div>
+    <div class="s">{{ company.currency }} {{ funnel.lost.value|floatformat:0 }}</div></div>
+  <div class="fun-card"><div class="l">Win rate</div>
+    <div class="v">{{ funnel.win_rate }}%</div></div>
+  <div class="fun-card"><div class="l">Draft</div>
+    <div class="v">{{ funnel.draft.count }}</div>
+    <div class="s">{{ company.currency }} {{ funnel.draft.value|floatformat:0 }}</div></div>
+</div>
+
+<form method="get" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+  <input type="hidden" name="co" value="{{ company.code }}"/>
+  <select name="status" class="form-control" style="width:auto;padding:5px 8px;font-size:12px">
+    <option value="">All statuses</option>
+    <option value="draft" {% if f.status == 'draft' %}selected{% endif %}>Draft</option>
+    <option value="sent"  {% if f.status == 'sent' %}selected{% endif %}>Sent</option>
+    <option value="won"   {% if f.status == 'won' %}selected{% endif %}>Won</option>
+    <option value="lost"  {% if f.status == 'lost' %}selected{% endif %}>Lost</option>
+  </select>
+  <select name="customer" class="form-control" style="width:auto;padding:5px 8px;font-size:12px">
+    <option value="">All customers</option>
+    {% for c in customers %}
+    <option value="{{ c.pk }}" {% if f.customer == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="order_type" class="form-control" style="width:auto;padding:5px 8px;font-size:12px">
+    <option value="">Local + Container</option>
+    <option value="local"     {% if f.order_type == 'local' %}selected{% endif %}>Local</option>
+    <option value="container" {% if f.order_type == 'container' %}selected{% endif %}>Container</option>
+  </select>
+  <input name="quality" value="{{ f.quality }}" placeholder="Quality…" class="form-control" style="width:120px;padding:5px 8px;font-size:12px"/>
+  <input name="sku" value="{{ f.sku }}" placeholder="SKU…" class="form-control" style="width:120px;padding:5px 8px;font-size:12px"/>
+  <input type="date" name="from" value="{{ f.from }}" class="form-control" style="width:auto;padding:5px 8px;font-size:12px"/>
+  <input type="date" name="to" value="{{ f.to }}" class="form-control" style="width:auto;padding:5px 8px;font-size:12px"/>
+  <button class="btn btn-secondary btn-sm">Filter</button>
+</form>
+
+<table class="atl">
+  <thead><tr>
+    <th>Reference</th><th>Status</th><th>Customer</th><th>Type</th>
+    <th>Lines</th><th>Net ({{ company.currency }})</th><th>Margin</th>
+    <th>Expected delivery</th><th>Age (d)</th><th>Remarks</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{% url 'atlas:quotation_detail' r.q.pk %}?co={{ company.code }}"
+             style="font-family:'DM Mono',monospace">{{ r.q.reference }}</a>
+          {% if r.q.has_stock_shortage %}<span class="shortage" title="Stock shortage on one or more lines">⚑</span>{% endif %}</td>
+      <td><span class="st {{ r.q.status }}">{{ r.q.status|upper }}</span></td>
+      <td>{{ r.q.customer.name }}</td>
+      <td>{{ r.q.get_order_type_display }}{% if r.q.container_type %} · {{ r.q.container_type|upper }}{% endif %}</td>
+      <td>{{ r.q.lines.count }}</td>
+      <td style="font-weight:600">{{ r.totals.net|floatformat:2 }}</td>
+      <td>{{ r.totals.margin|floatformat:2 }} ({{ r.totals.margin_pct|floatformat:1 }}%)</td>
+      <td>{{ r.q.expected_delivery|default:"—" }}</td>
+      <td>{{ r.age_days }}</td>
+      <td style="max-width:220px">{{ r.q.remarks|truncatechars:60 }}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="10" style="text-align:center;color:#8A8A8A;padding:30px">
+      No quotations yet — click “＋ New Quotation”.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

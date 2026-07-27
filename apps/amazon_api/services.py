@@ -104,9 +104,84 @@ class SPAPIClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _post(self, path: str, json_body: dict = None, timeout: int = 30) -> dict:
+        resp = requests.post(
+            f'{self.endpoint}{path}',
+            headers=self._headers(),
+            json=json_body,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        try:
+            return resp.json() if resp.text else {}
+        except ValueError:
+            return {}
+
     def test_connection(self) -> dict:
         """Hit the Marketplace Participations endpoint as a health check."""
         return self._get('/sellers/v1/marketplaceParticipations')
+
+    # ── MCF (Fulfillment Outbound 2020-07-01) — Walmart automation ─────────
+
+    def get_mcf_features(self) -> list[dict]:
+        """MCF features (BLANK_BOX, BLOCK_AMZL, …) + seller enrollment."""
+        resp = self._get('/fba/outbound/2020-07-01/features',
+                         params={'marketplaceId': self.mp_id})
+        return (resp.get('payload', resp) or {}).get('features', [])
+
+    def get_mcf_feature_sku(self, feature_name: str, seller_sku: str) -> dict:
+        """Per-SKU eligible/sellable quantity for a feature (e.g. BLANK_BOX)."""
+        resp = self._get(
+            f'/fba/outbound/2020-07-01/features/inventory/{feature_name}/{seller_sku}',
+            params={'marketplaceId': self.mp_id})
+        return resp.get('payload', resp) or {}
+
+    def get_mcf_fulfillment_preview(self, address: dict, items: list[dict],
+                                     speeds: list[str] = None,
+                                     feature_constraints: list[dict] = None) -> list[dict]:
+        """Preview fulfillment options (validates address/features/speed)."""
+        body = {
+            'marketplaceId': self.mp_id,
+            'address': address,
+            'items': items,
+            'shippingSpeedCategories': speeds or ['Standard'],
+        }
+        if feature_constraints:
+            body['featureConstraints'] = feature_constraints
+        resp = self._post('/fba/outbound/2020-07-01/fulfillmentOrders/preview', body)
+        return (resp.get('payload', resp) or {}).get('fulfillmentPreviews', [])
+
+    def create_mcf_order(self, seller_fulfillment_order_id: str,
+                          displayable_order_id: str,
+                          displayable_order_date_iso: str,
+                          shipping_speed: str,
+                          destination_address: dict,
+                          items: list[dict],
+                          feature_constraints: list[dict] = None,
+                          displayable_comment: str = 'Thank you for your order!') -> dict:
+        """
+        createFulfillmentOrder. Amazon rejects duplicate
+        sellerFulfillmentOrderIds, which is our server-side idempotency net.
+        """
+        body = {
+            'marketplaceId': self.mp_id,
+            'sellerFulfillmentOrderId': seller_fulfillment_order_id,
+            'displayableOrderId': displayable_order_id,
+            'displayableOrderDate': displayable_order_date_iso,
+            'displayableOrderComment': displayable_comment[:1000],
+            'shippingSpeedCategory': shipping_speed,
+            'fulfillmentAction': 'Ship',
+            'destinationAddress': destination_address,
+            'items': items,
+        }
+        if feature_constraints:
+            body['featureConstraints'] = feature_constraints
+        return self._post('/fba/outbound/2020-07-01/fulfillmentOrders', body)
+
+    def get_package_tracking(self, package_number: int) -> dict:
+        resp = self._get('/fba/outbound/2020-07-01/tracking',
+                         params={'packageNumber': package_number})
+        return resp.get('payload', resp) or {}
 
     def get_sales_data(self, date_range: str = 'today', start_date: str = None, end_date: str = None) -> dict:
         """
@@ -135,6 +210,56 @@ class SPAPIClient:
             '/fba/inventory/v1/summaries',
             params={'marketplaceIds': self.mp_id, 'details': True}
         )
+
+    def _get_throttled(self, path, params, tries=6, pause=2.2):
+        """GET with 429 back-off — FBA Inventory summaries has a low rate
+        limit (~2 req/s) so paginating hits it without pacing."""
+        import requests as _rq
+        for attempt in range(tries):
+            try:
+                return self._get(path, params=params)
+            except _rq.exceptions.HTTPError as exc:
+                code = getattr(exc.response, 'status_code', None)
+                if code == 429 and attempt < tries - 1:
+                    time.sleep(pause * (attempt + 1))   # linear back-off
+                    continue
+                raise
+
+    def get_fba_inventory_summaries_all(self) -> list[dict]:
+        """Every FBA inventory summary (paginated). Each item carries
+        sellerSku, totalQuantity and inventoryDetails (fulfillable /
+        inbound working+shipped+receiving / reserved)."""
+        out, token = [], None
+        for _ in range(200):                      # hard stop
+            params = {'marketplaceIds': self.mp_id, 'details': True,
+                      'granularityType': 'Marketplace',
+                      'granularityId': self.mp_id}
+            if token:
+                params['nextToken'] = token
+            resp = self._get_throttled('/fba/inventory/v1/summaries', params)
+            payload = resp.get('payload', resp) or {}
+            out.extend(payload.get('inventorySummaries', []))
+            token = (resp.get('pagination') or {}).get('nextToken')
+            if not token:
+                break
+            time.sleep(0.6)                       # pace pages under the limit
+        return out
+
+    def get_awd_inventory_all(self) -> list[dict]:
+        """Amazon Warehousing & Distribution inventory (paginated).
+        Items carry sku, totalOnhandQuantity, totalInboundQuantity."""
+        out, token = [], None
+        for _ in range(200):
+            params = {'details': 'SHOW', 'maxResults': 200}
+            if token:
+                params['nextToken'] = token
+            resp = self._get_throttled('/awd/2024-05-09/inventory', params)
+            out.extend(resp.get('inventory', []))
+            token = resp.get('nextToken')
+            if not token:
+                break
+            time.sleep(0.6)
+        return out
 
     def get_orders(self, date_range: str = 'today', start_date: str = None, end_date: str = None) -> dict:
         start_local, end_local, tz_name = self._resolve_local_dates(
@@ -231,6 +356,81 @@ class SPAPIClient:
                 # Some Amazon documents are raw deflate streams under "GZIP"
                 return zlib.decompress(raw, -zlib.MAX_WBITS)
         return raw
+
+    # ── REPORTS API: Payments Date-Range Transaction report ──────────────────
+    REPORT_TYPE_DATE_RANGE_TXN = 'GET_DATE_RANGE_FINANCIAL_TRANSACTION_DATA'
+
+    def fetch_date_range_transaction_report(self, start_local, end_local) -> bytes:
+        """
+        Download the Payments 'Date Range Reports → Transaction' CSV covering
+        [start_local, end_local] — the same report as the manual Seller
+        Central monthly unified download (deferred transactions included), so
+        it ties to the books, unlike the posted-date Finances API.
+
+        Amazon blocks createReport for this type ("report type 1202 is not
+        allowed"): it can only be GENERATED in Seller Central. But generated
+        reports ARE listable + downloadable here — and ops already generates
+        them — so we find the newest one that covers the range. Raises
+        LookupError when none exists yet (caller should say: generate it in
+        Seller Central, then retry).
+        """
+        tz_name = self._marketplace_tz(self.config.marketplace)
+        start_iso, end_iso = self._local_range_to_utc_interval(
+            start_local, end_local, tz_name)
+        want_start = datetime.fromisoformat(start_iso.replace('Z', '+00:00'))
+        want_end   = datetime.fromisoformat(end_iso.replace('Z', '+00:00'))
+        tol = timedelta(hours=2)
+
+        j = self._get('/reports/2021-06-30/reports', params={
+            'reportTypes': self.REPORT_TYPE_DATE_RANGE_TXN,
+            'processingStatuses': 'DONE', 'pageSize': 100})
+        for rep in j.get('reports', []):        # newest first
+            mps = rep.get('marketplaceIds') or []
+            if mps and self.mp_id not in mps:
+                continue
+            try:
+                r_start = datetime.fromisoformat(rep['dataStartTime'])
+                r_end   = datetime.fromisoformat(rep['dataEndTime'])
+            except (KeyError, ValueError):
+                continue
+            # BOTH ends must match the requested range (± tol). Coverage alone
+            # is not enough: a quarterly report also "covers" the month but
+            # would book three months of transactions into one.
+            if abs(r_start - want_start) <= tol and abs(r_end - want_end) <= tol:
+                doc = self.get_report_document_meta(rep['reportDocumentId'])
+                r = requests.get(doc['url'], timeout=120)
+                r.raise_for_status()
+                return self._decompress_if_needed(
+                    r.content, doc.get('compressionAlgorithm') or '')
+
+        # Long shot: try to generate it (Amazon may enable this some day).
+        body = {'reportType': self.REPORT_TYPE_DATE_RANGE_TXN,
+                'marketplaceIds': [self.mp_id],
+                'dataStartTime': start_iso, 'dataEndTime': end_iso}
+        resp = requests.post(
+            f'{self.endpoint}/reports/2021-06-30/reports',
+            headers=self._headers(), json=body, timeout=20)
+        if resp.ok:
+            report_id = resp.json()['reportId']
+            deadline = time.time() + 420
+            while time.time() < deadline:
+                meta = self.get_report_status(report_id)
+                st = meta.get('processingStatus', '')
+                if st == 'DONE':
+                    doc = self.get_report_document_meta(meta['reportDocumentId'])
+                    r = requests.get(doc['url'], timeout=120)
+                    r.raise_for_status()
+                    return self._decompress_if_needed(
+                        r.content, doc.get('compressionAlgorithm') or '')
+                if st in ('CANCELLED', 'FATAL'):
+                    break
+                time.sleep(15)
+        raise LookupError(
+            f'No Date-Range Transaction report covering '
+            f'{start_local}–{end_local} exists yet. Generate it in Seller '
+            f'Central (Payments → Reports Repository / Date Range Reports → '
+            f'Transaction, custom range = the month), wait for it to finish, '
+            f'then click Sync again.')
 
     def download_orders_report(self, document_id: str) -> list:
         """Download + parse the All Orders TSV. Returns list of dict rows."""
@@ -408,6 +608,402 @@ class SPAPIClient:
         return 'ok', data
 
     # ── REPORTS API: Brand-Analytics Search Query Performance ────────────────
+    REPORT_TYPE_SETTLEMENT = 'GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2'
+
+    def list_settlement_reports(
+        self,
+        created_since:  str,
+        created_until:  str = None,
+        page_size:      int = 50,
+    ) -> list[dict]:
+        """
+        List DONE settlement reports created within a window.
+
+        Settlement reports are AUTO-generated by Amazon on the ~14-day pay
+        cycle — we don't submit a createReport. We just list them, dedupe
+        against what we've already ingested, and download the new ones.
+
+        Returns a list of {reportId, dataStartTime, dataEndTime,
+        processingStatus, reportDocumentId} dicts.
+        """
+        params = {
+            'reportTypes':         self.REPORT_TYPE_SETTLEMENT,
+            'processingStatuses':  'DONE',
+            'marketplaceIds':      self.mp_id,
+            'createdSince':        created_since,
+            'pageSize':            page_size,
+        }
+        if created_until:
+            params['createdUntil'] = created_until
+
+        out: list[dict] = []
+        next_token: str | None = None
+        for _ in range(10):  # hard cap to avoid runaway pagination
+            page_params = dict(params)
+            if next_token:
+                # When paginating, only the nextToken param is allowed.
+                page_params = {'nextToken': next_token}
+            resp = requests.get(
+                f'{self.endpoint}/reports/2021-06-30/reports',
+                headers=self._headers(),
+                params=page_params,
+                timeout=20,
+            )
+            if not resp.ok:
+                raise RuntimeError(
+                    f'listSettlementReports failed: '
+                    f'{_extract_http_error_detail(resp)}')
+            body = resp.json()
+            out.extend(body.get('reports') or [])
+            next_token = body.get('nextToken')
+            if not next_token:
+                break
+        return out
+
+    def download_settlement_report(self, document_id: str) -> list[dict]:
+        """
+        Download + parse a settlement report flat file. Tab-delimited,
+        documented at:
+          https://developer-docs.amazon.com/sp-api/docs/report-type-values#settlement-reports
+
+        Returns list of dict rows (keys are the report's column headers).
+        """
+        last_exc = None
+        for attempt in range(4):                      # resilient to flaky S3
+            try:
+                meta = self.get_report_document_meta(document_id)
+                url  = meta['url']
+                comp = meta.get('compressionAlgorithm') or ''
+                r = requests.get(url, timeout=(10, 180))   # (connect, read)
+                r.raise_for_status()
+                body = self._decompress_if_needed(r.content, comp)
+                text = body.decode('utf-8-sig', errors='replace')
+                reader = csv.DictReader(io.StringIO(text), delimiter='\t')
+                return list(reader)
+            except (requests.exceptions.RequestException, OSError) as exc:
+                last_exc = exc
+                time.sleep(2 * (attempt + 1))         # 2s, 4s, 6s backoff
+        raise RuntimeError(f'settlement download failed after retries: {last_exc}')
+
+    @staticmethod
+    def extract_fba_fee_rows(rows: list[dict]) -> list[dict]:
+        """
+        From a parsed settlement flat file, pull only the per-SKU per-unit
+        FBA fulfillment fee charges and return one normalized dict per row:
+
+            {sku, posted_date, units, fba_fee_total}
+
+        The settlement report has many transaction-types (Order, Refund,
+        StorageFee, Adjustment, …) and each transaction can produce multiple
+        amount-description rows (Principal, Tax, Commission, etc). For FBA
+        per-unit fee drift we want only:
+          amount-description == 'FBAPerUnitFulfillmentFee'
+          AND a non-empty sku
+          AND quantity-purchased > 0  (skip refund-side rows; we want the
+                                       original fee billed at order time)
+        """
+        out: list[dict] = []
+        for r in rows:
+            desc = (r.get('amount-description') or '').strip()
+            if desc != 'FBAPerUnitFulfillmentFee':
+                continue
+            sku = (r.get('sku') or '').strip()
+            if not sku:
+                continue
+            try:
+                qty    = int(r.get('quantity-purchased') or 0)
+                amount = float(r.get('amount') or 0)
+            except (TypeError, ValueError):
+                continue
+            if qty <= 0:
+                continue
+            posted = (r.get('posted-date') or r.get('posted-date-time') or '').strip()
+            # posted-date can be 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SS+ZZ'
+            posted_date = posted[:10] if posted else None
+            if not posted_date:
+                continue
+            out.append({
+                'sku':            sku,
+                'posted_date':    posted_date,
+                'units':          qty,
+                'fba_fee_total':  abs(amount),  # fee is negative; we want magnitude
+            })
+        return out
+
+    @staticmethod
+    def _settlement_month(posted: str):
+        """
+        Normalize a settlement posted-date (which varies by report vintage:
+        'YYYY-MM-DD[THH...]', 'DD.MM.YYYY', 'MM/DD/YYYY') to 'YYYY-MM', or None.
+        """
+        s = (posted or '').strip()
+        if not s:
+            return None
+        head = s.split('T')[0].split(' ')[0]      # drop any time component
+        # ISO: YYYY-MM-DD
+        if len(head) >= 7 and head[:4].isdigit() and head[4] == '-':
+            return head[:7]
+        # Dotted European: DD.MM.YYYY
+        if '.' in head:
+            parts = head.split('.')
+            if len(parts) == 3 and len(parts[2]) == 4:
+                return f'{parts[2]}-{parts[1].zfill(2)}'
+        # Slashed US: MM/DD/YYYY
+        if '/' in head:
+            parts = head.split('/')
+            if len(parts) == 3 and len(parts[2]) == 4:
+                return f'{parts[2]}-{parts[0].zfill(2)}'
+        return None
+
+    # Lines whose stored amount keeps its natural sign (money IN = positive).
+    # Everything else is a cost: we store the net magnitude (abs of the signed
+    # sum, so refund credits correctly reduce the fee) and the P&L line's sign
+    # handles subtraction.
+    _PNL_INCOME_KEYS = {'gross_sales', 'other_income'}
+
+    @staticmethod
+    def classify_settlement_row(txn_type: str, amount_type: str, desc: str):
+        """
+        Map one settlement row's (transaction-type, amount-type,
+        amount-description) to a P&L line key, or None to skip.
+
+        Disambiguates on amount-type where the description alone is ambiguous
+        (e.g. 'Shipping' is revenue under ItemPrice but a discount under
+        Promotion). Built from a real GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.
+        Signs are handled by the caller (net magnitude for costs).
+        """
+        tt = (txn_type or '').strip().lower()
+        at = (amount_type or '').strip().lower()
+        d  = (desc or '').strip().lower()
+        dn = ''.join(d.split()).replace('-', '').replace('_', '')   # normalized
+
+        # 1) Taxes are pass-through (collected & remitted / withheld) — exclude.
+        if 'tax' in dn:                       # Tax, ShippingTax, GiftWrapTax,
+            return None                        # MarketplaceFacilitatorTax-*
+        if at == 'itemwithheldtax':
+            return None
+
+        # 2) GiftWrap is a pure pass-through (buyer pays, Amazon charges it
+        #    straight back, net $0) → exclude every giftwrap head entirely.
+        if dn.startswith('giftwrap'):
+            return None
+
+        # 3) Promotions / coupons (any amount-type 'promotion') → discount.
+        if at == 'promotion':
+            return 'promo'
+
+        # 3b) Buyer-paid shipping & its chargeback are netted into Promotional
+        #     Discounts (client convention) so they never inflate product
+        #     revenue / ARPU. Net shipping kept by the seller offsets promo cost;
+        #     refunded shipping increases it. Catches Order + Refund shipping
+        #     and ShippingChargeback (Promotion|Shipping already caught above).
+        if dn in ('shipping', 'shippingchargeback'):
+            return 'promo'
+
+        # 4) Refund of the sale principal → returns.
+        if tt.startswith('refund') and at == 'itemprice' and dn == 'principal':
+            return 'returns'
+
+        # 5) Sale revenue — product only (principal / goodwill; + liquidations).
+        if at == 'itemprice' and dn in ('principal', 'goodwill'):
+            return 'gross_sales'
+
+        # 6) Referral / closing commission family (orders charge, refunds credit).
+        if dn in ('commission', 'refundcommission', 'variableclosingfee',
+                  'fixedclosingfee'):
+            return 'commission'
+
+        # 7) Fulfilment (FBA) family — per-unit fee, pick&pack adj,
+        #    customer-returns processing fee, multi-channel fulfilment (MCF).
+        #    (Shipping/giftwrap chargebacks handled above.)
+        if 'fulfillmentfee' in dn or 'pick&packfee' in dn or 'pickpackfee' in dn \
+                or 'customerreturnsfee' in (at.replace(' ', '') + dn) \
+                or 'returnsfee' in at.replace(' ', '') \
+                or 'mcf' in at or 'multichannel' in at:
+            return 'fba_fee'
+
+        # 7) Inventory / logistics fees — split into detailed sub-heads so the
+        #    Storage Cost section mirrors the client's template (AWD broken out).
+        atn = at.replace(' ', '')
+        if 'awdtransportation' in atn:
+            return 'awd_transportation'
+        if 'awdprocessing' in atn:
+            return 'awd_processing'
+        if 'awdstorage' in atn or 'awdstorage' in dn:
+            return 'awd_storage'
+        if 'awd' in atn:                          # any other AWD fee variant
+            return 'awd_storage'
+        if 'inboundtransportation' in atn or 'inboundtransportation' in dn:
+            return 'inbound_transportation'
+        if 'storage' in dn or 'storage' in atn:   # Storage Fee, renewal, long-term
+            return 'storage_fee'
+        if 'disposal' in dn or 'removal' in dn \
+                or 'gradeandresell' in atn \
+                or 'inboundplacement' in (dn + atn) \
+                or 'liquidationsbrokeragefee' in dn:
+            return 'other_logistics'
+
+        # 8) Advertising / deals — Amazon-side marketing spend (and ad refunds,
+        #    which net the cost down). Deal participation/performance fees are
+        #    promotional spend → folded into the PPC line.
+        if 'advertising' in at or 'advertis' in dn \
+                or 'dealparticipationfee' in at.replace(' ', '') \
+                or 'dealperformancebasedfee' in at.replace(' ', '') \
+                or 'deal' in at and 'fee' in at \
+                or 'refundforadvertiser' in at.replace(' ', ''):
+            return 'ppc'
+
+        # 9) Subscription (monthly Professional selling fee).
+        if 'subscription' in dn:
+            return 'subscription'
+
+        # 9b) Strategic Account Services (SAS) / Premium Services / account
+        #     management → booked to Amazon Account Management (OpEx).
+        atn = at.replace(' ', '')
+        if 'premiumservices' in atn or 'strategicaccount' in atn \
+                or 'accountmanagement' in atn or atn == 'sas':
+            return 'account_management'
+
+        # 10) Reimbursements / restocking / fee adjustments → other income.
+        if 'reimburs' in at or 'restockingfee' in dn or 'feeadjustment' in dn \
+                or dn in ('reversalreimbursement', 'freereplacementrefunditems',
+                          'compensatedclawback', 'warehouselost', 'warehousedamage',
+                          'incorrectfeesitems', 'missingfrominbound'):
+            return 'other_income'
+
+        return None
+
+    @classmethod
+    def extract_pnl_lines(cls, rows: list[dict]) -> dict:
+        """
+        Aggregate a parsed settlement flat file into P&L line buckets, keyed by
+        (posted_month 'YYYY-MM', line_key). Returns:
+
+            {
+              'lines':   { ('2026-06','gross_sales'): {'amount': X, 'units': N}, ... },
+              'unmapped':{ '<amount-type|amount-description>': total_amount, ... },
+            }
+
+        Amounts: income keys (gross_sales, other_income) keep their natural
+        sign; all cost/return/promo keys store the NET MAGNITUDE (abs of the
+        signed running sum) so that refund credits reduce the fee correctly.
+        Units: gross_sales←order principal qty, returns←refund principal qty.
+        """
+        from collections import defaultdict
+        signed   = defaultdict(float)               # (month,key) → signed sum
+        units    = defaultdict(int)                 # (month,key) → unit count
+        unmapped = defaultdict(float)
+
+        for r in rows:
+            ttype = (r.get('transaction-type') or '')
+            desc  = (r.get('amount-description') or '')
+            atype = (r.get('amount-type') or '')
+            try:
+                amount = float(r.get('amount') or 0)
+            except (TypeError, ValueError):
+                continue
+            if amount == 0:
+                continue
+
+            posted = (r.get('posted-date') or r.get('posted-date-time') or '')
+            month  = cls._settlement_month(posted)
+            if not month:
+                continue
+            try:
+                qty = int(float(r.get('quantity-purchased') or 0))
+            except (TypeError, ValueError):
+                qty = 0
+
+            key = cls.classify_settlement_row(ttype, atype, desc)
+            if not key:
+                if amount:
+                    unmapped[f'{atype.strip()}|{desc.strip()}'] += amount
+                continue
+
+            signed[(month, key)] += amount
+
+            dn = ''.join(desc.lower().split()).replace('-', '').replace('_', '')
+            if key == 'gross_sales' and dn == 'principal' and qty > 0:
+                units[(month, key)] += qty
+            elif key == 'returns' and dn == 'principal':
+                units[(month, key)] += abs(qty)
+
+        lines = {}
+        for (month, key), val in signed.items():
+            amt = val if key in cls._PNL_INCOME_KEYS else abs(val)
+            lines[(month, key)] = {'amount': round(amt, 2),
+                                    'units': units.get((month, key), 0)}
+        return {'lines': lines, 'unmapped': dict(unmapped)}
+
+    # ── Multi-Channel Fulfillment (Fulfillment Outbound 2020-07-01) ──────────
+    def list_mcf_orders(self, query_start_iso: str, max_pages: int = 80) -> list[dict]:
+        """All MCF fulfillment orders updated since query_start_iso (UTC ISO)."""
+        out, token, pages = [], None, 0
+        while pages < max_pages:
+            params = {'queryStartDate': query_start_iso}
+            if token:
+                params = {'nextToken': token}
+            resp = self._get('/fba/outbound/2020-07-01/fulfillmentOrders',
+                             params=params)
+            payload = resp.get('payload', resp) or {}
+            out.extend(payload.get('fulfillmentOrders') or [])
+            token = payload.get('nextToken')
+            pages += 1
+            if not token:
+                break
+            time.sleep(0.6)   # rate limit: 2 req/s
+        return out
+
+    def list_financial_events(self, posted_after_iso: str, posted_before_iso: str,
+                               max_pages: int = 400) -> dict:
+        """
+        All financial event lists for [posted_after, posted_before), merged
+        across pages. Returns {eventListName: [events...]}. Programmatic
+        equivalent of the transaction report (Finances API v0).
+        """
+        import requests
+        from collections import defaultdict
+        merged = defaultdict(list)
+        token, pages = None, 0
+        while pages < max_pages:
+            if token:
+                params = {'NextToken': token}
+            else:
+                params = {'PostedAfter': posted_after_iso,
+                          'PostedBefore': posted_before_iso,
+                          'MaxResultsPerPage': 100}
+            # Finances API throttles aggressively (~0.5 req/s, burst 30).
+            # Retry 429s with exponential backoff so a full-month pull
+            # (hundreds of pages) doesn't abort mid-way.
+            resp = None
+            for attempt in range(6):
+                try:
+                    resp = self._get('/finances/v0/financialEvents', params=params)
+                    break
+                except requests.exceptions.HTTPError as e:
+                    status = getattr(e.response, 'status_code', None)
+                    if status == 429 and attempt < 5:
+                        time.sleep(min(2 ** attempt, 30))   # 1,2,4,8,16,30
+                        continue
+                    raise
+            payload = resp.get('payload', resp) or {}
+            fes = payload.get('FinancialEvents', {}) or {}
+            for k, v in fes.items():
+                if isinstance(v, list) and v:
+                    merged[k].extend(v)
+            token = payload.get('NextToken')
+            pages += 1
+            if not token:
+                break
+            time.sleep(0.9)          # finances rate limit ~0.5 req/s burst
+        return dict(merged)
+
+    def get_mcf_order(self, seller_fulfillment_order_id: str) -> dict:
+        """Detail incl. shipments + package tracking numbers."""
+        resp = self._get(
+            f'/fba/outbound/2020-07-01/fulfillmentOrders/{seller_fulfillment_order_id}')
+        return resp.get('payload', resp) or {}
+
     REPORT_TYPE_SQP = 'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT'
 
     def request_sqp_report(
@@ -565,11 +1161,22 @@ class AdsAPIClient:
     Amazon Advertising API client.
     Fetches campaign-level performance metrics.
     """
-    ADS_ENDPOINT = 'https://advertising-api.amazon.com'
+    ADS_ENDPOINT = 'https://advertising-api.amazon.com'          # NA default
+    _REGION_ENDPOINTS = {
+        'na': 'https://advertising-api.amazon.com',
+        'eu': 'https://advertising-api-eu.amazon.com',    # EU + UK + AE + SA
+        'fe': 'https://advertising-api-fe.amazon.com',
+    }
+    _MARKETPLACE_REGION = {'usa': 'na', 'ca': 'na', 'mx': 'na', 'br': 'na',
+                           'uk': 'eu', 'de': 'eu', 'fr': 'eu', 'it': 'eu',
+                           'es': 'eu', 'ae': 'eu', 'sa': 'eu', 'jp': 'fe'}
 
     def __init__(self, config):
         self.config     = config
         self.profile_id = config.ads_profile_id
+        region = self._MARKETPLACE_REGION.get(config.marketplace, 'na')
+        # per-instance override; every method reads self.ADS_ENDPOINT
+        self.ADS_ENDPOINT = self._REGION_ENDPOINTS[region]
 
     def _headers(self) -> dict:
         # Ads API uses separate OAuth credentials

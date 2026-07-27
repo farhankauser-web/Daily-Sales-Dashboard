@@ -1,0 +1,412 @@
+{% extends "base/base.html" %}
+{% block title %}Containers{% endblock %}
+{% block nav_inv_containers %}active{% endblock %}
+{% block page_title %}Containers — In Transit{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="regionSel">
+  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if can_edit %}
+<button class="btn btn-primary btn-sm" onclick="openContainer(null)">🚢 Add Container</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUp()">⬆ Upload Container File</button>
+{% endif %}
+<a class="btn btn-ghost btn-sm" style="margin-left:6px" href="#"
+   onclick="location=withR('{% url 'inventory_planning:container_template' %}');return false">⬇ Container Template</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; max-width:600px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:20px; font-weight:700; }
+  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  /* matrix — single sticky header row; freeze left (Type/Name/SKU) + top */
+  .mwrap { overflow:auto; max-height:76vh; border:1px solid #D5D9D9; border-radius:8px; background:#fff; }
+  table.mx { border-collapse:separate; border-spacing:0; font-size:12px; white-space:nowrap; table-layout:fixed; }
+  table.mx th, table.mx td { border-bottom:1px solid #EDEFF1; border-right:1px solid #EDEFF1;
+                             padding:5px 9px; box-sizing:border-box; overflow:hidden; }
+  table.mx thead th { position:sticky; top:0; z-index:3; background:#F4F6F8; vertical-align:bottom; cursor:pointer; }
+  /* frozen left columns (both header + body) */
+  .c-type, .c-name, .c-sku { position:sticky; background:#fff; z-index:2; text-align:left; }
+  .c-type { left:0; width:64px; min-width:64px; max-width:64px; }
+  .c-name { left:64px; width:210px; min-width:210px; max-width:210px; }
+  .c-sku  { left:274px; width:130px; min-width:130px; max-width:130px; }
+  thead .c-type, thead .c-name, thead .c-sku { z-index:6; background:#EDEFF3; }
+  /* container header column — stacked details + Units */
+  th.cont { text-align:right; width:118px; min-width:118px; max-width:118px; }
+  th.cont .cno  { font-weight:700; font-family:'DM Mono',monospace; font-size:11px; white-space:normal; }
+  th.cont .meta { font-size:10px; color:#5A6470; font-weight:400; white-space:normal; line-height:1.35; }
+  th.cont .uh   { font-weight:700; color:#232F3E; margin-top:4px; border-top:1px solid #D5D9D9; padding-top:3px; }
+  th.cont.at_port { background:#FFF7E8; } th.cont.customs { background:#FFF1F0; }
+  td.num  { text-align:right; font-variant-numeric:tabular-nums; }
+  td.zero { color:#C9CDD1; text-align:right; }
+  .c-total { position:sticky; right:0; background:#EAF1EE; color:#0F1111; font-weight:700;
+             text-align:right; z-index:2; width:78px; min-width:78px; max-width:78px; }
+  thead .c-total { background:#D6E4DD; color:#0F1111; z-index:6; }
+  tr.srow:hover td, tr.srow:hover .c-type, tr.srow:hover .c-name, tr.srow:hover .c-sku { background:#F8FAFB; }
+  .sortarr { color:#232F3E; }
+  .st { display:inline-block; padding:1px 6px; border-radius:9px; font-size:9px; font-weight:700; }
+  .st.departed { background:#E0F2EC; color:#067D62; }
+  .st.at_port  { background:#FFF4DC; color:#9D6500; }
+  .st.pending  { background:#EDF2FB; color:#2456A6; }
+  .st.received,.st.cancelled { background:#EAEDED; color:#777; }
+  .mono { font-family:'DM Mono',monospace; }
+  .pdsedit { color:#2456A6; cursor:pointer; text-decoration:underline dotted; }
+  .pickup { color:#067D62; cursor:pointer; font-size:10px; font-weight:600; }
+  .pickup:hover { text-decoration:underline; }
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
+  .modal-bg.show { display:flex; align-items:center; justify-content:center; }
+  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:720px; max-width:94vw; max-height:88vh; overflow-y:auto; }
+  .modal-card h3 { margin:0 0 10px; font-size:15px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v" id="k_active">–</div><div class="l">🚢 Active containers</div></div>
+  <div class="kpi-card"><div class="v" id="k_units">–</div><div class="l">Units in transit</div></div>
+  <div class="kpi-card"><div class="v"><label style="font-size:12px;font-weight:400"><input type="checkbox" id="showAll" onchange="load()"/> show received/cancelled</label></div><div class="l">History</div></div>
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+  <input id="fQ" class="form-control" style="width:220px;padding:5px 8px;font-size:12px"
+         placeholder="Filter SKU / name…" oninput="render()"/>
+  <select id="fCat" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="render()">
+    <option value="">All categories</option></select>
+  <select id="fType" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="render()">
+    <option value="">All tiers</option></select>
+  <span style="font-size:11px;color:#5A6470">Click a header to sort · click a container header ✎ to edit.</span>
+  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+</div>
+<div class="mwrap">
+  <table class="mx" id="mx"><thead id="mhead"></thead><tbody id="tbody">
+    <tr><td style="padding:30px;color:#8A8A8A">Loading…</td></tr>
+  </tbody></table>
+</div>
+
+<!-- container modal -->
+<div class="modal-bg" id="contModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-card">
+    <h3 id="contTitle">Add Container</h3>
+    <input type="hidden" id="contId"/>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div><label style="font-size:11px;color:#555">Container No.</label>
+        <input id="contNo" class="form-control" placeholder="e.g. ONEU1234567"/></div>
+      <div><label style="font-size:11px;color:#555">Vendor / Supplier</label>
+        <input id="contVendor" class="form-control" placeholder="e.g. Al Karam"/></div>
+      <div><label style="font-size:11px;color:#555">PO Number</label>
+        <input id="contPo" class="form-control" placeholder="optional"/></div>
+      <div><label style="font-size:11px;color:#555">Shipment ID</label>
+        <input id="contShip" class="form-control" placeholder="optional (FBA STA)"/></div>
+      <div><label style="font-size:11px;color:#555">Destination</label>
+        <select id="contDest" class="form-control"></select></div>
+      <div><label style="font-size:11px;color:#555">Status</label>
+        <select id="contStatus" class="form-control">
+          <option value="production_complete">Production Complete</option>
+          <option value="waiting_pickup">Waiting for Pickup</option>
+          <option value="in_transit">In Transit</option>
+          <option value="on_vessel">On Vessel</option>
+          <option value="at_port">At Port</option>
+          <option value="customs">Customs Clearance</option>
+          <option value="inland">Inland Transit</option>
+          <option value="out_for_delivery">Out for Delivery</option>
+          <option value="cancelled">Cancelled</option>
+        </select></div>
+      <div><label style="font-size:11px;color:#555">Departure date</label>
+        <input id="contDep" type="date" class="form-control"/></div>
+      <div><label style="font-size:11px;color:#555">ETA Port (ETA→FC = +10d)</label>
+        <input id="contEta" type="date" class="form-control"/></div>
+    </div>
+    <div style="margin-top:12px;font-size:12px;font-weight:600">SKUs &amp; Units</div>
+    <div id="contLinesBox"></div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <input id="clSku" class="form-control" style="flex:2" placeholder="SKU"/>
+      <input id="clUnits" type="number" class="form-control" style="flex:1" placeholder="Units"/>
+      <button class="btn btn-secondary btn-sm" onclick="addContLine()">+ Add</button>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
+      <button class="btn btn-ghost btn-sm" id="contDelBtn" style="display:none" onclick="deleteContainer()">Delete</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn btn-secondary btn-sm" id="contRecvBtn" style="display:none;background:#E0F2EC;color:#067D62;border-color:#067D62" onclick="openReceive()">✓ Mark Received</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('contModal').classList.remove('show')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveContainer()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- receive modal -->
+<div class="modal-bg" id="recvModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-card">
+    <h3>Receive Container <span id="recvCont" class="mono"></span></h3>
+    <p style="font-size:11px;color:#5A6470">Confirm the quantity received at the destination warehouse. This adds the stock to that warehouse, archives the container to Container History, and records the receipt. Edit a cell if the count differs (discrepancy is logged).</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div><label style="font-size:11px;color:#555">Receiving warehouse</label>
+        <select id="recvWh" class="form-control"></select></div>
+      <div><label style="font-size:11px;color:#555">Arrival date</label>
+        <input id="recvDate" type="date" class="form-control"/></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#F4F6F8">
+        <th style="text-align:left;padding:5px 8px">SKU</th>
+        <th style="text-align:right;padding:5px 8px">Shipped</th>
+        <th style="text-align:right;padding:5px 8px">Received</th></tr></thead>
+      <tbody id="recvLines"></tbody>
+    </table>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('recvModal').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="doReceive()">Confirm Receipt</button>
+    </div>
+  </div>
+</div>
+
+<!-- pickup modal -->
+<div class="modal-bg" id="pickModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-card" style="width:420px">
+    <h3>🚚 Mark picked up <span id="pickCno" style="font-weight:400;color:#5A6470"></span></h3>
+    <p style="font-size:11px;color:#5A6470">Freight forwarder collected it — sets the container to <b>In Transit</b>. ETA→FC auto-fills 10 days after ETA port if left blank.</p>
+    <input type="hidden" id="pickId">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <label style="font-size:11px;color:#5A6470">Departure date
+        <input type="date" id="pickDep" style="width:100%;padding:6px 8px;border:1px solid #D5D9D9;border-radius:5px"></label>
+      <label style="font-size:11px;color:#5A6470">ETA port
+        <input type="date" id="pickEta" style="width:100%;padding:6px 8px;border:1px solid #D5D9D9;border-radius:5px"></label>
+    </div>
+    <div id="pickMsg" style="font-size:11px;margin-top:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('pickModal').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="doPickup()">Confirm pickup</button>
+    </div>
+  </div>
+</div>
+
+<!-- upload modal -->
+<div class="modal-bg" id="upModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-card" style="width:460px">
+    <h3>Upload Container File</h3>
+    <p style="font-size:11px;color:#5A6470">One row per SKU-in-container. Columns: Container No · Vendor · Destination · Departure Date · ETA Port · Status · SKU · Units. Each container is upserted by its number.</p>
+    <input type="file" id="upFile" accept=".xlsx"/>
+    <div id="upMsg" style="font-size:11px;margin-top:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('upModal').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="doUpload()">Upload</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
+let curRegion='usa', data=null, contLines=[];
+function csrf(){ return document.cookie.split('; ').find(c=>c.startsWith('csrftoken='))?.split('=')[1]||''; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+function n(v){ return (v===null||v===undefined||v==='')?'—':Number(v).toLocaleString('en-US'); }
+function withR(u){ return u+(u.includes('?')?'&':'?')+'region='+curRegion; }
+function setRegion(r,btn){ curRegion=r; document.querySelectorAll('#regionSel .mp-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); load(); }
+
+async function load(){
+  const show = document.getElementById('showAll').checked ? 'all' : 'active';
+  const r = await fetch(withR("{% url 'inventory_planning:api_containers' %}")+'&show='+show);
+  data = await r.json();
+  document.getElementById('k_active').textContent = data.kpi.active;
+  document.getElementById('k_units').textContent = n(data.kpi.units);
+  render();
+}
+
+let sortKey='name', sortDir=1;
+function sortBy(k){ if(sortKey===k) sortDir=-sortDir; else {sortKey=k; sortDir=(k==='type'||k==='name'||k==='sku')?1:-1;} render(); }
+function arrow(k){ return k===sortKey ? `<span class="sortarr">${sortDir>0?'▲':'▼'}</span>` : ''; }
+
+function render(){
+  if(!data) return;
+  const conts = data.rows;
+  const meta = data.sku_meta || {};
+  const q = document.getElementById('fQ').value.toLowerCase();
+  const fc = document.getElementById('fCat').value;
+  const ft = document.getElementById('fType').value;
+
+  // populate category / tier filters once
+  const cats=[...new Set(Object.values(meta).map(m=>m.category).filter(Boolean))].sort();
+  const tiers=[...new Set(Object.values(meta).map(m=>m.type).filter(Boolean))].sort();
+  const cSel=document.getElementById('fCat'); if(cSel.options.length<=1)
+    cSel.innerHTML='<option value="">All categories</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
+  const tSel=document.getElementById('fType'); if(tSel.options.length<=1)
+    tSel.innerHTML='<option value="">All tiers</option>'+tiers.map(t=>`<option>${esc(t)}</option>`).join('');
+
+  const skuSet = {};
+  conts.forEach(c=>c.lines.forEach(l=>{ skuSet[l.sku]=skuSet[l.sku]||{}; skuSet[l.sku][c.id]=l.units; }));
+  let skus = Object.keys(skuSet).map(s=>({
+    sku:s, name:(meta[s]||{}).name||'', type:(meta[s]||{}).type||'',
+    category:(meta[s]||{}).category||'',
+    per:skuSet[s], total:Object.values(skuSet[s]).reduce((a,b)=>a+b,0)}));
+  skus = skus.filter(r=>
+    (!q || r.sku.toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q))
+    && (!fc || r.category===fc) && (!ft || r.type===ft));
+  // sort — text cols alpha, container/total numeric
+  skus.sort((a,b)=>{
+    let av,bv;
+    if(sortKey==='type'){av=a.type;bv=b.type;} else if(sortKey==='name'){av=a.name||a.sku;bv=b.name||b.sku;}
+    else if(sortKey==='sku'){av=a.sku;bv=b.sku;} else if(sortKey==='total'){av=a.total;bv=b.total;}
+    else {av=a.per[sortKey]||0; bv=b.per[sortKey]||0;}   // a container id
+    if(typeof av==='string') return sortDir*av.localeCompare(bv);
+    return sortDir*(av-bv);
+  });
+  document.getElementById('countLbl').textContent = `${conts.length} container(s) · ${skus.length} SKU(s)`;
+
+  // ── single sticky header row: Type | Name | SKU | [container blocks + "Units"] | Total ──
+  const contHead = c=>`<th class="cont ${c.status}" onclick="sortBy(${c.id})">
+      <div class="cno">${esc(c.container_no)||'(no number)'}</div>
+      <div class="meta">${esc(c.vendor)||'—'} · ${esc(c.destination)}<br>
+        dep ${c.departure||'—'} · ETA→FC ${c.eta_dest||'—'}<br>
+        <span class="st ${c.status}">${c.status.replace(/_/g,' ')}</span>${CAN_EDIT?` <span class="pdsedit" onclick="event.stopPropagation();openContainer(${c.id})">✎</span>`:''}
+        ${CAN_EDIT && ['waiting_pickup','production_complete'].includes(c.status)?`<div><span class="pickup" onclick="event.stopPropagation();openPickup(${c.id},'${esc(c.container_no)}')">🚚 mark picked up</span></div>`:''}</div>
+      <div class="uh">Units ${arrow(c.id)}</div></th>`;
+  document.getElementById('mhead').innerHTML = `<tr>
+    <th class="c-type" onclick="sortBy('type')">Type ${arrow('type')}</th>
+    <th class="c-name" onclick="sortBy('name')">Name ${arrow('name')}</th>
+    <th class="c-sku"  onclick="sortBy('sku')">SKU ${arrow('sku')}</th>
+    ${conts.map(contHead).join('')}
+    <th class="c-total" onclick="sortBy('total')">Total<br>Transit ${arrow('total')}</th></tr>`;
+
+  document.getElementById('tbody').innerHTML = skus.length ? skus.map(r=>`
+    <tr class="srow">
+      <td class="c-type" style="font-size:11px;color:#5A6470">${esc(r.type)}</td>
+      <td class="c-name" title="${esc(r.name)}">${esc(r.name)||'—'}</td>
+      <td class="c-sku mono">${esc(r.sku)}</td>
+      ${conts.map(c=>{ const u=r.per[c.id];
+        return u ? `<td class="num">${n(u)}</td>` : '<td class="zero">–</td>'; }).join('')}
+      <td class="c-total">${n(r.total)}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="${conts.length+4}" style="text-align:center;color:#8A8A8A;padding:30px">No SKUs in transit${CAN_EDIT?' — click “🚢 Add Container”.':'.'}</td></tr>`;
+}
+
+// ── modal ──
+function renderContLines(){
+  document.getElementById('contLinesBox').innerHTML = contLines.length
+    ? contLines.map((l,i)=>`<div style="display:flex;gap:6px;font-size:12px;padding:2px 0">
+        <span class="mono" style="flex:2">${esc(l.sku)}</span><span style="flex:1;text-align:right">${n(l.units)}</span>
+        <span class="pdsedit" onclick="contLines.splice(${i},1);renderContLines()">remove</span></div>`).join('')
+    : '<div style="font-size:11px;color:#8A8A8A">No SKUs yet.</div>';
+}
+function addContLine(){
+  const sku=document.getElementById('clSku').value.trim().toUpperCase();
+  const u=parseInt(document.getElementById('clUnits').value)||0;
+  if(!sku||u<=0)return; contLines.push({sku,units:u});
+  document.getElementById('clSku').value=''; document.getElementById('clUnits').value=''; renderContLines();
+}
+async function openContainer(id){
+  contLines=[];
+  const wr=await(await fetch(withR("{% url 'inventory_planning:warehouses' %}"))).json();
+  document.getElementById('contDest').innerHTML='<option value="">—</option>'+
+    wr.warehouses.map(w=>`<option value="${w.code}">${esc(w.name)} (${w.kind.toUpperCase()})</option>`).join('');
+  const set=(k,v)=>document.getElementById(k).value=v||'';
+  if(id){
+    const c=await(await fetch(`/planning/api/container/${id}/`)).json();
+    document.getElementById('contTitle').textContent='Edit Container';
+    set('contId',c.id); set('contNo',c.container_no); set('contVendor',c.vendor);
+    set('contPo',c.po_number); set('contShip',c.shipment_id);
+    set('contDest',c.destination_code); set('contStatus',c.status); set('contDep',c.departure); set('contEta',c.eta_port);
+    contLines=c.lines.slice(); document.getElementById('contDelBtn').style.display='';
+    document.getElementById('contRecvBtn').style.display='';
+  } else {
+    document.getElementById('contTitle').textContent='Add Container';
+    ['contId','contNo','contVendor','contPo','contShip','contDep','contEta'].forEach(k=>set(k,''));
+    document.getElementById('contStatus').value='in_transit';
+    document.getElementById('contDelBtn').style.display='none';
+    document.getElementById('contRecvBtn').style.display='none';
+  }
+  renderContLines(); document.getElementById('contModal').classList.add('show');
+}
+async function saveContainer(){
+  if(!contLines.length){ alert('Add at least one SKU + units.'); return; }
+  const body={ id:document.getElementById('contId').value||null, region:curRegion,
+    container_no:document.getElementById('contNo').value, vendor:document.getElementById('contVendor').value,
+    po_number:document.getElementById('contPo').value, shipment_id:document.getElementById('contShip').value,
+    destination_code:document.getElementById('contDest').value, status:document.getElementById('contStatus').value,
+    departure:document.getElementById('contDep').value, eta_port:document.getElementById('contEta').value, lines:contLines };
+  const r=await fetch("{% url 'inventory_planning:save_container' %}",{method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
+  if(r.ok){ document.getElementById('contModal').classList.remove('show'); load(); } else alert('Save failed');
+}
+
+// ── receive ──
+function openReceive(){
+  const id=document.getElementById('contId').value;
+  document.getElementById('recvCont').textContent=document.getElementById('contNo').value||('#'+id);
+  // warehouse dropdown mirrors the add/edit dropdown; default to the container's destination
+  document.getElementById('recvWh').innerHTML=document.getElementById('contDest').innerHTML;
+  document.getElementById('recvWh').value=document.getElementById('contDest').value;
+  document.getElementById('recvDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('recvLines').innerHTML=contLines.map((l,i)=>`
+    <tr><td style="padding:4px 8px" class="mono">${esc(l.sku)}</td>
+      <td style="padding:4px 8px;text-align:right">${n(l.units)}</td>
+      <td style="padding:4px 8px;text-align:right">
+        <input id="rl${i}" type="number" value="${l.units}" style="width:80px;text-align:right"/></td></tr>`).join('');
+  document.getElementById('recvModal').classList.add('show');
+}
+async function doReceive(){
+  const id=document.getElementById('contId').value;
+  const lines=contLines.map((l,i)=>({sku:l.sku, received:parseInt(document.getElementById('rl'+i).value)||0}));
+  const body={ id:parseInt(id), region:curRegion,
+    warehouse_code:document.getElementById('recvWh').value,
+    arrival_date:document.getElementById('recvDate').value, lines };
+  const r=await fetch("{% url 'inventory_planning:api_receive_container' %}",{method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(j.status==='ok'){
+    alert(`Received. ${n(j.units_added)} units added to ${j.warehouse||'warehouse'}. Container archived to Container History.`);
+    document.getElementById('recvModal').classList.remove('show');
+    document.getElementById('contModal').classList.remove('show'); load();
+  } else alert('Receive failed: '+(j.error||'unknown'));
+}
+async function deleteContainer(){
+  const id=document.getElementById('contId').value;
+  if(!id||!confirm('Delete this container?'))return;
+  await fetch("{% url 'inventory_planning:delete_container' %}",{method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({id})});
+  document.getElementById('contModal').classList.remove('show'); load();
+}
+// ── upload ──
+function openUp(){ document.getElementById('upMsg').textContent=''; document.getElementById('upFile').value=''; document.getElementById('upModal').classList.add('show'); }
+async function doUpload(){
+  const f=document.getElementById('upFile').files[0];
+  if(!f){ document.getElementById('upMsg').textContent='Pick a file first.'; return; }
+  const fd=new FormData(); fd.append('file',f); fd.append('region',curRegion);
+  document.getElementById('upMsg').textContent='Uploading…';
+  const r=await fetch("{% url 'inventory_planning:import_containers' %}",{method:'POST',headers:{'X-CSRFToken':csrf()},body:fd});
+  const j=await r.json();
+  document.getElementById('upMsg').textContent=(j.status==='ok'?'✓ ':'✗ ')+(j.message||'');
+  if(j.status==='ok') setTimeout(()=>{document.getElementById('upModal').classList.remove('show');load();},1200);
+}
+
+/* ── one-click "mark picked up" ── */
+function openPickup(id, cno){
+  document.getElementById('pickId').value=id;
+  document.getElementById('pickCno').textContent=cno?('· '+cno):'';
+  document.getElementById('pickDep').value=new Date().toISOString().slice(0,10);
+  document.getElementById('pickEta').value='';
+  document.getElementById('pickMsg').textContent='';
+  document.getElementById('pickModal').classList.add('show');
+}
+async function doPickup(){
+  const body={id:parseInt(document.getElementById('pickId').value),
+    departure:document.getElementById('pickDep').value,
+    eta_port:document.getElementById('pickEta').value};
+  document.getElementById('pickMsg').textContent='Saving…';
+  const r=await fetch("{% url 'inventory_planning:api_container_pickup' %}",
+    {method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
+  const j=await r.json();
+  document.getElementById('pickMsg').textContent=(j.status==='ok'?'✓ ':'✗ ')+(j.message||'');
+  if(j.status==='ok') setTimeout(()=>{document.getElementById('pickModal').classList.remove('show');load();},900);
+}
+load();
+</script>
+{% endblock %}

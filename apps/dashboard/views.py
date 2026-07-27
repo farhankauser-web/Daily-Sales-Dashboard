@@ -225,8 +225,11 @@ def index(request):
 
     initial_today = _build_initial_today(default_mp)
 
+    vat_rates = {mp: v.get('vat', 0)
+                 for mp, v in settings.AMAZON_MARKETPLACES.items()}
     ctx = {
         'configs': {c['marketplace']: c for c in configs},
+        'vat_rates_json': _json.dumps(vat_rates),
         'allowed_marketplaces': allowed,
         'show_financials': request.user.has_perm_flag('can_view_financials'),
         'show_ppc':        request.user.has_perm_flag('can_view_ppc'),
@@ -389,13 +392,14 @@ def historical(request):
 
     chart_dates, chart_rev, chart_units, chart_ppc, chart_tacos, chart_gm_pct = [], [], [], [], [], []
     table_rows = []
-    tot_rev = tot_units = tot_orders = 0
+    tot_rev = tot_rev_net = tot_units = tot_orders = 0
     tot_cgs = tot_amz = tot_fba = tot_cm = tot_gm = tot_ppc = tot_tar = 0.0
 
     cursor = start
     while cursor <= end:
         m = by_date.get(cursor)
         rev    = float(m.revenue)             if m else 0.0
+        rev_net = float(m.revenue_net or m.revenue) if m else 0.0
         units  = int(m.units)                 if m else 0
         orders = int(m.orders)                if m else 0
         cgs    = float(m.cgs or 0)            if m else 0.0
@@ -432,6 +436,7 @@ def historical(request):
         table_rows.append({
             'date':         cursor,
             'revenue':      rev,
+            'revenue_net':  rev_net,
             'units':        units,
             'orders':       orders,
             'cgs':          cgs,
@@ -449,6 +454,7 @@ def historical(request):
         })
 
         tot_rev    += rev
+        tot_rev_net += rev_net
         tot_units  += units
         tot_orders += orders
         tot_cgs    += cgs
@@ -462,6 +468,7 @@ def historical(request):
 
     totals = {
         'total_revenue': round(tot_rev, 2),
+        'total_revenue_net': round(tot_rev_net, 2),
         'total_units':   int(tot_units),
         'total_orders':  int(tot_orders),
         'total_cgs':     round(tot_cgs, 2),
@@ -504,6 +511,7 @@ def historical(request):
         'sync_status': sync_status,
         'last_sync_yest': last_sync,
         'marketplace': marketplace,
+        'vat_rate':    settings.AMAZON_MARKETPLACES.get(marketplace, {}).get('vat', 0),
         'period':      period,
         'start':       start,
         'end':         end,        # yesterday
@@ -1009,6 +1017,98 @@ def _process_cogs_csv(f, overwrite=False, user=None):
         except Exception as e:
             result['errors'].append(f'Row {i}: {e}')
     return result
+
+
+_GR_CONDITION = {'LN': 'Like New', 'VG': 'Very Good', 'GD': 'Good',
+                 'AC': 'Acceptable', 'FR': 'Fair'}
+
+
+@login_required
+@permission_required('can_manage_cogs')
+def cogs_missing_csv(request):
+    """
+    Download the SKUs that sold units in a month but have no COGS mapped,
+    as a CSV pre-filled in the exact format the COGS bulk upload accepts
+    (SKU, ASIN, Region, Month, Cogs, FBA, ProductType, PackSize, Variant).
+    Fill in / adjust the Cogs column and upload it back on this page.
+
+    Grade-and-resell SKUs (AMZN.GR.<parent>-<hash>-<cond>) are matched to
+    their parent product: the suggested Cogs is the parent's per-unit cost
+    and the ASIN is a unique pseudo-ASIN ('GR' + hash) — deliberately NOT
+    the parent's real ASIN, which would re-key the parent product's SKU
+    and break its COGS mapping.
+
+    GET params: mp (marketplace), month (YYYY-MM)
+    """
+    import csv as _csv
+    from django.http import HttpResponse
+    from .cogs_recalc import month_cogs_unit_map
+    from .models import UnifiedSkuUnits
+
+    mp = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(mp):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    try:
+        y, m = request.GET.get('month', '').split('-')[:2]
+        month = date(int(y), int(m), 1)
+    except (ValueError, IndexError):
+        return JsonResponse({'error': 'month must be YYYY-MM'}, status=400)
+
+    cost = month_cogs_unit_map(mp, month)
+    missing = [u for u in UnifiedSkuUnits.objects.filter(marketplace=mp, month=month)
+               if (u.order_units or 0) > 0 and u.sku.upper() not in cost]
+    missing.sort(key=lambda u: -(u.order_units or 0))
+
+    products = {(p.sku or '').upper(): p
+                for p in Product.objects.filter(marketplace=mp) if p.sku}
+
+    def match_parent(sku: str):
+        """AMZN.GR.<parent-sku>-<hash>-<cond> → (parent Product, hash, cond)."""
+        s = sku.upper()
+        if not s.startswith('AMZN.GR.'):
+            return None, '', ''
+        parts = s[len('AMZN.GR.'):].split('-')
+        for i in range(len(parts), 0, -1):
+            cand = '-'.join(parts[:i])
+            if cand in products:
+                rest = parts[i:]
+                cond = rest[-1] if rest else ''
+                hsh = '-'.join(rest[:-1]) if len(rest) > 1 else ''
+                return products[cand], hsh, cond
+        return None, '', ''
+
+    resp = HttpResponse(content_type='text/csv; charset=utf-8')
+    resp['Content-Disposition'] = (
+        f'attachment; filename="missing_cogs_{mp}_{month:%Y-%m}.csv"')
+    resp.write('\ufeff')     # BOM so Excel opens UTF-8 correctly
+    w = _csv.writer(resp)
+    w.writerow(['SKU', 'ASIN', 'Region', 'Month', 'Cogs', 'FBA',
+                'ProductType', 'PackSize', 'Variant',
+                'UnitsSold', 'ParentSKU', 'Note'])
+    for u in missing:
+        parent, hsh, cond = match_parent(u.sku)
+        if parent:
+            # Deterministic, collision-free pseudo-ASIN from the full SKU
+            # (the raw hash segment can exceed 14 chars and collide on truncate)
+            import hashlib
+            pseudo_asin = 'GR' + hashlib.md5(
+                u.sku.upper().encode()).hexdigest()[:14].upper()
+            suggested = cost.get((parent.sku or '').upper(), '')
+            w.writerow([u.sku, pseudo_asin, mp, f'{month:%Y-%m}',
+                        suggested, 0,
+                        parent.category or 'GradeResell', '1',
+                        _GR_CONDITION.get(cond, cond or 'GR'),
+                        u.order_units, parent.sku,
+                        'Graded return — suggested Cogs = parent cost; adjust if needed'])
+        else:
+            w.writerow([u.sku, '', mp, f'{month:%Y-%m}',
+                        '', 0, '', '', '',
+                        u.order_units, '',
+                        'No parent match — fill ASIN/ProductType/PackSize/Variant'])
+    AuditLog.objects.create(user=request.user, action='export',
+        resource=f'cogs:missing:{mp}:{month:%Y-%m}',
+        ip_address=request.META.get('REMOTE_ADDR'))
+    return resp
 
 
 def _process_fba_rates_file(f, overwrite=True, user=None):
@@ -1750,6 +1850,730 @@ def export_csv(request):
 
 
 @login_required
+@login_required
+@permission_required('can_view_dashboard')
+def fba_fee_drift(request):
+    """Page shell — JS calls /api/fba-fee-drift/ to populate the table + cards."""
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        marketplace = _allowed_marketplaces(request.user)[0]
+
+    ctx = {
+        'marketplace':          marketplace,
+        'allowed_marketplaces': _allowed_marketplaces(request.user),
+        'can_export_cogs':      request.user.has_perm_flag('can_manage_cogs'),
+    }
+    return render(request, 'dashboard/fba_fee_drift.html', ctx)
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def api_fba_fee_drift(request):
+    """
+    JSON for the FBA Fee Drift page.
+
+    Query params:
+        mp            (str)   — marketplace, default 'usa'
+        status        (csv)   — filter to a subset: critical,warn,ok,no_upload
+        brand         (str)   — exact-match brand filter
+        family        (str)   — exact-match product family filter
+        min_impact    (float) — hide rows with dollar_impact below this
+    """
+    from .fba_drift import compute_drift, summarize
+    from .models import SettlementReport
+
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    rows = compute_drift(marketplace)
+    summary = summarize(rows)
+
+    # Apply optional filters from query string
+    statuses_csv = (request.GET.get('status') or '').strip().lower()
+    statuses = [s for s in statuses_csv.split(',') if s] if statuses_csv else []
+    brand_filter = (request.GET.get('brand') or '').strip()
+    family_filter = (request.GET.get('family') or '').strip()
+    try:
+        min_impact = float(request.GET.get('min_impact') or 0)
+    except ValueError:
+        min_impact = 0.0
+
+    filtered = []
+    for r in rows:
+        if statuses and r.status not in statuses:
+            continue
+        if brand_filter and r.brand != brand_filter:
+            continue
+        if family_filter and r.product_family != family_filter:
+            continue
+        if r.dollar_impact < min_impact:
+            continue
+        filtered.append(r.as_dict())
+
+    # Distinct brand/family lists for the filter dropdowns
+    brands   = sorted({r.brand          for r in rows if r.brand})
+    families = sorted({r.product_family for r in rows if r.product_family})
+
+    last_settle = (SettlementReport.objects
+                    .filter(marketplace=marketplace, status='ok')
+                    .order_by('-end_date', '-synced_at').first())
+
+    return JsonResponse({
+        'marketplace':         marketplace,
+        'rows':                filtered,
+        'summary':             summary,
+        'brand_options':       brands,
+        'family_options':      families,
+        'last_settlement':     {
+            'end_date': last_settle.end_date.isoformat()
+                        if last_settle and last_settle.end_date else None,
+            'synced_at': last_settle.synced_at.isoformat()
+                         if last_settle else None,
+            'report_id': last_settle.report_id if last_settle else None,
+        } if last_settle else None,
+    })
+
+
+@login_required
+@permission_required('can_manage_cogs')
+def fba_drift_corrected_xlsx(request):
+    """
+    Generate an XLSX matching the existing COGS / FBA-rate upload format,
+    pre-filled with one row per currently-drifting SKU (the "suggested fee"
+    column is the actual 14-day weighted avg from settlements). The team
+    reviews the file and re-uploads via the existing FBA upload page.
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return HttpResponse('openpyxl is not installed. Run: pip install openpyxl', status=500)
+
+    from .fba_drift import compute_drift
+    from datetime import date as _d
+
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        return HttpResponse('forbidden', status=403)
+
+    rows = compute_drift(marketplace)
+    # Only emit drifting SKUs — no point exporting rows that are already correct
+    drift = [r for r in rows if r.status in ('warn', 'critical')]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'FBA Fee Corrections'
+
+    headers = [
+        'SKU', 'ASIN', 'Product name',
+        'Current uploaded fee', 'Suggested fee (14d actual avg)',
+        '∆ per unit', '∆ %', 'Units (14d)', '$ impact', 'Status',
+        'New effective_from (edit before upload)',
+    ]
+    ws.append(headers)
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='232F3E')
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+
+    today = _d.today().isoformat()
+    for r in drift:
+        ws.append([
+            r.sku, r.asin, r.product_name,
+            r.uploaded_fee, r.actual_fee_avg,
+            r.delta, r.pct, r.actual_units, r.dollar_impact, r.status,
+            today,
+        ])
+
+    # Auto-width-ish: widen the columns proportionally
+    widths = [22, 14, 40, 12, 14, 10, 8, 10, 12, 11, 22]
+    from openpyxl.utils import get_column_letter
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    resp = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = (
+        f'attachment; filename=fba_fee_corrections_{marketplace}_{today}.xlsx')
+    wb.save(resp)
+    return resp
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MANAGEMENT P&L
+# ══════════════════════════════════════════════════════════════════════════════
+from django.views.decorators.http import require_POST as _require_POST
+from django.core.exceptions import PermissionDenied as _PermissionDenied
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def pnl_statement(request):
+    """Page shell — JS calls /api/pnl-statement/ to populate."""
+    from datetime import date as _d
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        marketplace = _allowed_marketplaces(request.user)[0]
+    ctx = {
+        'marketplace':          marketplace,
+        'allowed_marketplaces': _allowed_marketplaces(request.user),
+        'today':                _d.today(),
+        'can_edit':             request.user.has_perm_flag('can_manage_cogs'),
+    }
+    return render(request, 'dashboard/pnl_statement.html', ctx)
+
+
+def _pnl_month_arg(request):
+    """Parse ?month=YYYY-MM (default: current month)."""
+    from datetime import date as _d
+    raw = (request.GET.get('month') or '').strip()
+    if raw:
+        try:
+            y, m = raw.split('-')[:2]
+            return _d(int(y), int(m), 1)
+        except (ValueError, IndexError):
+            pass
+    t = _d.today()
+    return t.replace(day=1)
+
+
+def _prev_month(m):
+    from datetime import date as _d
+    return (m.replace(day=1) - timedelta(days=1)).replace(day=1)
+
+
+def _same_month_last_year(m):
+    try:
+        return m.replace(year=m.year - 1)
+    except ValueError:
+        return m
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def api_pnl_statement(request):
+    """
+    JSON for the Management P&L. Returns the current month + prior month +
+    same-month-last-year columns, in the region's native currency, OR the
+    global USD consolidation when ?scope=global.
+
+    Query params:
+        mp     (str)  — marketplace (ignored when scope=global)
+        month  (str)  — YYYY-MM (default: current month)
+        scope  (str)  — 'region' (default) | 'global'
+    """
+    from .pnl_engine import build_statement, build_consolidated, currency_for
+
+    month   = _pnl_month_arg(request)
+    scope   = (request.GET.get('scope') or 'region').lower()
+    prev    = _prev_month(month)
+    yoy     = _same_month_last_year(month)
+
+    if scope == 'global':
+        mps = _allowed_marketplaces(request.user)
+        cur_st  = build_consolidated(month, mps)
+        prev_st = build_consolidated(prev,  mps)
+        yoy_st  = build_consolidated(yoy,   mps)
+        currency = 'USD'
+        marketplace = None
+    else:
+        marketplace = request.GET.get('mp', 'usa')
+        if not request.user.can_access_marketplace(marketplace):
+            return JsonResponse({'error': 'forbidden'}, status=403)
+        cur_st  = build_statement(marketplace, month)
+        prev_st = build_statement(marketplace, prev)
+        yoy_st  = build_statement(marketplace, yoy)
+        currency = currency_for(marketplace)
+
+    # Index prior/yoy totals by line key for fast column lookup
+    prev_by_key = {r['key']: r for r in prev_st['rows']}
+    yoy_by_key  = {r['key']: r for r in yoy_st['rows']}
+
+    rows = []
+    for r in cur_st['rows']:
+        p = prev_by_key.get(r['key'], {})
+        y = yoy_by_key.get(r['key'], {})
+        cur_total  = r['total']
+        prev_total = p.get('total', 0)
+        yoy_total  = y.get('total', 0)
+        # MoM delta % (skip for pct/unit lines where it's not meaningful)
+        mom = None
+        if not r['is_pct'] and prev_total:
+            mom = (cur_total - prev_total) / abs(prev_total) * 100
+        rows.append({
+            **r,
+            'prev':     prev_total,
+            'yoy':      yoy_total,
+            'mom_pct':  round(mom, 1) if mom is not None else None,
+        })
+
+    # Signed per-section totals over the INPUT lines (auto+manual, using the
+    # line's sign; computed subtotals excluded to avoid double counting).
+    from .pnl_lines import LINE_BY_KEY as _LBK
+    section_totals: dict = {}
+    for r in rows:
+        ln = _LBK.get(r['key'])
+        if not ln or ln['source'] not in ('auto', 'manual') \
+                or r['is_pct'] or r['is_unit'] or r['section'] == 'metrics':
+            continue
+        sgn = 1 if ln.get('sign') == '+' else -1
+        section_totals[r['section']] = (
+            section_totals.get(r['section'], 0.0) + sgn * r['total'])
+    section_totals = {k: round(v, 2) for k, v in section_totals.items()}
+
+    # Manual-entry metadata (note + invoice) so the edit modal can prefill.
+    manual_meta: dict = {}
+    if scope != 'global' and marketplace:
+        from .models import MonthlyPnLEntry
+        for e in MonthlyPnLEntry.objects.filter(
+                marketplace=marketplace, month=month):
+            manual_meta.setdefault(e.line_key, {})[e.channel] = {
+                'note':        e.note or '',
+                'invoice_url': e.invoice.url if e.invoice else None,
+            }
+
+    return JsonResponse({
+        'scope':          scope,
+        'marketplace':    marketplace,
+        'currency':       currency,
+        'month':          month.isoformat(),
+        'prev_month':     prev.isoformat(),
+        'yoy_month':      yoy.isoformat(),
+        'has_settlement': cur_st.get('has_settlement', False),
+        'missing_fx':     cur_st.get('missing_fx', []),
+        'per_region':     cur_st.get('per_region', []),
+        'rows':           rows,
+        'section_totals': section_totals,
+        'manual_meta':    manual_meta,
+        'section_order':  ['revenue', 'cogs', 'amazon_fees', 'marketing',
+                            'other_income', 'gross_margin', 'storage',
+                            'operating_expenses', 'human_resource', 'net',
+                            'metrics'],
+    })
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@_require_POST
+def save_pnl_entry(request):
+    """
+    Upsert one manual P&L line value. Accepts JSON body OR multipart form
+    (multipart allows the optional invoice file):
+        marketplace, month: 'YYYY-MM', channel: 'amazon'|'retail',
+        line_key, amount (signed — negatives allowed), note?, invoice? (file)
+    """
+    from .models import MonthlyPnLEntry
+    from .pnl_lines import LINE_BY_KEY
+
+    invoice_file = None
+    if request.content_type and request.content_type.startswith('multipart'):
+        data = request.POST
+        invoice_file = request.FILES.get('invoice')
+    else:
+        try:
+            data = json.loads(request.body)
+        except ValueError:
+            return JsonResponse({'error': 'bad json'}, status=400)
+
+    mp = data.get('marketplace', 'usa')
+    if not request.user.can_access_marketplace(mp):
+        raise _PermissionDenied
+
+    line_key = data.get('line_key', '')
+    ln = LINE_BY_KEY.get(line_key)
+    if not ln or ln['source'] != 'manual':
+        return JsonResponse({'error': f'not a manual line: {line_key}'}, status=400)
+
+    try:
+        y, m = str(data['month']).split('-')[:2]
+        from datetime import date as _d
+        month = _d(int(y), int(m), 1)
+        amount = float(data.get('amount') or 0)   # signed — credits allowed
+    except (ValueError, KeyError, IndexError):
+        return JsonResponse({'error': 'bad month/amount'}, status=400)
+
+    channel = data.get('channel', 'amazon')
+    if channel not in ('amazon', 'retail'):
+        channel = 'amazon'
+
+    if invoice_file is not None and invoice_file.size > 15 * 1024 * 1024:
+        return JsonResponse({'error': 'invoice too large (max 15 MiB)'}, status=400)
+
+    defaults = {'amount': amount, 'updated_by': request.user,
+                'note': str(data.get('note') or '')[:512]}
+    obj, _created = MonthlyPnLEntry.objects.update_or_create(
+        marketplace=mp, month=month, channel=channel, line_key=line_key,
+        defaults=defaults,
+    )
+    if invoice_file is not None:
+        obj.invoice = invoice_file
+        obj.save(update_fields=['invoice', 'updated_at'])
+    return JsonResponse({'status': 'ok',
+                          'invoice_url': obj.invoice.url if obj.invoice else None})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@_require_POST
+def save_fx_rate(request):
+    """Upsert a monthly FX rate. JSON: {month:'YYYY-MM', currency, rate_to_usd}."""
+    from .models import MonthlyFXRate
+    try:
+        data = json.loads(request.body)
+        y, m = str(data['month']).split('-')[:2]
+        from datetime import date as _d
+        month = _d(int(y), int(m), 1)
+        currency = str(data['currency']).upper()[:4]
+        rate = float(data['rate_to_usd'])
+    except (ValueError, KeyError, IndexError):
+        return JsonResponse({'error': 'bad payload'}, status=400)
+
+    MonthlyFXRate.objects.update_or_create(
+        month=month, currency=currency,
+        defaults={'rate_to_usd': rate, 'updated_by': request.user},
+    )
+    return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@_require_POST
+def import_pnl_xlsx(request):
+    """
+    Import manual P&L lines from an uploaded Excel that matches the client's
+    'P&L Summary' layout (column A = labels, one value column). Maps labels →
+    line keys via pnl_lines.label_to_key and writes manual lines only.
+
+    POST multipart: marketplace, month (YYYY-MM), channel, file
+    """
+    from .pnl_importer import import_pnl_excel_bytes
+
+    mp = request.POST.get('marketplace', 'usa')
+    if not request.user.can_access_marketplace(mp):
+        raise _PermissionDenied
+    f = request.FILES.get('file')
+    if f is None:
+        return JsonResponse({'status': 'failed', 'message': 'No file.'}, status=400)
+    month_raw = request.POST.get('month', '')
+    channel   = request.POST.get('channel', 'amazon')
+    try:
+        from datetime import date as _d
+        y, m = month_raw.split('-')[:2]
+        month = _d(int(y), int(m), 1)
+    except (ValueError, IndexError):
+        return JsonResponse({'status': 'failed', 'message': 'Bad month.'}, status=400)
+
+    try:
+        result = import_pnl_excel_bytes(
+            file_bytes=f.read(), original_filename=f.name,
+            marketplace=mp, month=month, channel=channel, user=request.user)
+    except Exception as exc:
+        return JsonResponse({'status': 'failed', 'message': str(exc)}, status=500)
+    return JsonResponse(result)
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def cash_flow(request):
+    """Cash Flow & Balance page shell — JS calls /api/cash-flow/."""
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        marketplace = _allowed_marketplaces(request.user)[0]
+    return render(request, 'dashboard/cash_flow.html', {
+        'marketplace':          marketplace,
+        'allowed_marketplaces': _allowed_marketplaces(request.user),
+    })
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def api_cash_flow(request):
+    """
+    Cash flow from the Unified Transaction uploads.
+
+    Per uploaded month: net proceeds (earned into the Amazon balance),
+    payouts made (Transfers to bank), balance movement (earned − paid out),
+    deferred (earned but not yet released by Amazon = Amazon still owes it),
+    plus the individual payout events and a cumulative running movement.
+    """
+    from .models import SettlementLineActual, AmazonPayout
+
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    cash_rows = SettlementLineActual.objects.filter(
+        marketplace=marketplace, line_key__startswith='cash_',
+    ).order_by('month')
+    by_month: dict = {}
+    for r in cash_rows:
+        m = by_month.setdefault(r.month.isoformat(), {})
+        m[r.line_key] = float(r.amount)
+
+    months = []
+    cumulative = 0.0
+    for miso in sorted(by_month):
+        c = by_month[miso]
+        proceeds = c.get('cash_net_proceeds', 0.0)
+        paid     = c.get('cash_payouts', 0.0)
+        movement = proceeds - paid
+        cumulative += movement
+        months.append({
+            'month':        miso,
+            'net_proceeds': round(proceeds, 2),
+            'payouts':      round(paid, 2),
+            'movement':     round(movement, 2),
+            'cumulative':   round(cumulative, 2),
+            'deferred':     round(c.get('cash_deferred', 0.0), 2),
+            'released':     round(c.get('cash_released', 0.0), 2),
+        })
+
+    payouts = [{
+        'date':        p.payout_date.isoformat(),
+        'month':       p.month.isoformat(),
+        'amount':      float(p.amount),
+        'description': p.description,
+    } for p in AmazonPayout.objects.filter(
+        marketplace=marketplace).order_by('-payout_date')[:200]]
+
+    latest = months[-1] if months else None
+    return JsonResponse({
+        'marketplace': marketplace,
+        'months':      months,
+        'payouts':     payouts,
+        'latest':      latest,
+    })
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def mcf_orders(request):
+    """MCF Orders page shell — JS calls /api/mcf/."""
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        marketplace = _allowed_marketplaces(request.user)[0]
+    return render(request, 'dashboard/mcf_orders.html', {
+        'marketplace':          marketplace,
+        'allowed_marketplaces': _allowed_marketplaces(request.user),
+    })
+
+
+def _mcf_filtered_qs(request):
+    from .models import McfOrder
+    marketplace = request.GET.get('mp', 'usa')
+    qs = McfOrder.objects.filter(marketplace=marketplace)
+    status = (request.GET.get('status') or '').strip()
+    if status:
+        qs = qs.filter(status=status)
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        qs = (qs.filter(seller_order_id__icontains=q)
+              | qs.filter(displayable_order_id__icontains=q)
+              | qs.filter(recipient_name__icontains=q))
+    try:
+        days = int(request.GET.get('days') or 90)
+    except ValueError:
+        days = 90
+    from django.utils import timezone as _tz
+    qs = qs.filter(received_date__gte=_tz.now() - timedelta(days=days))
+    return marketplace, qs.order_by('-received_date')
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def api_mcf_orders(request):
+    """MCF orders + tracking, filtered by ?status=&q=&days=."""
+    marketplace, qs = _mcf_filtered_qs(request)
+    if not request.user.can_access_marketplace(marketplace):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    from .models import McfOrder
+    statuses = sorted(set(McfOrder.objects.filter(
+        marketplace=marketplace).values_list('status', flat=True)))
+    rows = [{
+        'seller_order_id':      o.seller_order_id,
+        'displayable_order_id': o.displayable_order_id,
+        'status':               o.status,
+        'received_date':        o.received_date.isoformat()[:16].replace('T', ' ')
+                                 if o.received_date else '',
+        'recipient':            o.recipient_name,
+        'city':                 o.city, 'state': o.state,
+        'units':                o.units,
+        'items':                o.items,
+        'packages':             o.packages,
+        'synced_at':            o.synced_at.isoformat()[:16].replace('T', ' '),
+    } for o in qs[:1000]]
+    return JsonResponse({'marketplace': marketplace, 'rows': rows,
+                          'statuses': statuses, 'count': len(rows)})
+
+
+@login_required
+@permission_required('can_view_dashboard')
+@_require_POST
+def api_mcf_sync(request):
+    """Pull fresh MCF orders + tracking from Amazon. JSON: {marketplace, days}."""
+    from apps.dashboard.management.commands.sync_mcf_orders import sync_mcf
+    try:
+        data = json.loads(request.body)
+    except ValueError:
+        data = {}
+    mp = data.get('marketplace', 'usa')
+    if not request.user.can_access_marketplace(mp):
+        raise _PermissionDenied
+    try:
+        days = min(int(data.get('days') or 30), 120)
+    except (TypeError, ValueError):
+        days = 30
+    try:
+        res = sync_mcf(mp, days)
+    except Exception as exc:
+        return JsonResponse({'status': 'failed',
+                              'error': f'{type(exc).__name__}: {exc}'}, status=500)
+    return JsonResponse(res)
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def mcf_export_csv(request):
+    """Download the filtered MCF orders as CSV — one row per package/tracking."""
+    import csv as _csv
+    from django.http import HttpResponse
+    marketplace, qs = _mcf_filtered_qs(request)
+    if not request.user.can_access_marketplace(marketplace):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    resp = HttpResponse(content_type='text/csv; charset=utf-8')
+    resp['Content-Disposition'] = (
+        f'attachment; filename="mcf_tracking_{marketplace}.csv"')
+    resp.write('\ufeff')     # BOM so Excel opens UTF-8 correctly
+    w = _csv.writer(resp)
+    w.writerow(['Order ID', 'Displayable Order ID', 'Status', 'Received',
+                 'Recipient', 'City', 'State', 'SKUs', 'Units',
+                 'Carrier', 'Tracking Number', 'Ship Date', 'ETA'])
+    for o in qs:
+        skus = '; '.join(f'{i["sku"]} x{i["qty"]}' for i in (o.items or []))
+        base = [o.seller_order_id, o.displayable_order_id, o.status,
+                o.received_date.strftime('%Y-%m-%d %H:%M') if o.received_date else '',
+                o.recipient_name, o.city, o.state, skus, o.units]
+        pkgs = o.packages or []
+        if pkgs:
+            for p in pkgs:
+                w.writerow(base + [p.get('carrier', ''), p.get('tracking', ''),
+                                    p.get('ship_date', ''), p.get('eta', '')])
+        else:
+            w.writerow(base + ['', '', '', ''])
+    return resp
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@_require_POST
+def api_recalc_cogs(request):
+    """
+    Recalculate stored COGS for one month from the currently-uploaded COGS
+    rates. JSON body: {marketplace, month:'YYYY-MM'}. Refreshes the
+    Management P&L, daily metrics/SKU snapshots, hourly snapshots and
+    Campaign P&L for that month.
+    """
+    from .cogs_recalc import recalc_cogs
+    try:
+        data = json.loads(request.body)
+        mp = data.get('marketplace', 'usa')
+        y, m = str(data['month']).split('-')[:2]
+        from datetime import date as _d
+        month = _d(int(y), int(m), 1)
+    except (ValueError, KeyError, IndexError):
+        return JsonResponse({'error': 'bad payload'}, status=400)
+    if not request.user.can_access_marketplace(mp):
+        raise _PermissionDenied
+    try:
+        summary = recalc_cogs(mp, month)
+    except Exception as exc:
+        return JsonResponse({'status': 'failed',
+                              'error': f'{type(exc).__name__}: {exc}'}, status=500)
+    return JsonResponse({'status': 'ok', 'summary': summary})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@_require_POST
+def api_sync_pnl_month(request):
+    """
+    Sync one month's P&L directly from Amazon. Primary source: the Payments
+    Date-Range Transaction report (same as the manual unified upload — book
+    figure, deferred transactions included). Falls back to the Finances API
+    (provisional, posted-date basis) only if report generation fails.
+    JSON: {marketplace, month:'YYYY-MM'}.
+    """
+    from .finances_importer import sync_finances_month
+    from .unified_txn_importer import sync_unified_from_api
+    try:
+        data = json.loads(request.body)
+        mp = data.get('marketplace', 'usa')
+        y, m = str(data['month']).split('-')[:2]
+        from datetime import date as _d
+        month = _d(int(y), int(m), 1)
+    except (ValueError, KeyError, IndexError):
+        return JsonResponse({'error': 'bad payload'}, status=400)
+    if not request.user.can_access_marketplace(mp):
+        raise _PermissionDenied
+    try:
+        res = sync_unified_from_api(mp, month, user=request.user)
+        return JsonResponse(res)
+    except Exception as exc:
+        report_err = f'{type(exc).__name__}: {exc}'
+    try:
+        res = sync_finances_month(mp, month, user=request.user)
+        res['message'] = (f'Transaction report unavailable ({report_err[:120]}) '
+                          f'— fell back to the Finances API (provisional, may '
+                          f'undercount deferred transactions). {res["message"]}')
+        return JsonResponse(res)
+    except Exception as exc:
+        return JsonResponse({'status': 'failed',
+                              'error': f'report: {report_err} · '
+                                       f'finances: {type(exc).__name__}: {exc}'},
+                            status=500)
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@_require_POST
+def import_unified_txn(request):
+    """
+    Import the Seller Central Unified Transaction (Date-Range Transaction)
+    report — the single authoritative posted-date source for the P&L. Parses
+    revenue + all fees + COGS for the month and stores monthly line actuals.
+
+    POST multipart: marketplace, month (YYYY-MM), file
+    """
+    from .unified_txn_importer import import_unified_csv_bytes
+
+    mp = request.POST.get('marketplace', 'usa')
+    if not request.user.can_access_marketplace(mp):
+        raise _PermissionDenied
+    f = request.FILES.get('file')
+    if f is None:
+        return JsonResponse({'status': 'failed', 'message': 'No file.'}, status=400)
+    try:
+        from datetime import date as _d
+        y, m = request.POST.get('month', '').split('-')[:2]
+        month = _d(int(y), int(m), 1)
+    except (ValueError, IndexError):
+        return JsonResponse({'status': 'failed', 'message': 'Bad month.'}, status=400)
+    if f.size > 60 * 1024 * 1024:
+        return JsonResponse({'status': 'failed', 'message': 'File too large (max 60 MiB).'}, status=400)
+
+    try:
+        result = import_unified_csv_bytes(
+            file_bytes=f.read(), original_filename=f.name,
+            marketplace=mp, month=month, user=request.user)
+    except Exception as exc:
+        return JsonResponse({'status': 'failed', 'message': f'{type(exc).__name__}: {exc}'}, status=500)
+    return JsonResponse(result)
+
+
 @permission_required('can_manage_cogs')
 def fba_rates_template_xlsx(request):
     """Download an Excel template pre-filled with the user's products

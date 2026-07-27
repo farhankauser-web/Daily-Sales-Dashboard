@@ -1,0 +1,159 @@
+{% extends "base/base.html" %}
+{% block title %}MCF Orders{% endblock %}
+{% block nav_mcf %}active{% endblock %}
+{% block page_title %}MCF Orders — Tracking{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<button class="btn btn-primary btn-sm" id="syncBtn" style="margin-left:10px"
+        onclick="syncMcf()">↻ Sync from Amazon</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px"
+        onclick="downloadCsv()">⬇ Download CSV</button>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .mcf-filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+                 background:#FFF; border:1px solid #D5D9D9; border-radius:8px;
+                 padding:10px 14px; margin-bottom:14px; font-size:12px; }
+  .mcf-filters select, .mcf-filters input {
+    padding:5px 8px; font-size:12px; border:1px solid #D5D9D9; border-radius:5px; }
+  table.mcf { width:100%; border-collapse:collapse; font-size:12px;
+              background:#FFF; border:1px solid #D5D9D9; }
+  table.mcf th { background:#F4F6F8; padding:8px 10px; text-align:left;
+                 border-bottom:2px solid #232F3E; white-space:nowrap; }
+  table.mcf td { padding:6px 10px; border-bottom:1px solid #F2F4F6;
+                 vertical-align:top; }
+  .st { display:inline-block; padding:2px 8px; border-radius:10px;
+        font-size:10px; font-weight:700; }
+  .st.Complete, .st.CompletePartialled { background:#E0F2EC; color:#067D62; }
+  .st.Cancelled, .st.Unfulfillable     { background:#FBE2E0; color:#7A2B25; }
+  .st.Planning, .st.Processing, .st.New, .st.Received
+        { background:#FFF4DC; color:#9D6500; }
+  .trk { font-family:monospace; font-size:11px; background:#F4F6F8;
+         padding:2px 6px; border-radius:4px; cursor:pointer; }
+  .trk:hover { background:#EAD499; }
+  .sku { color:#5A6470; font-size:11px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mcf-filters">
+  <label>Status:
+    <select id="fStatus" onchange="load()"><option value="">All</option></select>
+  </label>
+  <label>Window:
+    <select id="fDays" onchange="load()">
+      <option value="30">30 days</option>
+      <option value="60">60 days</option>
+      <option value="90" selected>90 days</option>
+      <option value="120">120 days</option>
+    </select>
+  </label>
+  <label>Search:
+    <input type="text" id="fQ" placeholder="order id / recipient"
+           onkeydown="if(event.key==='Enter')load()"/>
+  </label>
+  <span id="countLbl" style="margin-left:auto;color:#5A6470"></span>
+</div>
+
+<table class="mcf">
+  <thead><tr>
+    <th>Order ID</th><th>Received</th><th>Status</th><th>Recipient</th>
+    <th>Items</th><th>Carrier</th><th>Tracking (click to copy)</th>
+    <th>Ship date</th><th>ETA</th>
+  </tr></thead>
+  <tbody id="tbody">
+    <tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr>
+  </tbody>
+</table>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const U_API    = "{% url 'dashboard:api_mcf_orders' %}";
+const U_SYNC   = "{% url 'dashboard:api_mcf_sync' %}";
+const U_EXPORT = "{% url 'dashboard:mcf_export_csv' %}";
+let currentMP = "{{ marketplace }}";
+
+function csrf(){return document.cookie.split('; ').find(c=>c.startsWith('csrftoken='))?.split('=')[1]||'';}
+function setMP(mp, btn){
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  load();
+}
+function qs(){
+  return `?mp=${currentMP}&status=${encodeURIComponent(document.getElementById('fStatus').value)}`
+       + `&days=${document.getElementById('fDays').value}`
+       + `&q=${encodeURIComponent(document.getElementById('fQ').value)}`;
+}
+function copyTrk(t){
+  navigator.clipboard.writeText(t).then(()=>{
+    document.getElementById('countLbl').textContent = 'Copied ' + t;
+  });
+}
+async function load(){
+  const r = await fetch(U_API + qs());
+  const j = await r.json();
+  const sel = document.getElementById('fStatus');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All</option>' +
+    j.statuses.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('');
+  document.getElementById('countLbl').textContent = j.count + ' order(s)';
+  document.getElementById('tbody').innerHTML = j.rows.length ? j.rows.map(o=>{
+    const items = (o.items||[]).map(i=>`${i.sku} ×${i.qty}`).join('<br>');
+    const pkgs = o.packages||[];
+    const carrier = pkgs.map(p=>p.carrier).join('<br>') || '—';
+    const trk = pkgs.length
+      ? pkgs.map(p=>`<span class="trk" title="click to copy" onclick="copyTrk('${p.tracking}')">${p.tracking}</span>`).join('<br>')
+      : '<span style="color:#8A8A8A">not shipped yet</span>';
+    const ship = pkgs.map(p=>p.ship_date||'').join('<br>');
+    const eta  = pkgs.map(p=>p.eta||'').join('<br>');
+    return `<tr>
+      <td><b>${o.seller_order_id}</b>${o.displayable_order_id && o.displayable_order_id!==o.seller_order_id ? '<br><span class="sku">'+o.displayable_order_id+'</span>':''}</td>
+      <td>${o.received_date}</td>
+      <td><span class="st ${o.status}">${o.status}</span></td>
+      <td>${o.recipient}<br><span class="sku">${o.city}${o.state?', '+o.state:''}</span></td>
+      <td><span class="sku">${items}</span></td>
+      <td>${carrier}</td><td>${trk}</td>
+      <td>${ship}</td><td>${eta}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:30px">No MCF orders in this window — click “Sync from Amazon”.</td></tr>';
+}
+async function syncMcf(){
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true; btn.textContent = '↻ Syncing… (may take a minute)';
+  try{
+    const r = await fetch(U_SYNC, {method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+      body: JSON.stringify({marketplace: currentMP,
+                             days: parseInt(document.getElementById('fDays').value)})});
+    const ct = r.headers.get('content-type') || '';
+    if (r.redirected || !ct.includes('application/json')){
+      alert('Your session appears to have expired. Please refresh this page '
+          + '(you may need to log in again), then retry the sync.');
+      btn.disabled = false; btn.textContent = '↻ Sync from Amazon'; return;
+    }
+    const j = await r.json();
+    if (j.status==='ok'){
+      document.getElementById('countLbl').textContent =
+        `Synced: ${j.listed} listed · ${j.new} new · ${j.updated} updated`;
+      load();
+    } else { alert('Sync failed: ' + (j.error||'unknown')); }
+  }catch(e){ alert('Sync failed: ' + e); }
+  btn.disabled = false; btn.textContent = '↻ Sync from Amazon';
+}
+function downloadCsv(){ window.location = U_EXPORT + qs(); }
+load();
+</script>
+{% endblock %}

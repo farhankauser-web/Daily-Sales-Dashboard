@@ -1,0 +1,288 @@
+{% extends "base/base.html" %}
+{% block title %}FBA Transfers{% endblock %}
+{% block nav_inv_fbatransfer %}active{% endblock %}
+{% block page_title %}FBA Transfers — 3PL → Amazon FC{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="regionSel">
+  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if can_edit %}
+<button class="btn btn-primary btn-sm" onclick="openNew()">➕ New Transfer</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUp()">⬆ Upload Excel</button>
+{% endif %}
+<a class="btn btn-ghost btn-sm" style="margin-left:6px"
+   href="{% url 'inventory_planning:fba_transfer_template' %}">⬇ Template</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; max-width:620px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:20px; font-weight:700; }
+  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:12px; }
+  .bar-row input, .bar-row select { padding:5px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:12px; }
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; }
+  table.t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.t th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px;
+               border-bottom:1px solid #D5D9D9; white-space:nowrap; }
+  table.t th.l, table.t td.l { text-align:left; }
+  table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
+               white-space:nowrap; font-variant-numeric:tabular-nums; }
+  table.t tbody tr.head { cursor:pointer; }
+  table.t tbody tr.head:hover { background:#F7FAFC; }
+  tr.detail td { background:#FbFcFd; padding:0; }
+  .lines { padding:6px 14px 10px 30px; font-size:11px; color:#5A6470; }
+  .lines table { width:auto; border-collapse:collapse; }
+  .lines td { padding:2px 14px 2px 0; border:0; text-align:left; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; font-weight:600; }
+  .p-draft { background:#EDEFF1; color:#5A6470; }
+  .p-shipped { background:#E7F1FD; color:#0B4FA8; }
+  .p-received { background:#E6F4EA; color:#1E6B34; }
+  .p-cancelled { background:#FEE4E2; color:#B42318; text-decoration:line-through; }
+  .act { font-size:11px; color:#0F6FDE; cursor:pointer; margin-left:8px; }
+  .act:hover { text-decoration:underline; }
+  .act.warn { color:#B42318; }
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:99; align-items:center; justify-content:center; }
+  .modal.on { display:flex; }
+  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:660px; max-width:94vw; max-height:90vh; overflow-y:auto; }
+  .modal-card h3 { margin:0 0 12px; font-size:15px; }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px; }
+  .f label { display:block; font-size:11px; color:#5A6470; margin-bottom:3px; }
+  .f input, .f select { width:100%; padding:6px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:13px; box-sizing:border-box; }
+  .lrow { display:grid; grid-template-columns:1fr 110px 30px; gap:8px; margin-bottom:6px; align-items:center; }
+  .hint { font-size:11px; color:#8A94A0; margin-top:8px; line-height:1.5; }
+  .muted { color:#8A94A0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v" id="k_draft">–</div><div class="l">Draft transfers</div></div>
+  <div class="kpi-card"><div class="v" id="k_ship">–</div><div class="l">Shipments in transit to FC</div></div>
+  <div class="kpi-card"><div class="v" id="k_units">–</div><div class="l">Units in transit to FC</div></div>
+</div>
+
+<div class="bar-row">
+  <input id="q" placeholder="Search shipment / SKU / ref…" style="width:260px" oninput="load()">
+  <label style="font-size:11px;color:#5A6470"><input type="checkbox" id="openOnly" onchange="load()"> open only</label>
+  <span class="muted" id="meta" style="font-size:11px;margin-left:auto"></span>
+</div>
+
+<div class="panel"><table class="t" id="tbl"><thead><tr>
+  <th class="l">Amazon Shipment</th><th class="l">From (3PL/AWD)</th>
+  <th class="l">Carrier</th><th>Units</th><th>Received</th>
+  <th class="l">Shipped</th><th class="l">Received</th>
+  <th class="l">Status</th><th class="l">Actions</th>
+</tr></thead><tbody></tbody></table></div>
+
+<!-- upload modal -->
+<div class="modal" id="upMdl"><div class="modal-card" style="width:480px">
+  <h3>Upload FBA Transfers</h3>
+  <form id="upForm" enctype="multipart/form-data">
+    <div class="f" style="margin-bottom:10px"><label>File (.xlsx)</label>
+      <input type="file" name="file" accept=".xlsx" required></div>
+    <div class="hint">Rows sharing an <b>Amazon Shipment ID</b> group into one
+      transfer. <b>Source Warehouse</b> = the 3PL/AWD name or code.
+      <b>Status</b> = "shipped" draws stock now; "draft" (or blank) just records it.
+      <a href="{% url 'inventory_planning:fba_transfer_template' %}">Download the template</a>.</div>
+    <div style="text-align:right;margin-top:14px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="upMdl.classList.remove('on')">Cancel</button>
+      <button type="submit" class="btn btn-primary btn-sm" style="margin-left:6px">Upload</button>
+    </div>
+  </form>
+</div></div>
+
+<!-- new / edit modal -->
+<div class="modal" id="mdl"><div class="modal-card">
+  <h3 id="mdlTitle">New FBA Transfer</h3>
+  <input type="hidden" id="f_id">
+  <div class="grid">
+    <div class="f"><label>Source warehouse (3PL / AWD)</label>
+      <select id="f_src" onchange="loadStock()"></select></div>
+    <div class="f"><label>Amazon shipment ID</label><input id="f_ship" placeholder="FBA15ABCDEFG"></div>
+    <div class="f"><label>Ship date</label><input type="date" id="f_date"></div>
+  </div>
+  <div class="grid">
+    <div class="f"><label>Carrier</label><input id="f_carrier" placeholder="UPS / LTL"></div>
+    <div class="f"><label>Reference / BOL</label><input id="f_ref"></div>
+    <div class="f"><label>Notes</label><input id="f_notes"></div>
+  </div>
+  <div style="font-size:11px;font-weight:700;margin:6px 0 4px">Lines <span class="muted" id="stockNote"></span></div>
+  <div id="lines"></div>
+  <div><span class="act" onclick="addLine()">＋ add line</span></div>
+  <datalist id="skuList"></datalist>
+  <div class="hint">Shipping draws these units out of the source warehouse's on-hand stock.
+    Amazon's FBA sync then reports them as inbound → fulfillable, so we never add to FBA by hand.</div>
+  <div style="text-align:right;margin-top:14px">
+    <button class="btn btn-ghost btn-sm" onclick="closeMdl()">Cancel</button>
+    <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="save(false)">Save draft</button>
+    <button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="save(true)">Save &amp; ship →</button>
+  </div>
+</div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const N = n => (n||0).toLocaleString();
+let REGION='usa', ROWS=[], WHS=[], STOCK={};
+function setRegion(r,btn){ REGION=r;
+  document.querySelectorAll('#regionSel .mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); load(); loadWh(); }
+function getCookie(n){ const m=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)'); return m?m.pop():''; }
+async function post(url, body){
+  return (await fetch(url,{method:'POST',body:JSON.stringify(body),
+    headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')}})).json();
+}
+function pill(s){ return `<span class="pill p-${s}">${s.replace('_',' ')}</span>`; }
+
+async function loadWh(){
+  const w = await (await fetch(`{% url 'inventory_planning:warehouses' %}?region=${REGION}`)).json();
+  WHS = (w.warehouses||[]).filter(x => x.kind !== 'fba');
+}
+
+async function load(){
+  const p = new URLSearchParams({region:REGION});
+  if (q.value) p.set('q', q.value);
+  if (openOnly.checked) p.set('show','open');
+  const d = await (await fetch('{% url "inventory_planning:api_fba_transfers" %}?'+p)).json();
+  ROWS = d.rows;
+  k_draft.textContent = N(d.kpi.draft);
+  k_ship.textContent = N(d.kpi.in_transit_shipments);
+  k_units.textContent = N(d.kpi.in_transit_units);
+  render();
+}
+
+function actions(r){
+  {% if can_edit %}
+  let h = '';
+  if (r.status === 'draft'){
+    h += `<span class="act" onclick="edit(${r.id})">edit</span>`;
+    h += `<span class="act" onclick="act(${r.id},'ship')">ship →</span>`;
+    h += `<span class="act warn" onclick="del(${r.id})">delete</span>`;
+  } else if (r.status === 'shipped'){
+    h += `<span class="act" onclick="act(${r.id},'receive')">receive ✓</span>`;
+    h += `<span class="act warn" onclick="act(${r.id},'cancel')">cancel</span>`;
+  }
+  return h;
+  {% else %}return '';{% endif %}
+}
+
+function render(){
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML = ROWS.map(r => `
+    <tr class="head" onclick="tog(${r.id})">
+      <td class="l"><b>${r.shipment_id||'<span class=muted>(no id)</span>'}</b></td>
+      <td class="l">${r.source}</td><td class="l">${r.carrier||'—'}</td>
+      <td>${N(r.units)}</td><td>${r.units_received?N(r.units_received):'—'}</td>
+      <td class="l">${r.shipped||'—'}</td><td class="l">${r.received||'—'}</td>
+      <td class="l">${pill(r.status)}</td>
+      <td class="l" onclick="event.stopPropagation()">${actions(r)}</td>
+    </tr>
+    <tr class="detail" id="d${r.id}" style="display:none"><td colspan="9"><div class="lines">
+      <table>${r.lines.map(l=>`<tr><td><b>${l.sku}</b></td><td>${N(l.units)} units</td>
+        ${l.received?'<td>received '+N(l.received)+'</td>':''}</tr>`).join('')}</table>
+      ${r.notes?`<div style="margin-top:4px">📝 ${r.notes}</div>`:''}
+      ${r.by?`<div class="muted" style="margin-top:2px">created ${r.created} by ${r.by}</div>`:''}
+    </div></td></tr>`).join('') ||
+    '<tr><td colspan="9" class="l muted" style="padding:16px">No transfers yet. Click “New Transfer” to record a 3PL → Amazon FC movement.</td></tr>';
+}
+function tog(id){ const d=document.getElementById('d'+id); d.style.display = d.style.display==='none'?'':'none'; }
+
+/* ── modal ── */
+function openNew(){
+  f_id.value=''; mdlTitle.textContent='New FBA Transfer';
+  f_ship.value=f_carrier.value=f_ref.value=f_notes.value='';
+  f_date.value=new Date().toISOString().slice(0,10);
+  f_src.innerHTML = WHS.map(w=>`<option value="${w.id}">${w.name} — ${w.kind.toUpperCase()}</option>`).join('');
+  loadStock();
+  document.getElementById('lines').innerHTML=''; addLine();
+  mdl.classList.add('on');
+}
+function addLine(sku='', units=''){
+  const div=document.createElement('div'); div.className='lrow';
+  div.innerHTML=`<input list="skuList" class="ln-sku" placeholder="SKU" value="${sku}" onchange="skuHint(this)">
+    <input type="number" min="1" class="ln-qty" placeholder="units" value="${units}">
+    <span class="act warn" onclick="this.closest('.lrow').remove()">✕</span>`;
+  document.getElementById('lines').appendChild(div);
+}
+async function loadStock(){
+  const opt=f_src.selectedOptions[0]; if(!opt) return;
+  const wid=opt.value;
+  const d = await (await fetch(`{% url 'inventory_planning:api_source_stock' %}?warehouse=${wid}`)).json();
+  STOCK={}; document.getElementById('skuList').innerHTML =
+    d.rows.map(r=>{STOCK[r.sku.toUpperCase()]=r.units; return `<option value="${r.sku}">${N(r.units)} on hand</option>`;}).join('');
+  document.getElementById('stockNote').textContent =
+    d.rows.length? `— ${d.rows.length} SKUs on hand at source` : '— no stock recorded at this source';
+}
+function skuHint(inp){
+  const have=STOCK[(inp.value||'').toUpperCase()];
+  inp.title = have!=null ? have.toLocaleString()+' on hand' : 'not found at source';
+}
+function collect(){
+  const lines=[...document.querySelectorAll('#lines .lrow')].map(r=>({
+    sku:r.querySelector('.ln-sku').value.trim(),
+    units:parseInt(r.querySelector('.ln-qty').value||0)})).filter(l=>l.sku&&l.units>0);
+  return {id:f_id.value||null, region:REGION, source:f_src.value,
+    shipment_id:f_ship.value, carrier:f_carrier.value, reference:f_ref.value,
+    notes:f_notes.value, lines};
+}
+async function save(thenShip){
+  const body=collect();
+  if(!body.source||!body.lines.length){ alert('Pick a source warehouse and add at least one SKU + quantity.'); return; }
+  const r=await post('{% url "inventory_planning:api_fba_transfer_save" %}', body);
+  if(r.status!=='ok'){ alert(r.message); return; }
+  if(thenShip){ await act(r.id,'ship', body.lines, {date:f_date.value}); }
+  closeMdl(); load();
+}
+async function edit(id){
+  const r=ROWS.find(x=>x.id===id); openNew();
+  f_id.value=id; mdlTitle.textContent='Edit Transfer';
+  f_ship.value=r.shipment_id; f_carrier.value=r.carrier; f_ref.value=r.reference; f_notes.value=r.notes;
+  f_src.value = r.source_id;
+  loadStock();
+  document.getElementById('lines').innerHTML='';
+  r.lines.forEach(l=>addLine(l.sku,l.units));
+}
+async function act(id, action, _l, extra){
+  if(action==='cancel' && !confirm('Cancel this transfer? Shipped units return to the source warehouse.')) return;
+  let r=await post('{% url "inventory_planning:api_fba_transfer_action" %}', {id, action, ...(extra||{})});
+  if(r.status==='confirm'){
+    if(!confirm(r.message)) return;
+    r=await post('{% url "inventory_planning:api_fba_transfer_action" %}', {id, action, force:true, ...(extra||{})});
+  }
+  alert(r.message); load();
+}
+async function del(id){
+  if(!confirm('Delete this draft?')) return;
+  const r=await post('{% url "inventory_planning:api_fba_transfer_delete" %}', {id});
+  alert(r.message); load();
+}
+function closeMdl(){ mdl.classList.remove('on'); }
+
+/* ── Excel upload ── */
+function openUp(){ document.getElementById('upForm').reset(); upMdl.classList.add('on'); }
+document.getElementById('upForm').onsubmit = async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target); fd.append('region', REGION);
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  try {
+    const r = await (await fetch('{% url "inventory_planning:import_fba_transfers" %}',
+      {method:'POST', body:fd, headers:{'X-CSRFToken':getCookie('csrftoken')}})).json();
+    alert(r.message || r.status);
+    if (r.status === 'ok'){ upMdl.classList.remove('on'); load(); }
+  } catch(err){ alert('Upload failed: ' + err); }
+  btn.disabled = false; btn.textContent = 'Upload';
+};
+
+loadWh().then(load);
+</script>
+{% endblock %}

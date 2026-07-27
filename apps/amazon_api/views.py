@@ -36,8 +36,11 @@ def config_list(request):
     ai_providers = {obj.provider: obj for obj in AIProviderConfig.objects.all()}
     # If no AIProviderConfig for anthropic yet, show legacy AnthropicConfig status
     legacy_anthropic = AnthropicConfig.objects.first()
+    from apps.walmart_mcf.models import WalmartAPIConfig
+    walmart_config = WalmartAPIConfig.objects.first()
     return render(request, 'amazon_api/config_list.html', {
         'configs':          configs,
+        'walmart_config':   walmart_config,
         'anthropic':        legacy_anthropic,        # backward compat for old template section
         'ai_providers':     ai_providers,            # new unified AI section
         'legacy_anthropic': legacy_anthropic,
@@ -1701,28 +1704,39 @@ def fetch_dashboard_data(request):
                 if o.get('AmazonOrderId'):
                     unique_order_ids.add(o['AmazonOrderId'])
 
-            def fetch_items_with_retry(order_id: str, attempts: int = 3):
+            def fetch_items_with_retry(order_id: str, attempts: int = 4):
+                """Fetch order items with longer backoff on 429 rate limits."""
                 last_err = None
                 for attempt in range(1, attempts + 1):
                     try:
                         return client.get_order_items(order_id)
                     except Exception as e:
                         last_err = e
-                        sleep_s = (0.25 * (2 ** (attempt - 1))) + random.uniform(0.0, 0.12)
+                        err_txt = str(e)
+                        # 429 / quota: wait much longer; other errors: shorter backoff
+                        if '429' in err_txt or 'QuotaExceeded' in err_txt:
+                            sleep_s = min(8.0 * (2 ** (attempt - 1)), 30.0) + random.uniform(0.1, 0.5)
+                        else:
+                            sleep_s = (0.6 * (2 ** (attempt - 1))) + random.uniform(0.1, 0.3)
                         time.sleep(sleep_s)
                 raise last_err
 
-            for o in orders[:120]:
+            # Cap + pace: Orders API /orderItems is tightly rate-limited (~0.5–1 rps).
+            # Keep sample modest and pause between successful calls to avoid cascading 429s.
+            orders_for_items = orders[:60]
+            for i, o in enumerate(orders_for_items):
                 oid = o.get('AmazonOrderId')
                 if not oid:
                     continue
                 try:
-                    items_resp = fetch_items_with_retry(oid, attempts=3)
+                    items_resp = fetch_items_with_retry(oid, attempts=4)
                     items = ((items_resp or {}).get('payload', {}) or {}).get('OrderItems', [])
                     item_fetch_success += 1
                 except Exception as e:
                     item_fetch_errors += 1
                     logger.warning(f'Order items fetch failed for {oid}: {e}')
+                    # Cool down after a failure so subsequent calls recover
+                    time.sleep(1.5 + random.uniform(0.0, 0.5))
                     continue
                 for it in items:
                     sku  = (it.get('SellerSKU') or '').strip()
@@ -1739,6 +1753,9 @@ def fetch_dashboard_data(request):
                                              'title': it.get('Title', '')})
                     a['qty']     += qty
                     a['revenue'] += rev
+                # Pace successful requests (~1 req / 800ms) to avoid cascading 429s
+                if i < len(orders_for_items) - 1:
+                    time.sleep(0.8 + random.uniform(0.0, 0.2))
 
         daily_breakdown = [
             {'date': d, 'revenue': round(v['revenue'], 2), 'units': v['units']}

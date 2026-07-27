@@ -1,0 +1,541 @@
+{% extends "base/base.html" %}
+{% block title %}Management P&L{% endblock %}
+{% block nav_pnl_statement %}active{% endblock %}
+{% block page_title %}Management P&L{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+  <button class="mp-btn" id="globalBtn" onclick="setGlobal(this)">🌍 Global (USD)</button>
+</div>
+<input type="month" id="monthPicker" class="form-control"
+       style="margin-left:8px;padding:5px 8px;font-size:12px;width:auto"
+       onchange="loadPnl()"/>
+{% if can_edit %}
+<button class="btn btn-primary btn-sm" style="margin-left:8px" id="syncAmzBtn"
+        title="Generates and imports Amazon's Date-Range Transaction report — the book figure, same as the manual unified upload (deferred transactions included). Takes 2–6 min."
+        onclick="syncFromAmazon()">☁ Sync from Amazon</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUnified()">⬆ Upload Txn Report</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openImport()">⬆ Import Overhead Excel</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" id="recalcBtn"
+        title="Re-price this month's financials using the currently uploaded COGS"
+        onclick="recalcCogs()">↻ Recalc COGS</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px"
+        title="Download the SKUs that sold this month but have no COGS — fill in the Cogs column and upload on the COGS page"
+        onclick="downloadMissingCogs()">⬇ Missing COGS</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openFx()">💱 FX Rates</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pl-wrap { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  .pl-meta { padding:8px 14px; font-size:11px; color:#5A6470; background:#F4F6F8;
+             border-bottom:1px solid #D5D9D9; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+  .pl-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
+  .pl-badge.settled  { background:#E0F2EC; color:#067D62; }
+  .pl-badge.estimate { background:#FFF4DC; color:#9D6500; }
+
+  table.pl { width:100%; border-collapse:collapse; font-size:12px; }
+  table.pl th { background:#F4F6F8; padding:7px 10px; text-align:right; font-weight:600;
+                color:#0F1111; border-bottom:2px solid #232F3E; white-space:nowrap; }
+  table.pl th.lbl { text-align:left; }
+  table.pl td { padding:5px 10px; text-align:right; border-bottom:1px solid #F2F4F6; white-space:nowrap; }
+  table.pl td.lbl { text-align:left; }
+
+  tr.sec-header td { background:#EEF3F8; font-weight:700; color:#232F3E;
+                     text-transform:uppercase; font-size:10px; letter-spacing:0.5px;
+                     border-top:1px solid #D5D9D9; }
+  tr.subtotal td { font-weight:700; background:#F7F9FB; border-top:1px solid #D5D9D9; }
+  tr.grand td    { font-weight:800; background:#EAF1EE; border-top:2px solid #067D62;
+                   border-bottom:2px solid #067D62; font-size:13px; }
+  tr.metric td   { color:#5A6470; font-style:italic; }
+  .indent-1 { padding-left:22px !important; }
+  .indent-2 { padding-left:36px !important; }
+
+  td.editable { cursor:pointer; }
+  td.editable:hover { background:#FFF8E5; outline:1px dashed #EAD499; }
+  td.editable input { width:90px; text-align:right; font-size:12px; border:1px solid #232F3E;
+                      border-radius:4px; padding:2px 4px; }
+  .neg { color:#B12704; }
+  .pos { color:#067D62; }
+  .mom.up   { color:#067D62; }
+  .mom.down { color:#B12704; }
+  .src-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; }
+  .src-settlement { background:#067D62; }
+  .src-operational, .src-allocation { background:#D17B00; }
+  .src-manual { background:#2B6CB0; }
+
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
+  .modal-bg.show { display:flex; align-items:center; justify-content:center; }
+  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:460px; max-width:92vw; }
+  .modal-card h3 { margin:0 0 12px; font-size:15px; }
+  .modal-card label { font-size:11px; color:#555; display:block; margin:8px 0 3px; }
+  .modal-card input, .modal-card select { width:100%; padding:6px 8px; font-size:12px;
+                                           border:1px solid #D5D9D9; border-radius:5px; }
+  .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pl-wrap">
+  <div class="pl-meta">
+    <span id="mTitle"><strong>—</strong></span>
+    <span id="mBadge"></span>
+    <span id="mFx" style="color:#B12704"></span>
+    <span style="margin-left:auto">
+      <span class="src-dot src-settlement"></span>settled
+      <span class="src-dot src-operational" style="margin-left:10px"></span>estimated
+      <span class="src-dot src-manual" style="margin-left:10px"></span>manual
+    </span>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="pl">
+      <thead>
+        <tr>
+          <th class="lbl">Line</th>
+          <th id="hDebit">Debit</th>
+          <th id="hCredit">Credit</th>
+          <th id="hPrev">Prior Mo.</th>
+          <th>MoM</th>
+          <th id="hYoy">YoY Mo.</th>
+        </tr>
+      </thead>
+      <tbody id="plBody">
+        <tr><td class="lbl" colspan="6" style="padding:40px;text-align:center;color:#8A8A8A">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Manual entry modal -->
+<div class="modal-bg" id="entryModal" onclick="if(event.target===this)closeEntry()">
+  <div class="modal-card">
+    <h3 id="entryTitle">Edit line</h3>
+    <input type="hidden" id="entryChannel" value="amazon"/>
+    <label>Amount (<span id="entryCcy">USD</span>) — negatives allowed for credits/rebates</label>
+    <input type="number" id="entryAmount" step="0.01" value="0"/>
+    <label>Comment (optional)</label>
+    <textarea id="entryNote" rows="2" maxlength="512" style="width:100%;padding:6px 8px;
+      font-size:12px;border:1px solid #D5D9D9;border-radius:5px;resize:vertical"
+      placeholder="e.g. April warehouse rent, credit from landlord…"></textarea>
+    <label>Invoice / receipt (optional, max 15 MB)</label>
+    <input type="file" id="entryInvoice" accept=".pdf,.png,.jpg,.jpeg,.webp,.xlsx,.csv"/>
+    <div id="entryInvoiceCur" style="font-size:11px;margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-sm" onclick="closeEntry()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- FX modal -->
+<div class="modal-bg" id="fxModal" onclick="if(event.target===this)closeFx()">
+  <div class="modal-card">
+    <h3>FX rate → USD (this month)</h3>
+    <p style="font-size:11px;color:#5A6470">Multiply a native amount by this to get USD. Used only for the Global consolidated view.</p>
+    <label>Currency</label>
+    <select id="fxCurrency">
+      <option>CAD</option><option>GBP</option><option>EUR</option>
+      <option>AED</option><option>SAR</option>
+    </select>
+    <label>Rate to USD</label>
+    <input type="number" id="fxRate" step="0.0001" placeholder="e.g. 1.27"/>
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-sm" onclick="closeFx()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveFx()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import modal -->
+<div class="modal-bg" id="unifiedModal" onclick="if(event.target===this)closeUnified()">
+  <div class="modal-card">
+    <h3>Upload Unified Transaction report</h3>
+    <p style="font-size:11px;color:#5A6470">Seller Central → Reports → Payments → Date Range Reports → <b>Transaction</b> (monthly). This is the source for Sales, Returns, all Amazon fees & COGS — it ties to your books. Uploading replaces this month's figures.</p>
+    <label>Month</label>
+    <input type="month" id="unifiedMonth"/>
+    <label>File (.csv)</label>
+    <input type="file" id="unifiedFile" accept=".csv"/>
+    <div id="unifiedMsg" style="font-size:11px;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-sm" onclick="closeUnified()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="doUnified()">Upload</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="importModal" onclick="if(event.target===this)closeImport()">
+  <div class="modal-card">
+    <h3>Import P&L Excel</h3>
+    <p style="font-size:11px;color:#5A6470">Matches your “P&L Summary” layout — column A labels + a value column. Imports the manual lines only (rent, HR, OpEx, tax…). Amazon lines stay auto.</p>
+    <label>Channel</label>
+    <select id="importChannel">
+      <option value="amazon">Amazon column</option>
+      <option value="retail">Retail / Walmart column</option>
+    </select>
+    <label>File (.xlsx)</label>
+    <input type="file" id="importFile" accept=".xlsx"/>
+    <div id="importMsg" style="font-size:11px;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-sm" onclick="closeImport()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="doImport()">Import</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const U_API    = "{% url 'dashboard:api_pnl_statement' %}";
+const U_ENTRY  = "{% url 'dashboard:save_pnl_entry' %}";
+const U_FX     = "{% url 'dashboard:save_fx_rate' %}";
+const U_IMPORT = "{% url 'dashboard:import_pnl_xlsx' %}";
+const U_UNIFIED = "{% url 'dashboard:import_unified_txn' %}";
+const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
+const SECTION_LABELS = {
+  revenue:'Revenue', cogs:'Cost of Sales', amazon_fees:'Selling Fees',
+  marketing:'Marketing Expenses', other_income:'Other Income', gross_margin:'',
+  storage:'Storage Cost', operating_expenses:'Operating Expenses',
+  human_resource:'Human Resource Cost', net:'', metrics:'Operating Metrics'
+};
+const SUBTOTAL_KEYS = new Set(['net_sales','gross_margin','total_operating_expenses',
+  'total_hr_cost','net_profit_before_tax']);
+const GRAND_KEYS = new Set(['net_profit_after_tax']);
+
+let currentMP = "{{ marketplace }}";
+let scope = 'region';
+let data = null;
+let editKey = null, editLabel = null;
+// Sections start collapsed — headers show the section total; click to expand.
+let collapsed = new Set(Object.keys(SECTION_LABELS).filter(k=>SECTION_LABELS[k]));
+// Line keys whose per-head breakdown is currently expanded.
+let expandedRows = new Set();
+
+function toggleSec(sec){
+  if (collapsed.has(sec)) collapsed.delete(sec); else collapsed.add(sec);
+  if (data) render();
+}
+function toggleRow(key){
+  if (expandedRows.has(key)) expandedRows.delete(key); else expandedRows.add(key);
+  if (data) render();
+}
+
+function csrf(){return document.cookie.split('; ').find(c=>c.startsWith('csrftoken='))?.split('=')[1]||'';}
+
+function setMP(mp, btn){
+  currentMP = mp; scope='region';
+  document.querySelectorAll('.mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  loadPnl();
+}
+function setGlobal(btn){
+  scope='global';
+  document.querySelectorAll('.mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  loadPnl();
+}
+
+function curMonth(){
+  const v = document.getElementById('monthPicker').value;
+  return v || new Date().toISOString().slice(0,7);
+}
+
+async function loadPnl(){
+  const qs = new URLSearchParams({month: curMonth(), scope});
+  if (scope==='region') qs.set('mp', currentMP);
+  const r = await fetch(U_API + '?' + qs.toString());
+  data = await r.json();
+  render();
+}
+
+function fmtMoney(v, ccy){
+  if (v === null || v === undefined) return '';
+  const neg = v < 0;
+  const s = Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  return `<span class="${neg?'neg':''}">${neg?'(':''}${s}${neg?')':''}</span>`;
+}
+function fmtPct(v){ return (v*100).toFixed(1)+'%'; }
+function fmtInt(v){ return Math.round(v).toLocaleString('en-US'); }
+
+function render(){
+  document.getElementById('mTitle').innerHTML =
+    `<strong>${scope==='global'?'Global Consolidated':currentMP.toUpperCase()}</strong> · ${data.month} · ${data.currency}`;
+  const badge = document.getElementById('mBadge');
+  if (data.has_settlement) badge.innerHTML = '<span class="pl-badge settled">SETTLED ACTUALS</span>';
+  else badge.innerHTML = '<span class="pl-badge estimate">ESTIMATED (settlement pending)</span>';
+
+  const fx = document.getElementById('mFx');
+  fx.textContent = (data.missing_fx && data.missing_fx.length)
+    ? '⚠ Missing FX: ' + data.missing_fx.join(', ') + ' (using 1:1)' : '';
+
+  // Debit / Credit accounting view — no Amazon/Retail split.
+  document.getElementById('hPrev').textContent = 'Prior (' + data.prev_month + ')';
+  document.getElementById('hYoy').textContent  = 'YoY (' + data.yoy_month + ')';
+
+  const ccy = data.currency;
+  let html = '';
+  let lastSection = null;
+
+  // Plain positive money (no red/parens) — for placing a value in its
+  // correct Debit or Credit column.
+  const money = v => Math.abs(v).toLocaleString('en-US',
+    {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  data.rows.forEach(row=>{
+    // Section header row — clickable, shows the section's signed total
+    if (row.section !== lastSection && SECTION_LABELS[row.section]){
+      const st = (data.section_totals||{})[row.section];
+      const stCell = (st===undefined||row.section==='metrics') ? '' : fmtMoney(st, ccy);
+      const open = !collapsed.has(row.section);
+      html += `<tr class="sec-header" onclick="toggleSec('${row.section}')" style="cursor:pointer">
+        <td class="lbl"><span class="sec-arrow" data-arr="${row.section}"
+          style="display:inline-block;transition:transform .15s;${open?'transform:rotate(90deg)':''}">▸</span>
+          ${SECTION_LABELS[row.section]}</td>
+        <td colspan="2" style="font-weight:700">${stCell}</td>
+        <td colspan="3" style="color:#8A8A8A;font-size:10px">${open?'':'click to expand'}</td></tr>`;
+    }
+    lastSection = row.section;
+    if (row.is_header) return; // pnl_lines header rows already covered by section header
+
+    let cls = '';
+    if (GRAND_KEYS.has(row.key)) cls='grand';
+    else if (SUBTOTAL_KEYS.has(row.key)) cls='subtotal';
+    else if (row.section==='metrics') cls='metric';
+
+    const indentCls = row.indent>0 ? `indent-${row.indent}` : '';
+
+    // Debit / Credit cells + comparison columns
+    let debCell='', creCell='', prevCell, yoyCell, momCell='';
+    if (row.is_pct){
+      creCell = fmtPct(row.amazon);
+      prevCell=fmtPct(row.prev); yoyCell=fmtPct(row.yoy);
+    } else if (row.is_unit){
+      creCell = fmtInt(row.amazon);
+      prevCell=fmtInt(row.prev); yoyCell=fmtInt(row.yoy);
+    } else {
+      // sign '-' lines are debits (costs); '+' and computed results are credits
+      if (row.debit)  debCell = money(row.debit);
+      if (row.credit) creCell = fmtMoney(row.credit, ccy);
+      prevCell=fmtMoney(row.prev,ccy); yoyCell=fmtMoney(row.yoy,ccy);
+      if (row.mom_pct!==null && row.mom_pct!==undefined){
+        const up=row.mom_pct>=0;
+        momCell=`<span class="mom ${up?'up':'down'}">${up?'+':''}${row.mom_pct}%</span>`;
+      }
+    }
+
+    // Editable manual cells (single column now → amazon channel). Manual lines
+    // are costs, so the editable target is the Debit cell.
+    const editable = CAN_EDIT && scope==='region' && row.source==='manual';
+    const debAttr = editable ? `class="editable" onclick="openEntry('${row.key}','${row.label.replace(/'/g,"")}')"` : '';
+
+    const srcDot = row.source==='auto'
+      ? `<span class="src-dot src-${(data.has_settlement?'settlement':'operational')}"></span>`
+      : (row.source==='manual' ? '<span class="src-dot src-manual"></span>' : '');
+    // markers when a manual line carries a comment / invoice
+    let recMark = '';
+    if (row.source==='manual' && data.manual_meta && data.manual_meta[row.key]){
+      const chans = Object.values(data.manual_meta[row.key]);
+      if (chans.some(m=>m.invoice_url)) recMark += ' <span title="invoice on file">📎</span>';
+      else if (chans.some(m=>m.note))   recMark += ' <span title="has comment">💬</span>';
+    }
+
+    // Expandable per-head breakdown (auto lines that carry component heads)
+    const heads = row.breakdown && typeof row.breakdown==='object'
+      ? Object.entries(row.breakdown) : [];
+    const hasHeads = heads.length > 0;
+    const isOpen = expandedRows.has(row.key);
+    const arrow = hasHeads
+      ? `<span onclick="event.stopPropagation();toggleRow('${row.key}')"
+           title="show component heads" style="cursor:pointer;display:inline-block;
+           width:12px;transition:transform .15s;${isOpen?'transform:rotate(90deg)':''}">▸</span> `
+      : (row.indent>0 ? '' : '');
+
+    // computed rows (subtotals, %, metrics) stay visible when collapsed
+    const keep = (row.source === 'computed') ? '1' : '0';
+    const hid = (collapsed.has(row.section) && keep === '0') ? 'style="display:none"' : '';
+    html += `<tr class="${cls}" data-sec="${row.section}" data-keep="${keep}" ${hid}>
+      <td class="lbl ${indentCls}">${arrow}${srcDot}${row.label}${recMark}</td>
+      <td ${debAttr}>${debCell}</td>
+      <td>${creCell}</td>
+      <td style="color:#8A8A8A">${prevCell}</td>
+      <td>${momCell}</td>
+      <td style="color:#8A8A8A">${yoyCell}</td>
+    </tr>`;
+
+    // Head sub-rows — only when this row is visible and expanded.
+    if (hasHeads && isOpen && !(collapsed.has(row.section) && keep==='0')){
+      heads.forEach(([label, val])=>{
+        // raw head sign: <0 is a cost (Debit), >0 is a credit (Credit)
+        const hDeb = val<0 ? money(val) : '';
+        const hCre = val>0 ? money(val) : '';
+        html += `<tr class="head-row" style="background:#FCFDFE">
+          <td class="lbl indent-2" style="color:#5A6470;font-size:11px">↳ ${label}</td>
+          <td style="color:#5A6470">${hDeb}</td>
+          <td style="color:#5A6470">${hCre}</td>
+          <td></td><td></td><td></td></tr>`;
+      });
+    }
+  });
+
+  document.getElementById('plBody').innerHTML = html;
+}
+
+// ── manual entry ──────────────────────────────────────────────
+function _entryMeta(key, channel){
+  return ((data.manual_meta||{})[key]||{})[channel] || {};
+}
+function openEntry(key,label){
+  const channel='amazon';
+  editKey=key; editLabel=label;
+  document.getElementById('entryTitle').textContent = 'Edit · ' + label;
+  document.getElementById('entryChannel').value = channel;
+  document.getElementById('entryCcy').textContent = data.currency;
+  const row = data.rows.find(r=>r.key===key);
+  document.getElementById('entryAmount').value = row ? row.amazon : 0;
+  const meta = _entryMeta(key, channel);
+  document.getElementById('entryNote').value = meta.note || '';
+  document.getElementById('entryInvoice').value = '';
+  document.getElementById('entryInvoiceCur').innerHTML = meta.invoice_url
+    ? `📎 <a href="${meta.invoice_url}" target="_blank">current invoice on file</a> — uploading a new file replaces it`
+    : '';
+  document.getElementById('entryModal').classList.add('show');
+}
+function closeEntry(){document.getElementById('entryModal').classList.remove('show');}
+async function saveEntry(){
+  const fd = new FormData();
+  fd.append('marketplace', currentMP);
+  fd.append('month', curMonth());
+  fd.append('channel', document.getElementById('entryChannel').value);
+  fd.append('line_key', editKey);
+  fd.append('amount', document.getElementById('entryAmount').value || '0');
+  fd.append('note', document.getElementById('entryNote').value || '');
+  const f = document.getElementById('entryInvoice').files[0];
+  if (f) fd.append('invoice', f);
+  const r = await fetch(U_ENTRY,{method:'POST',headers:{'X-CSRFToken':csrf()},body:fd});
+  if(r.ok){closeEntry();loadPnl();}else{
+    let msg='Save failed'; try{msg+=': '+(await r.json()).error;}catch(e){}
+    alert(msg);
+  }
+}
+
+// ── FX ────────────────────────────────────────────────────────
+function openFx(){document.getElementById('fxModal').classList.add('show');}
+function closeFx(){document.getElementById('fxModal').classList.remove('show');}
+async function saveFx(){
+  const body = {month: curMonth(),
+    currency: document.getElementById('fxCurrency').value,
+    rate_to_usd: parseFloat(document.getElementById('fxRate').value||'0')};
+  const r = await fetch(U_FX,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
+  if(r.ok){closeFx();loadPnl();}else{alert('Save failed');}
+}
+
+// ── Excel import ──────────────────────────────────────────────
+async function syncFromAmazon(){
+  const btn = document.getElementById('syncAmzBtn');
+  btn.disabled = true; btn.textContent = '☁ Syncing… (1–3 min)';
+  try{
+    const r = await fetch("{% url 'dashboard:api_sync_pnl_month' %}", {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+      body: JSON.stringify({marketplace: currentMP, month: curMonth()}),
+    });
+    const ct = r.headers.get('content-type') || '';
+    if (r.redirected || !ct.includes('application/json')){
+      alert('Your session appears to have expired. Please refresh this page '
+          + '(you may need to log in again), then retry the sync.');
+      btn.disabled = false; btn.textContent = '☁ Sync from Amazon'; return;
+    }
+    const j = await r.json();
+    if (j.status === 'ok'){
+      alert('Synced ' + (j.month||curMonth()) + ' from Amazon.\n'
+        + 'Net Sales: $' + Number(j.net_sales).toLocaleString()
+        + '  ·  COGS: $' + Number(j.cogs).toLocaleString()
+        + '\n\n' + (j.message||''));
+      loadPnl();
+    } else {
+      alert('Sync failed: ' + (j.error || 'unknown'));
+    }
+  } catch(e){ alert('Sync failed: ' + e); }
+  btn.disabled = false; btn.textContent = '☁ Sync from Amazon';
+}
+function downloadMissingCogs(){
+  window.location = "{% url 'dashboard:cogs_missing_csv' %}"
+    + `?mp=${currentMP}&month=${curMonth()}`;
+}
+async function recalcCogs(){
+  const btn = document.getElementById('recalcBtn');
+  btn.disabled = true; btn.textContent = '↻ Recalculating…';
+  try{
+    const r = await fetch("{% url 'dashboard:api_recalc_cogs' %}", {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+      body: JSON.stringify({marketplace: currentMP, month: curMonth()}),
+    });
+    const j = await r.json();
+    if (j.status === 'ok'){
+      const s = j.summary || {};
+      const p = s.pnl_cogs;
+      let msg = 'COGS recalculated for ' + (s.month||curMonth()) + '.';
+      if (p && typeof p === 'object')
+        msg += ` P&L COGS: ${Number(p.old).toLocaleString()} → ${Number(p.new).toLocaleString()}.`;
+      else if (p) msg += ' ' + p;
+      alert(msg);
+      loadPnl();
+    } else {
+      alert('Recalc failed: ' + (j.error || 'unknown'));
+    }
+  } catch(e){ alert('Recalc failed: ' + e); }
+  btn.disabled = false; btn.textContent = '↻ Recalc COGS';
+}
+function openUnified(){
+  document.getElementById('unifiedMsg').textContent='';
+  document.getElementById('unifiedMonth').value = curMonth();
+  document.getElementById('unifiedModal').classList.add('show');
+}
+function closeUnified(){document.getElementById('unifiedModal').classList.remove('show');}
+async function doUnified(){
+  const f=document.getElementById('unifiedFile').files[0];
+  const mo=document.getElementById('unifiedMonth').value;
+  if(!f){document.getElementById('unifiedMsg').textContent='Pick a CSV first.';return;}
+  if(!mo){document.getElementById('unifiedMsg').textContent='Pick a month.';return;}
+  const fd=new FormData();
+  fd.append('marketplace',currentMP); fd.append('month',mo); fd.append('file',f);
+  document.getElementById('unifiedMsg').textContent='Uploading & parsing…';
+  const r=await fetch(U_UNIFIED,{method:'POST',headers:{'X-CSRFToken':csrf()},body:fd});
+  const j=await r.json();
+  if(j.status==='ok'){
+    document.getElementById('unifiedMsg').innerHTML='✓ '+(j.message||'done');
+    setTimeout(()=>{closeUnified(); document.getElementById('monthPicker').value=mo; loadPnl();},1100);
+  } else { document.getElementById('unifiedMsg').textContent='✗ '+(j.message||'failed'); }
+}
+function openImport(){document.getElementById('importMsg').textContent='';document.getElementById('importModal').classList.add('show');}
+function closeImport(){document.getElementById('importModal').classList.remove('show');}
+async function doImport(){
+  const f = document.getElementById('importFile').files[0];
+  if(!f){document.getElementById('importMsg').textContent='Pick a file first.';return;}
+  const fd = new FormData();
+  fd.append('marketplace',currentMP); fd.append('month',curMonth());
+  fd.append('channel',document.getElementById('importChannel').value); fd.append('file',f);
+  document.getElementById('importMsg').textContent='Importing…';
+  const r = await fetch(U_IMPORT,{method:'POST',headers:{'X-CSRFToken':csrf()},body:fd});
+  const j = await r.json();
+  if(j.status==='ok'){
+    document.getElementById('importMsg').innerHTML =
+      `✓ ${j.lines_matched} lines imported${j.lines_unmatched?`, ${j.lines_unmatched} unmatched`:''}.`;
+    setTimeout(()=>{closeImport();loadPnl();},900);
+  } else { document.getElementById('importMsg').textContent = '✗ ' + (j.message||'failed'); }
+}
+
+// init: default month = current
+document.getElementById('monthPicker').value = new Date().toISOString().slice(0,7);
+loadPnl();
+</script>
+{% endblock %}

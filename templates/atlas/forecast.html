@@ -1,0 +1,69 @@
+{% extends "base/base.html" %}
+{% block title %}Atlas Forecast{% endblock %}
+{% block nav_atlas_forecast %}active{% endblock %}
+{% block page_title %}Inventory Forecast — {{ company.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="mp-switcher">
+  {% for c in companies %}
+  <a href="{% url 'atlas:forecast' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
+  {% endfor %}
+</div>
+{% if due_count %}<span style="margin-left:10px;background:#FFF4DC;color:#9D6500;font-weight:700;
+  padding:4px 10px;border-radius:10px;font-size:11px">📦 {{ due_count }} refill(s) due</span>{% endif %}
+{% endblock %}
+
+{% block content %}
+<div style="font-size:11px;color:#5A6470;margin-bottom:8px">
+  Refill formula (SOW): demand over lead time (sell-through × production+shipment days,
+  ×multiplier when peak) minus stock on hand. Rows turn red when stock covers less than the lead time.
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border:1px solid #D5D9D9;border-radius:8px">
+  <thead><tr style="background:#F4F6F8">
+    <th style="padding:6px 10px;text-align:left">SKU</th>
+    <th style="padding:6px 10px">Stock</th>
+    <th style="padding:6px 10px">Sell-through /day</th>
+    <th style="padding:6px 10px">Prod. days</th>
+    <th style="padding:6px 10px">Ship days</th>
+    <th style="padding:6px 10px">Peak</th>
+    <th style="padding:6px 10px">×Peak</th>
+    <th style="padding:6px 10px">Cover d</th>
+    <th style="padding:6px 10px">Demand/lead</th>
+    <th style="padding:6px 10px">Reorder</th>
+    <th></th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr {% if r.f.refill_due %}style="background:#FDF3F2"{% endif %}>
+      <td style="padding:6px 10px;font-family:'DM Mono',monospace">{{ r.p.sku }}
+        {% if r.f.refill_due %}<span style="color:#C0392B" title="stock covers less than lead time">⏰</span>{% endif %}</td>
+      <td style="padding:6px 10px;text-align:center">{{ r.p.stock_qty }}</td>
+      <td style="padding:6px 10px;text-align:center">
+        <input form="fc{{ r.p.pk }}" name="sell_through_daily" type="number" step="0.001" value="{{ r.p.sell_through_daily }}" style="width:70px;font-size:11px"/></td>
+      <td style="padding:6px 10px;text-align:center">
+        <input form="fc{{ r.p.pk }}" name="production_lead_days" type="number" value="{{ r.p.production_lead_days }}" style="width:55px;font-size:11px"/></td>
+      <td style="padding:6px 10px;text-align:center">
+        <input form="fc{{ r.p.pk }}" name="shipment_lead_days" type="number" value="{{ r.p.shipment_lead_days }}" style="width:55px;font-size:11px"/></td>
+      <td style="padding:6px 10px;text-align:center">
+        <input form="fc{{ r.p.pk }}" name="is_peak" type="checkbox" {% if r.p.is_peak %}checked{% endif %}/></td>
+      <td style="padding:6px 10px;text-align:center">
+        <input form="fc{{ r.p.pk }}" name="peak_multiplier" type="number" step="0.001" value="{{ r.p.peak_multiplier }}" style="width:55px;font-size:11px"/></td>
+      <td style="padding:6px 10px;text-align:center">{{ r.f.cover_days|default:"—" }}</td>
+      <td style="padding:6px 10px;text-align:center">{{ r.f.demand_over_lead }}</td>
+      <td style="padding:6px 10px;text-align:center;font-weight:700">
+        {% if r.f.reorder_qty %}{{ r.f.reorder_qty }}{% else %}—{% endif %}</td>
+      <td style="padding:6px 10px"><button form="fc{{ r.p.pk }}" class="btn btn-ghost btn-sm">Save</button></td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="11" style="text-align:center;color:#8A8A8A;padding:24px">No products yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% for r in rows %}
+<form id="fc{{ r.p.pk }}" method="post">
+  {% csrf_token %}
+  <input type="hidden" name="co" value="{{ company.code }}"/>
+  <input type="hidden" name="product_id" value="{{ r.p.pk }}"/>
+</form>
+{% endfor %}
+{% endblock %}

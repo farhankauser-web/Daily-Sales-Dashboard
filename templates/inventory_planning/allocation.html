@@ -1,0 +1,269 @@
+{% extends "base/base.html" %}
+{% block title %}Allocation Workbench{% endblock %}
+{% block nav_inv_alloc %}active{% endblock %}
+{% block page_title %}Allocation Workbench — Packing List → Container{% endblock %}
+
+{% block topbar_actions %}
+<a class="btn btn-ghost btn-sm" href="{% url 'inventory_planning:containers' %}">🚢 Containers</a>
+<a class="btn btn-ghost btn-sm" style="margin-left:6px" href="{% url 'inventory_planning:suppliers' %}">🏭 Suppliers</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; margin-bottom:14px; }
+  .panel h3 { margin:0; padding:10px 14px; font-size:13px; border-bottom:1px solid #EDEFF1; }
+  .body { padding:14px; }
+  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .f label { display:block; font-size:11px; color:#5A6470; margin-bottom:3px; }
+  .f input, .f select { width:100%; padding:6px 8px; border:1px solid #D5D9D9;
+                        border-radius:5px; font-size:13px; box-sizing:border-box; background:#fff; }
+  table.t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.t th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px;
+               border-bottom:1px solid #D5D9D9; white-space:nowrap; }
+  table.t th.l, table.t td.l { text-align:left; }
+  table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
+               white-space:nowrap; font-variant-numeric:tabular-nums; vertical-align:top; }
+  tr.bad td { background:#FEF2F2; }
+  tr.warn td { background:#FFFBEB; }
+  .msg { font-size:11px; margin-top:3px; }
+  .msg.e { color:#B42318; } .msg.w { color:#8A5A00; }
+  .muted { color:#8A94A0; }
+  .chip { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px;
+          font-weight:600; background:#E7F1FD; color:#0B4FA8; }
+  .stat { display:inline-block; margin-right:18px; font-size:12px; }
+  .stat b { font-size:16px; display:block; }
+  .bar { height:8px; border-radius:4px; background:#EDEFF1; overflow:hidden; width:180px; margin-top:4px; }
+  .bar i { display:block; height:100%; background:#1E9E52; }
+  .bar i.over { background:#D92D20; }
+  .banner { padding:9px 12px; border-radius:6px; font-size:12px; margin-bottom:12px; }
+  .banner.e { background:#FEF2F2; color:#B42318; border:1px solid #FECDCA; }
+  .banner.w { background:#FFFBEB; color:#8A5A00; border:1px solid #FDE68A; }
+  .banner.k { background:#ECFDF3; color:#1E6B34; border:1px solid #A6F4C5; }
+  select.posel { font-size:11px; padding:2px 4px; border:1px solid #D5D9D9; border-radius:4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="panel">
+  <h3>1 · Container &amp; packing list</h3>
+  <div class="body">
+    <form id="upForm" enctype="multipart/form-data">
+      <div class="grid" style="margin-bottom:12px">
+        <div class="f"><label>Container number</label>
+          <input name="container_no" id="f_cno" placeholder="C-12" required></div>
+        <div class="f"><label>Supplier</label>
+          <select name="supplier" id="f_sup" required><option value="">— choose —</option></select></div>
+        <div class="f"><label>Destination region</label>
+          <select name="region" id="f_reg">
+            <option value="usa">🇺🇸 USA</option><option value="uk">🇬🇧 UK</option>
+            <option value="ae">🇦🇪 UAE</option><option value="sa">🇸🇦 KSA</option>
+          </select></div>
+        <div class="f"><label>Container size</label>
+          <select name="size" id="f_size">
+            <option value="20ft">20 ft (~33 CBM)</option>
+            <option value="40ft">40 ft (~67 CBM)</option>
+            <option value="40hc">40 ft HC (~76 CBM)</option>
+          </select></div>
+      </div>
+      <div class="grid" style="margin-bottom:12px">
+        <div class="f"><label>Destination warehouse</label>
+          <select name="warehouse" id="f_wh"><option value="">— none —</option></select></div>
+        <div class="f"><label>Departure date</label><input type="date" id="f_dep"></div>
+        <div class="f"><label>ETA port</label><input type="date" id="f_etap"></div>
+        <div class="f"><label>ETA destination</label><input type="date" id="f_etad"></div>
+      </div>
+      <div class="grid">
+        <div class="f"><label>Status</label>
+          <select id="f_status">
+            <option value="waiting_pickup">Waiting for Pickup</option>
+            <option value="production_complete">Production Complete</option>
+            <option value="in_transit">In Transit</option>
+            <option value="on_vessel">On Vessel</option>
+            <option value="at_port">At Port</option>
+          </select></div>
+        <div class="f" style="grid-column:span 2"><label>Packing list (.xlsx)</label>
+          <input type="file" name="file" accept=".xlsx" required></div>
+        <div class="f"><label>&nbsp;</label>
+          <button type="submit" class="btn btn-primary btn-sm" style="width:100%">Preview allocation →</button></div>
+      </div>
+    </form>
+    <div class="muted" style="font-size:11px;margin-top:10px;line-height:1.55">
+      Expects <b>SKU</b> and <b>Units</b> (or Box × P/Box), with an optional
+      <b>PO Number</b> column. With a PO number the match is exact; without one,
+      units are drawn FIFO from that supplier's oldest open Production Plan —
+      check the PO shown on each line before confirming.
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="pnl_prev" style="display:none">
+  <h3>2 · Review — every line is drawn off a Production Plan</h3>
+  <div class="body">
+    <div id="banners"></div>
+    <div style="margin-bottom:12px">
+      <span class="stat">Units<b id="s_units">–</b></span>
+      <span class="stat">SKU lines<b id="s_lines">–</b></span>
+      <span class="stat">CBM<b id="s_cbm">–</b></span>
+      <span class="stat">Container fill<b id="s_fill">–</b><div class="bar"><i id="s_bar"></i></div></span>
+    </div>
+    <table class="t" id="t_prev"><thead><tr>
+      <th class="l">SKU</th><th class="l">Name</th><th>Boxes</th><th>Units</th>
+      <th class="l">FNSKU</th><th class="l">Drawn from</th><th>Open balance</th>
+    </tr></thead><tbody></tbody></table>
+    <div style="text-align:right;margin-top:14px">
+      <button class="btn btn-ghost btn-sm" onclick="reset_()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btnCommit" style="margin-left:6px"
+              onclick="commit()">✓ Confirm &amp; allocate to container</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const N = n => (n||0).toLocaleString();
+let PREV = null, PLANS = [], SUPS = [];
+
+async function boot(){
+  const s = await (await fetch('{% url "inventory_planning:api_suppliers" %}')).json();
+  SUPS = s.rows;
+  f_sup.innerHTML = '<option value="">— choose —</option>' +
+    SUPS.map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+  await loadWarehouses();
+  f_reg.onchange = loadWarehouses;
+}
+
+async function loadWarehouses(){
+  const w = await (await fetch(
+    `{% url "inventory_planning:warehouses" %}?region=${f_reg.value}`)).json();
+  f_wh.innerHTML = '<option value="">— none —</option>' +
+    (w.warehouses || []).map(x =>
+      `<option value="${x.code}">${x.name} — ${x.kind.toUpperCase()}</option>`).join('');
+}
+
+document.getElementById('upForm').onsubmit = async e => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Reading…';
+  try {
+    const r = await (await fetch('{% url "inventory_planning:api_packing_preview" %}',
+      {method:'POST', body:new FormData(e.target),
+       headers:{'X-CSRFToken':getCookie('csrftoken')}})).json();
+    if (r.status !== 'ok'){ alert(r.message); }
+    else { PREV = r; await loadPlans(); render(); }
+  } catch(err){ alert('Preview failed: ' + err); }
+  btn.disabled = false; btn.textContent = 'Preview allocation →';
+};
+
+async function loadPlans(){
+  const r = await (await fetch(`{% url "inventory_planning:api_open_plans" %}?supplier=${PREV.supplier_id}`)).json();
+  PLANS = r.rows;
+}
+
+/* every open PO line for a SKU — powers the override dropdown */
+function optionsFor(sku){
+  const out = [];
+  for (const p of PLANS)
+    for (const l of p.lines)
+      if (l.sku.toUpperCase() === sku.toUpperCase())
+        out.push({po_line_id:l.po_line_id, label:`${p.pp} · ${p.po}`,
+                  remaining:l.remaining});
+  return out;
+}
+
+function render(){
+  const p = PREV;
+  s_units.textContent = N(p.total_units);
+  s_lines.textContent = p.rows.length;
+  s_cbm.textContent = p.total_cbm;
+  s_fill.textContent = p.fill_pct != null ? p.fill_pct + '%' : '—';
+  const bar = document.getElementById('s_bar');
+  bar.style.width = Math.min(p.fill_pct||0, 100) + '%';
+  bar.className = (p.fill_pct||0) > 100 ? 'over' : '';
+
+  let b = '';
+  if (p.blocking) b += `<div class="banner e"><b>${p.errors} blocking problem(s).</b>
+      These lines cannot be allocated — fix the packing list or the PO, then re-upload.</div>`;
+  else b += `<div class="banner k">✓ All ${p.rows.length} lines resolved to a Production Plan.
+      Confirming will reduce each plan's open balance immediately.</div>`;
+  if (p.capacity_warning) b += `<div class="banner w">⚠ ${p.capacity_warning}</div>`;
+  document.getElementById('banners').innerHTML = b;
+
+  document.querySelector('#t_prev tbody').innerHTML = p.rows.map((r,i) => {
+    const cls = r.errors.length ? 'bad' : (r.warnings.length ? 'warn' : '');
+    const opts = optionsFor(r.sku);
+    let from;
+    if (!r.allocs.length) from = '<span class="muted">—</span>';
+    else if (r.allocs.length === 1 && opts.length > 1){
+      from = `<select class="posel" onchange="reassign(${i}, this.value)">` +
+        opts.map(o => `<option value="${o.po_line_id}"
+          ${o.po_line_id===r.allocs[0].po_line_id?'selected':''}>${o.label} — ${N(o.remaining)} open</option>`).join('')
+        + '</select>';
+    } else {
+      from = r.allocs.map(a => `<span class="chip">${a.pp} · ${a.po}</span> ${N(a.units)}u`).join('<br>');
+    }
+    const open = r.allocs.reduce((s,a)=>s+a.line_remaining,0);
+    return `<tr class="${cls}">
+      <td class="l"><b>${r.sku}</b></td><td class="l">${r.name||''}</td>
+      <td>${N(r.boxes)}</td><td><b>${N(r.units)}</b></td>
+      <td class="l">${r.fnsku || '<span class="msg e">missing</span>'}</td>
+      <td class="l">${from}
+        ${r.errors.map(e=>`<div class="msg e">✕ ${e}</div>`).join('')}
+        ${r.warnings.map(w=>`<div class="msg w">⚠ ${w}</div>`).join('')}</td>
+      <td>${open ? N(open) : '<span class="muted">—</span>'}</td></tr>`;
+  }).join('');
+
+  document.getElementById('btnCommit').disabled = p.blocking;
+  pnl_prev.style.display = '';
+  pnl_prev.scrollIntoView({behavior:'smooth'});
+}
+
+function reassign(i, poLineId){
+  const r = PREV.rows[i];
+  const opt = optionsFor(r.sku).find(o => String(o.po_line_id) === String(poLineId));
+  if (!opt) return;
+  const plan = PLANS.find(p => p.lines.some(l => l.po_line_id === opt.po_line_id));
+  r.allocs = [{po_line_id: opt.po_line_id, po: plan.po, pp: plan.pp,
+               units: r.units, line_remaining: opt.remaining}];
+  r.errors = opt.remaining < r.units
+    ? [`Over-allocation: only ${N(opt.remaining)} units open on ${plan.po}.`] : [];
+  r.warnings = ['Reassigned manually.'];
+  PREV.blocking = PREV.rows.some(x => x.errors.length);
+  PREV.errors = PREV.rows.reduce((s,x)=>s+x.errors.length,0);
+  render();
+}
+
+async function commit(){
+  const allocs = [];
+  for (const r of PREV.rows)
+    for (const a of r.allocs)
+      allocs.push({sku:r.sku, po_line_id:a.po_line_id, units:a.units,
+                   fnsku:r.fnsku, po:a.po});
+  const payload = {
+    supplier_id: PREV.supplier_id, region: PREV.region,
+    container: {container_no: f_cno.value, warehouse: f_wh.value,
+                departure_date: f_dep.value, eta_port: f_etap.value,
+                eta_destination: f_etad.value, status: f_status.value},
+    allocations: allocs};
+  const btn = document.getElementById('btnCommit');
+  btn.disabled = true; btn.textContent = 'Allocating…';
+  try {
+    const r = await (await fetch('{% url "inventory_planning:api_packing_commit" %}',
+      {method:'POST', body:JSON.stringify(payload),
+       headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')}})).json();
+    alert(r.message || r.status);
+    if (r.status === 'ok') reset_();
+  } catch(err){ alert('Commit failed: ' + err); }
+  btn.disabled = false; btn.textContent = '✓ Confirm & allocate to container';
+}
+
+function reset_(){ PREV = null; pnl_prev.style.display='none';
+                   document.getElementById('upForm').reset(); }
+function getCookie(n){
+  const m = document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');
+  return m ? m.pop() : '';
+}
+boot();
+</script>
+{% endblock %}

@@ -1,0 +1,537 @@
+{% extends "base/base.html" %}
+{% block title %}Inventory Planner{% endblock %}
+{% block nav_inv_planner %}active{% endblock %}
+{% block page_title %}Inventory Planner{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="regionSel">
+  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if can_edit %}
+<button class="btn btn-primary btn-sm" id="syncBtn" onclick="syncStock(this)"
+        title="Refresh FBA + AWD stock from Amazon now">⟳ Refresh Amazon Stock</button>
+<a class="btn btn-secondary btn-sm" style="margin-left:6px"
+   href="{% url 'inventory_planning:containers' %}"
+   title="Manage containers / transit inventory">🚢 Containers</a>
+{% endif %}
+<a class="btn btn-secondary btn-sm" style="margin-left:6px" href="#"
+   onclick="location=withR('{% url 'inventory_planning:export' %}');return false">⬇ Export Grid</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; cursor:pointer; }
+  .kpi-card .v { font-size:20px; font-weight:700; }
+  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card.crit .v { color:#C0392B; }
+  .kpi-card.warn .v { color:#9D6500; }
+  .kpi-card.exc  .v { color:#2456A6; }
+  .ipwrap { overflow:auto; max-height:74vh; border:1px solid #D5D9D9; border-radius:8px; background:#fff; }
+  table.ip { border-collapse:separate; border-spacing:0; font-size:12px; background:#fff; }
+  table.ip th { background:#EDEFF3; text-align:right; padding:6px 8px; font-size:10px;
+                text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9;
+                border-right:1px solid #EDEFF1; white-space:nowrap; cursor:pointer; }
+  table.ip thead th { position:sticky; top:0; z-index:3; }
+  table.ip th.lbl { text-align:left; }
+  table.ip td { padding:6px 8px; border-bottom:1px solid #EDEFF1; border-right:1px solid #EDEFF1;
+                text-align:right; white-space:nowrap; background:#fff; }
+  table.ip td.lbl { text-align:left; }
+  /* freeze the 4 left identity columns (Type/Category/Name/SKU) */
+  table.ip th:nth-child(1), table.ip td:nth-child(1){ position:sticky; left:0;    width:60px;  min-width:60px; z-index:2; }
+  table.ip th:nth-child(2), table.ip td:nth-child(2){ position:sticky; left:60px; width:96px;  min-width:96px; z-index:2; }
+  table.ip th:nth-child(3), table.ip td:nth-child(3){ position:sticky; left:156px;width:150px; min-width:150px; max-width:150px; overflow:hidden; text-overflow:ellipsis; z-index:2; }
+  table.ip th:nth-child(4), table.ip td:nth-child(4){ position:sticky; left:306px;width:118px; min-width:118px; z-index:2; box-shadow:2px 0 4px -2px rgba(0,0,0,.12); }
+  table.ip thead th:nth-child(-n+4){ z-index:5; }
+  tr.iprow { cursor:pointer; }
+  tr.iprow:hover td { background:#F8FAFB; }
+  .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
+  .st.critical { background:#FDE8E6; color:#C0392B; }
+  .st.warning  { background:#FFF4DC; color:#9D6500; }
+  .st.ok       { background:#E0F2EC; color:#067D62; }
+  .st.excess   { background:#EDF2FB; color:#2456A6; }
+  .st.dormant  { background:#EAEDED; color:#777; }
+  .mono { font-family:'DM Mono',monospace; }
+  .muted { color:#8A8A8A; }
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
+  .modal-bg.show { display:flex; align-items:center; justify-content:center; }
+  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:720px; max-width:94vw;
+                max-height:88vh; overflow-y:auto; }
+  .modal-card h3 { margin:0 0 10px; font-size:15px; }
+  .pdsedit { color:#2456A6; cursor:pointer; text-decoration:underline dotted; }
+  .data-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+              background:#F4F6F8; border:1px solid #D5D9D9; border-radius:8px;
+              padding:8px 12px; margin-bottom:14px; }
+  .data-bar .db-label { font-weight:700; font-size:12px; color:#232F3E; }
+  .data-bar .db-sep { width:1px; height:22px; background:#D5D9D9; }
+  .data-bar .db-hint { font-size:11px; color:#8A8A8A; margin-left:auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="data-bar">
+  <span class="db-label">📂 Data</span>
+  {% if can_edit %}
+  <button class="btn btn-secondary btn-sm" onclick="openUp('master')">⬆ Upload Inventory File</button>
+  <button class="btn btn-secondary btn-sm" onclick="openUp('containers')">⬆ Upload Container File</button>
+  <span class="db-sep"></span>
+  {% endif %}
+  <a class="btn btn-ghost btn-sm" href="#"
+     onclick="location=withR('{% url 'inventory_planning:master_template' %}');return false">⬇ Inventory Template</a>
+  <a class="btn btn-ghost btn-sm" href="#"
+     onclick="location=withR('{% url 'inventory_planning:container_template' %}');return false">⬇ Container Template</a>
+  <span class="db-hint">Inventory File = SKU + PDS + 3PL stock · Container File = transit · Amazon FBA/AWD via “⟳ Refresh Amazon Stock”</span>
+</div>
+
+<div class="kpi-strip">
+  <div class="kpi-card crit" onclick="setFilter('critical')"><div class="v" id="k_crit">–</div><div class="l">🔴 Short within lead time</div></div>
+  <div class="kpi-card warn" onclick="setFilter('warning')"><div class="v" id="k_warn">–</div><div class="l">🟡 Shortage in 120 days</div></div>
+  <div class="kpi-card exc" onclick="setFilter('excess')"><div class="v" id="k_exc">–</div><div class="l">🔵 Overstocked (&gt;150d)</div></div>
+  <div class="kpi-card" onclick="setFilter('')"><div class="v" id="k_transit">–</div><div class="l">🚢 Units in transit</div></div>
+  <div class="kpi-card" onclick="filterNoPds()"><div class="v" id="k_nopds">–</div><div class="l">✏️ SKUs missing PDS</div></div>
+  <div class="kpi-card" onclick="setFilter('')"><div class="v" id="k_total">–</div><div class="l">SKUs planned</div></div>
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+  <select id="fStatus" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="renderGrid()">
+    <option value="">All statuses</option>
+    <option value="critical">🔴 Critical</option><option value="warning">🟡 Warning</option>
+    <option value="ok">🟢 OK</option><option value="excess">🔵 Excess</option>
+    <option value="no_pds">No PDS</option>
+  </select>
+  <select id="fCat" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="renderGrid()">
+    <option value="">All categories</option>
+  </select>
+  <select id="fType" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="renderGrid()">
+    <option value="">All tiers</option>
+  </select>
+  <input id="fQ" class="form-control" style="width:220px;padding:5px 8px;font-size:12px"
+         placeholder="Search SKU / name…" oninput="renderGrid()"/>
+  <label style="font-size:11px;color:#5A6470"><input type="checkbox" id="fNoPds" onchange="renderGrid()"/> missing PDS only</label>
+  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+  <button class="btn btn-ghost btn-sm" onclick="toggleTransit()">🚢 Containers <span id="shipCount"></span></button>
+</div>
+
+<div id="transitPanel" style="display:none;margin-bottom:12px"></div>
+
+<div class="ipwrap">
+<table class="ip">
+  <thead><tr id="headRow">
+    <th class="lbl" data-k="sku_type">SKU Type</th>
+    <th class="lbl" data-k="category">Category</th>
+    <th class="lbl" data-k="name">Name</th>
+    <th class="lbl" data-k="sku">SKU</th>
+    <th data-k="ads" title="Avg units/day, last 7 days (live)">Avg Daily Sale</th>
+    <th data-k="avg30" title="Avg units/day, last 30 days">Avg 30d Sale</th>
+    <th data-k="avg90" title="Avg units/day, last 90 days">Avg 90d Sale</th>
+    <th data-k="pds" title="Potential Daily Sale — click a cell to edit">Potential Daily Sale</th>
+    <th data-k="cov_30" title="(Available+Reserved) ÷ Avg30">Cov Days (30d)</th>
+    <th data-k="cov_90" title="(Available+Reserved) ÷ Avg90">Cov Days (90d)</th>
+    <th data-k="days_avail_pds" title="Available ÷ PDS">Days (Avail/PDS)</th>
+    <th data-k="available">Available</th>
+    <th data-k="inbound">Inbound</th>
+    <th data-k="reserved">Reserved</th>
+    <th data-k="total_amazon" title="Available+Inbound+Reserved">Total Inv Amazon</th>
+    <th data-k="cov_amazon" title="Total Amazon ÷ PDS">Cov Days Amazon</th>
+    <th data-k="stock_req_days" title="Target days − Amazon coverage">Stock Req Days</th>
+    <th data-k="units_req_fc" title="PDS × Stock Req Days">Units Req at FC</th>
+    <th data-k="three_pl" title="All 3PL warehouses — updated by Ops">3PL WH</th>
+    <th data-k="awd" title="Amazon AWD — synced from Amazon (falls back to Ops workbook until the AWD API role is enabled)">AWD</th>
+    <th data-k="total_wh" title="3PL + AWD">Total WH Inv</th>
+    <th data-k="cov_wh" title="Total WH ÷ PDS">Cov Days WH</th>
+    <th data-k="transit">In Transit</th>
+    <th data-k="cov_transit" title="Transit ÷ PDS">Cov Days Transit</th>
+    <th data-k="total_cov_usa" title="Amazon + WH + Transit coverage">Total Cov USA</th>
+    <th data-k="pak_stock">In Hand Pakistan</th>
+    <th data-k="cov_pak" title="Pakistan ÷ PDS">Cov Days PK</th>
+    <th data-k="in_production">In Production</th>
+    <th data-k="total_cov" title="(Amazon+WH+Transit+Pakistan) ÷ PDS">Total Cov Days</th>
+    <th data-k="status">Status</th>
+  </tr></thead>
+  <tbody id="tbody"><tr><td colspan="30" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr></tbody>
+</table>
+</div>
+
+<!-- drill-down modal -->
+<div class="modal-bg" id="drillModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-card">
+    <h3 id="drillTitle">—</h3>
+    <div id="drillMeta" style="font-size:12px;color:#5A6470;margin-bottom:8px"></div>
+    <canvas id="drillChart" height="110"></canvas>
+  </div>
+</div>
+
+<!-- PDS edit modal -->
+<div class="modal-bg" id="pdsModal" onclick="if(event.target===this)closePds()">
+  <div class="modal-card" style="width:400px">
+    <h3 style="margin:0 0 4px">Set Potential Daily Sale</h3>
+    <div id="pdsSub" style="font-size:12px;color:#5A6470;margin-bottom:14px"></div>
+    <label style="font-size:11px;color:#555">PDS — potential units sold per day</label>
+    <input id="pdsInput" type="number" min="0" step="0.1" class="form-control"
+           style="font-size:16px;padding:8px" onkeydown="if(event.key==='Enter')savePdsModal()"/>
+    <div id="pdsMsg" style="font-size:11px;color:#C0392B;margin-top:6px;min-height:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-secondary btn-sm" onclick="closePds()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pdsSaveBtn" onclick="savePdsModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- container modal -->
+<div class="modal-bg" id="contModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-card">
+    <h3 id="contTitle">Add Container</h3>
+    <input type="hidden" id="contId"/>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div><label style="font-size:11px;color:#555">Container No.</label>
+        <input id="contNo" class="form-control" placeholder="e.g. ONEU1234567"/></div>
+      <div><label style="font-size:11px;color:#555">Vendor</label>
+        <input id="contVendor" class="form-control" placeholder="e.g. AKT"/></div>
+      <div><label style="font-size:11px;color:#555">Destination</label>
+        <select id="contDest" class="form-control"></select></div>
+      <div><label style="font-size:11px;color:#555">Status</label>
+        <select id="contStatus" class="form-control">
+          <option value="departed">On the water</option>
+          <option value="pending">Pending departure</option>
+          <option value="at_port">At port</option>
+          <option value="received">Received</option>
+        </select></div>
+      <div><label style="font-size:11px;color:#555">Departure date</label>
+        <input id="contDep" type="date" class="form-control"/></div>
+      <div><label style="font-size:11px;color:#555">ETA Port (ETA dest = +10d)</label>
+        <input id="contEta" type="date" class="form-control"/></div>
+    </div>
+    <div style="margin-top:12px;font-size:12px;font-weight:600">SKUs & Units</div>
+    <div id="contLines"></div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <input id="clSku" class="form-control" style="flex:2" placeholder="SKU"/>
+      <input id="clUnits" type="number" class="form-control" style="flex:1" placeholder="Units"/>
+      <button class="btn btn-secondary btn-sm" onclick="addContLine()">+ Add</button>
+    </div>
+    <div class="modal-actions" style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
+      <button class="btn btn-ghost btn-sm" id="contDelBtn" style="display:none" onclick="deleteContainer()">Delete</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('contModal').classList.remove('show')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveContainer()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- upload modal -->
+<div class="modal-bg" id="upModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-card" style="width:460px">
+    <h3 id="upTitle">Upload</h3>
+    <p id="upHint" style="font-size:11px;color:#5A6470"></p>
+    <input type="file" id="upFile" accept=".xlsx"/>
+    <div id="upMsg" style="font-size:11px;margin-top:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('upModal').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="doUpload()">Upload</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const U_API = "{% url 'inventory_planning:api_planner' %}";
+const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
+let data = null, upKind = null, chart = null, curRegion = 'usa';
+let sortKey = 'status', sortDir = 1;
+const TEXT_COLS = new Set(['sku_type','category','name','sku','status']);
+let contLines = [];
+function setRegion(r, btn){
+  curRegion = r;
+  document.querySelectorAll('#regionSel .mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  load();
+}
+function withR(url){ return url + (url.includes('?')?'&':'?') + 'region=' + curRegion; }
+function csrf(){ return document.cookie.split('; ').find(c=>c.startsWith('csrftoken='))?.split('=')[1] || ''; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+function n(v){ return (v===null||v===undefined||v==='') ? '—' : Number(v).toLocaleString('en-US'); }
+
+async function load(){
+  const r = await fetch(withR(U_API)); data = await r.json();
+  document.getElementById('k_crit').textContent = data.kpi.critical;
+  document.getElementById('k_warn').textContent = data.kpi.warning;
+  document.getElementById('k_exc').textContent  = data.kpi.excess;
+  document.getElementById('k_transit').textContent = n(data.kpi.transit_units);
+  document.getElementById('k_nopds').textContent = data.kpi.no_pds;
+  document.getElementById('k_total').textContent = data.rows.length;
+  document.getElementById('shipCount').textContent = '(' + data.shipments.length + ')';
+  const cats = [...new Set(data.rows.map(r=>r.category).filter(Boolean))].sort();
+  document.getElementById('fCat').innerHTML = '<option value="">All categories</option>' +
+    cats.map(c=>`<option>${esc(c)}</option>`).join('');
+  const tiers = [...new Set(data.rows.map(r=>r.sku_type).filter(Boolean))].sort();
+  document.getElementById('fType').innerHTML = '<option value="">All tiers</option>' +
+    tiers.map(t=>`<option>${esc(t)}</option>`).join('');
+  // bind click-to-sort once
+  document.querySelectorAll('#headRow th').forEach(th=>{
+    if (!th._bound){ th._bound = true;
+      th.addEventListener('click', ()=>sortBy(th.dataset.k)); }
+  });
+  renderGrid(); renderTransit();
+}
+
+function setFilter(st){ document.getElementById('fStatus').value = st; document.getElementById('fNoPds').checked=false; renderGrid(); }
+function filterNoPds(){ document.getElementById('fNoPds').checked = true; document.getElementById('fStatus').value=''; renderGrid(); }
+
+function num(v){ return (v===null||v===undefined||v==='') ? '—' : v; }
+function cov(v){ return (v===null||v===undefined) ? '—' : v; }
+
+function sortBy(k){
+  if (sortKey===k) sortDir = -sortDir; else { sortKey=k; sortDir = TEXT_COLS.has(k)?1:-1; }
+  renderGrid();
+}
+
+function renderGrid(){
+  if (!data) return;
+  const st = document.getElementById('fStatus').value;
+  const cat = document.getElementById('fCat').value;
+  const ty = document.getElementById('fType').value;
+  const q = document.getElementById('fQ').value.toLowerCase();
+  const noPds = document.getElementById('fNoPds').checked;
+  let rows = data.rows.filter(r =>
+    (!st || r.status===st) && (!cat || r.category===cat) && (!ty || r.sku_type===ty)
+    && (!noPds || r.pds===null)
+    && (!q || r.sku.toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q)));
+
+  const statusOrder = {critical:0, warning:1, no_pds:2, ok:3, excess:4};
+  rows = rows.slice().sort((a,b)=>{
+    let av=a[sortKey], bv=b[sortKey];
+    if (sortKey==='status'){ av=statusOrder[av]??9; bv=statusOrder[bv]??9; }
+    if (av===null||av===undefined) av = TEXT_COLS.has(sortKey)?'':-Infinity;
+    if (bv===null||bv===undefined) bv = TEXT_COLS.has(sortKey)?'':-Infinity;
+    if (typeof av==='string') return sortDir*av.localeCompare(bv);
+    return sortDir*(av-bv);
+  });
+  document.getElementById('countLbl').textContent = rows.length + ' SKU(s)';
+
+  // header sort arrows
+  document.querySelectorAll('#headRow th').forEach(th=>{
+    const k = th.dataset.k;
+    th.style.cursor='pointer';
+    th.dataset.base = th.dataset.base || th.textContent.replace(/[▲▼]\s*$/,'');
+    th.textContent = th.dataset.base + (k===sortKey ? (sortDir>0?' ▲':' ▼') : '');
+  });
+
+  document.getElementById('tbody').innerHTML = rows.length ? rows.map(r=>{
+    const idx = data.rows.indexOf(r);
+    const pdsCell = CAN_EDIT
+      ? `<span class="pdsedit" onclick="event.stopPropagation();editPds('${r.sku}',${r.pds===null?'null':r.pds})">${r.pds===null?'set':r.pds}</span>`
+      : num(r.pds);
+    const tplTip = Object.entries(r.threepl_detail).map(([k,v])=>`${k} ${v}`).join(' · ') || '—';
+    const trn = n(r.transit) + (r.transit_unscheduled
+      ? ` <span class="muted" title="${r.transit_unscheduled} units in transit without ETA">(+${r.transit_unscheduled}?)</span>` : '');
+    const reqCls = r.units_req_fc > 0 ? 'style="color:#C0392B;font-weight:600"' : '';
+    return `<tr class="iprow" onclick="drill(${idx})">
+      <td class="lbl">${esc(r.sku_type)}</td>
+      <td class="lbl">${esc(r.category)}</td>
+      <td class="lbl" title="${esc(r.name)}">${esc((r.name||'').slice(0,28))}</td>
+      <td class="lbl mono">${esc(r.sku)}</td>
+      <td>${r.ads}</td><td>${r.avg30}</td><td>${r.avg90}</td>
+      <td>${pdsCell}</td>
+      <td>${cov(r.cov_30)}</td><td>${cov(r.cov_90)}</td><td>${cov(r.days_avail_pds)}</td>
+      <td>${n(r.available)}</td><td>${n(r.inbound)}</td><td>${n(r.reserved)}</td>
+      <td><b>${n(r.total_amazon)}</b></td><td>${cov(r.cov_amazon)}</td>
+      <td>${r.stock_req_days}</td><td ${reqCls}>${n(r.units_req_fc)}</td>
+      <td title="${esc(tplTip)}">${n(r.three_pl)}</td><td>${n(r.awd)}</td>
+      <td>${n(r.total_wh)}</td><td>${cov(r.cov_wh)}</td>
+      <td>${trn}</td><td>${cov(r.cov_transit)}</td>
+      <td><b>${cov(r.total_cov_usa)}</b></td>
+      <td>${n(r.pak_stock)}</td><td>${cov(r.cov_pak)}</td><td>${n(r.in_production)}</td>
+      <td><b>${cov(r.total_cov)}</b></td>
+      <td><span class="st ${r.status}">${r.status.replace('_',' ').toUpperCase()}</span></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="30" style="text-align:center;color:#8A8A8A;padding:30px">No SKUs match.</td></tr>';
+}
+
+function renderTransit(){
+  const p = document.getElementById('transitPanel');
+  if (!data.shipments.length){ p.innerHTML='<div class="muted" style="font-size:12px">No active shipments.</div>'; return; }
+  p.innerHTML = `<table class="ip"><thead><tr>
+    <th class="lbl">Container</th><th class="lbl">Vendor</th><th class="lbl">Destination</th>
+    <th>Departed</th><th>ETA Port</th><th>ETA Dest.</th><th>Units</th><th>SKUs</th><th>Status</th>${CAN_EDIT?'<th></th>':''}</tr></thead><tbody>` +
+    data.shipments.map(s=>`<tr>
+      <td class="lbl mono">${esc(s.container)}</td><td class="lbl">${esc(s.vendor)}</td>
+      <td class="lbl">${esc(s.destination)}</td>
+      <td>${s.departure||'—'}</td><td>${s.eta_port||'—'}</td><td>${s.eta_dest||'—'}</td>
+      <td>${n(s.units)}</td><td>${s.skus}</td>
+      <td><span class="st ${s.status==='at_port'?'warning':(s.status==='departed'?'ok':'dormant')}">${s.status}</span></td>
+      ${CAN_EDIT?`<td class="lbl"><span class="pdsedit" onclick="openContainer(${s.id})">edit</span></td>`:''}
+    </tr>`).join('') + '</tbody></table>';
+}
+function toggleTransit(){
+  const p = document.getElementById('transitPanel');
+  p.style.display = p.style.display==='none' ? '' : 'none';
+}
+
+function drill(idx){
+  const r = data.rows[idx];
+  document.getElementById('drillTitle').textContent = r.sku + ' — ' + (r.name||'');
+  const onhand = r.total_amazon + r.total_wh;
+  document.getElementById('drillMeta').innerHTML =
+    `Amazon <b>${n(r.total_amazon)}</b> · WH <b>${n(r.total_wh)}</b> · Transit <b>${n(r.transit)}</b> · PDS <b>${num(r.pds)}</b> · ADS <b>${r.ads}</b>`
+    + (r.stockout_date ? ` · Stockout <b style="color:#C0392B">${r.stockout_date}</b> · Order by <b>${r.order_overdue?'NOW':r.order_by}</b>` : ' · No stockout in 120d');
+  const labels = r.series.map((_,i)=>{
+    const d = new Date(data.today); d.setDate(d.getDate()+i);
+    return d.toISOString().slice(5,10);
+  });
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('drillChart'), {
+    type:'line',
+    data:{ labels, datasets:[{ label:'Projected units', data:r.series,
+      borderColor:'#2456A6', backgroundColor:'rgba(36,86,166,.08)', fill:true,
+      pointRadius:0, borderWidth:2, tension:.25 }]},
+    options:{ plugins:{legend:{display:false}},
+      scales:{ x:{ticks:{maxTicksLimit:12,font:{size:10}}},
+               y:{beginAtZero:false, grid:{color:'#EDEFF1'}} } }
+  });
+  document.getElementById('drillModal').classList.add('show');
+}
+
+let pdsSku = null;
+function editPds(sku, cur){
+  pdsSku = sku;
+  const row = (data.rows||[]).find(r=>r.sku===sku) || {};
+  document.getElementById('pdsSub').innerHTML =
+    `<b class="mono">${esc(sku)}</b> ${row.name?'· '+esc(row.name):''}`
+    + `<br>7-day avg sale (ADS): <b>${row.ads??'—'}</b> units/day`;
+  document.getElementById('pdsInput').value = (cur===null||cur===undefined)?'':cur;
+  document.getElementById('pdsMsg').textContent = '';
+  document.getElementById('pdsModal').classList.add('show');
+  setTimeout(()=>document.getElementById('pdsInput').focus(), 50);
+}
+function closePds(){ document.getElementById('pdsModal').classList.remove('show'); }
+async function savePdsModal(){
+  const v = document.getElementById('pdsInput').value;
+  if (v==='' || isNaN(parseFloat(v)) || parseFloat(v)<0){
+    document.getElementById('pdsMsg').textContent = 'Enter a valid number (0 or more).'; return;
+  }
+  const btn = document.getElementById('pdsSaveBtn'); btn.disabled=true; btn.textContent='Saving…';
+  const r = await fetch("{% url 'inventory_planning:save_pds' %}", {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body: JSON.stringify({sku: pdsSku, pds: parseFloat(v), region: curRegion})});
+  btn.disabled=false; btn.textContent='Save';
+  if (r.ok){ closePds(); load(); }
+  else document.getElementById('pdsMsg').textContent = 'Save failed — try again.';
+}
+
+async function syncStock(btn){
+  btn.disabled = true; const old = btn.textContent; btn.textContent = '⟳ Syncing… (1–2 min)';
+  try{
+    const r = await fetch("{% url 'inventory_planning:api_sync_stock' %}", {method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+      body: JSON.stringify({region: curRegion})});
+    const j = await r.json();
+    if (j.status==='ok'){
+      let msg = `Synced ${j.fba_skus} FBA SKUs`;
+      if (j.awd_skus) msg += `, ${j.awd_skus} AWD SKUs`;
+      else if (j.awd_error) msg += `. AWD unavailable (${j.awd_error.slice(0,60)}) — AWD stock comes from the ops workbook until the AWD role is enabled.`;
+      alert(msg); load();
+    } else alert('Sync failed: ' + (j.error||''));
+  }catch(e){ alert('Sync failed: '+e); }
+  btn.disabled=false; btn.textContent=old;
+}
+
+function openUp(kind){
+  upKind = kind;
+  document.getElementById('upTitle').textContent =
+    kind==='master' ? 'Upload Inventory File (SKU + PDS + 3PL)' : 'Upload Container File';
+  document.getElementById('upHint').textContent = kind==='master'
+    ? 'One row per SKU. Columns: SKU · Name · Category · SKU Type · Status · PDS · In Hand Pakistan · In Production · one column per 3PL warehouse. Download the template (pre-filled with your SKUs). Discontinued SKUs are dropped; imported 3PL stock is replaced.'
+    : 'One row per SKU-in-container. Columns: Container No · Vendor · Destination · Departure Date · ETA Port · Status · SKU · Units. Each container is upserted by its number.';
+  document.getElementById('upMsg').textContent=''; document.getElementById('upFile').value='';
+  document.getElementById('upModal').classList.add('show');
+}
+async function doUpload(){
+  const f = document.getElementById('upFile').files[0];
+  if (!f){ document.getElementById('upMsg').textContent='Pick a file first.'; return; }
+  const fd = new FormData(); fd.append('file', f); fd.append('region', curRegion);
+  const url = upKind==='master' ? "{% url 'inventory_planning:import_master' %}"
+                                : "{% url 'inventory_planning:import_containers' %}";
+  document.getElementById('upMsg').textContent = 'Uploading…';
+  const r = await fetch(url, {method:'POST', headers:{'X-CSRFToken':csrf()}, body:fd});
+  const j = await r.json();
+  document.getElementById('upMsg').textContent = (j.status==='ok'?'✓ ':'✗ ') + (j.message||'');
+  if (j.status==='ok') setTimeout(()=>{document.getElementById('upModal').classList.remove('show'); load();}, 1200);
+}
+
+// ── containers (ops) ──────────────────────────────────────────
+function renderContLines(){
+  document.getElementById('contLines').innerHTML = contLines.length
+    ? contLines.map((l,i)=>`<div style="display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0">
+        <span class="mono" style="flex:2">${esc(l.sku)}</span>
+        <span style="flex:1;text-align:right">${n(l.units)}</span>
+        <span class="pdsedit" onclick="contLines.splice(${i},1);renderContLines()">remove</span></div>`).join('')
+    : '<div class="muted" style="font-size:11px">No SKUs yet.</div>';
+}
+function addContLine(){
+  const sku = document.getElementById('clSku').value.trim().toUpperCase();
+  const units = parseInt(document.getElementById('clUnits').value)||0;
+  if (!sku || units<=0) return;
+  contLines.push({sku, units});
+  document.getElementById('clSku').value=''; document.getElementById('clUnits').value='';
+  renderContLines();
+}
+async function openContainer(id){
+  contLines = [];
+  // fill destinations
+  const wr = await (await fetch(withR("{% url 'inventory_planning:warehouses' %}"))).json();
+  document.getElementById('contDest').innerHTML = '<option value="">—</option>' +
+    wr.warehouses.map(w=>`<option value="${w.code}">${esc(w.name)} (${w.kind.toUpperCase()})</option>`).join('');
+  const set=(id2,v)=>document.getElementById(id2).value=v||'';
+  if (id){
+    const c = await (await fetch(`/planning/api/container/${id}/`)).json();
+    document.getElementById('contTitle').textContent = 'Edit Container';
+    set('contId',c.id); set('contNo',c.container_no); set('contVendor',c.vendor);
+    set('contDest',c.destination_code); set('contStatus',c.status);
+    set('contDep',c.departure); set('contEta',c.eta_port);
+    contLines = c.lines.slice();
+    document.getElementById('contDelBtn').style.display='';
+  } else {
+    document.getElementById('contTitle').textContent = 'Add Container';
+    ['contId','contNo','contVendor','contDep','contEta'].forEach(k=>set(k,''));
+    document.getElementById('contStatus').value='departed';
+    document.getElementById('contDelBtn').style.display='none';
+  }
+  renderContLines();
+  document.getElementById('contModal').classList.add('show');
+}
+async function saveContainer(){
+  if (!contLines.length){ alert('Add at least one SKU + units.'); return; }
+  const body = {
+    id: document.getElementById('contId').value || null,
+    region: curRegion,
+    container_no: document.getElementById('contNo').value,
+    vendor: document.getElementById('contVendor').value,
+    destination_code: document.getElementById('contDest').value,
+    status: document.getElementById('contStatus').value,
+    departure: document.getElementById('contDep').value,
+    eta_port: document.getElementById('contEta').value,
+    lines: contLines,
+  };
+  const r = await fetch("{% url 'inventory_planning:save_container' %}", {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}, body:JSON.stringify(body)});
+  if (r.ok){ document.getElementById('contModal').classList.remove('show'); load(); }
+  else alert('Save failed');
+}
+async function deleteContainer(){
+  const id = document.getElementById('contId').value;
+  if (!id || !confirm('Delete this container?')) return;
+  await fetch("{% url 'inventory_planning:delete_container' %}", {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}, body:JSON.stringify({id})});
+  document.getElementById('contModal').classList.remove('show'); load();
+}
+
+load();
+</script>
+{% endblock %}

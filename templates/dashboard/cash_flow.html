@@ -1,0 +1,133 @@
+{% extends "base/base.html" %}
+{% block title %}Cash Flow{% endblock %}
+{% block nav_cash_flow %}active{% endblock %}
+{% block page_title %}Cash Flow — Amazon Payouts{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .cf-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+              gap:12px; margin-bottom:16px; }
+  .cf-card  { background:#FFF; border:1px solid #D5D9D9; border-radius:8px;
+              padding:14px 16px; border-left:4px solid #232F3E; }
+  .cf-card .lbl { font-size:11px; color:#5A6470; text-transform:uppercase;
+                  letter-spacing:.4px; }
+  .cf-card .val { font-size:22px; font-weight:700; margin-top:4px; }
+  .cf-card .sub { font-size:11px; color:#8A8A8A; margin-top:3px; }
+  .cf-card.green { border-left-color:#067D62; }
+  .cf-card.red   { border-left-color:#B12704; }
+  .cf-card.amber { border-left-color:#D17B00; }
+  table.cf { width:100%; border-collapse:collapse; font-size:12px;
+             background:#FFF; border:1px solid #D5D9D9; border-radius:8px; }
+  table.cf th { background:#F4F6F8; padding:8px 12px; text-align:right;
+                border-bottom:2px solid #232F3E; white-space:nowrap; }
+  table.cf th:first-child, table.cf td:first-child { text-align:left; }
+  table.cf td { padding:6px 12px; text-align:right; border-bottom:1px solid #F2F4F6; }
+  .neg { color:#B12704; } .pos { color:#067D62; }
+  .cf-note { font-size:11px; color:#5A6470; background:#F4F6F8;
+             border:1px solid #D5D9D9; border-radius:6px; padding:8px 12px;
+             margin-bottom:14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cf-note">
+  Built from the monthly <b>Unified Transaction report</b> uploads (Management P&L page →
+  “Upload Txn Report”). <b>Net proceeds</b> = money earned into your Amazon balance
+  (sales − all Amazon fees, taxes pass through). <b>Payouts</b> = transfers Amazon made
+  to your bank. <b>Deferred</b> = earned but still held by Amazon (~7-day DD+7 hold) —
+  money Amazon still needs to pay you.
+</div>
+
+<div class="cf-cards" id="cfCards">
+  <div class="cf-card green"><div class="lbl">Net proceeds (latest month)</div>
+    <div class="val" id="cProceeds">—</div><div class="sub">earned into Amazon balance</div></div>
+  <div class="cf-card"><div class="lbl">Payouts made</div>
+    <div class="val" id="cPayouts">—</div><div class="sub" id="cPayoutsN">transfers to bank</div></div>
+  <div class="cf-card amber"><div class="lbl">Balance movement</div>
+    <div class="val" id="cMovement">—</div><div class="sub">proceeds − payouts</div></div>
+  <div class="cf-card red"><div class="lbl">Deferred (Amazon owes)</div>
+    <div class="val" id="cDeferred">—</div><div class="sub">earned, not yet released</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+  <div>
+    <h3 style="font-size:14px;margin:0 0 8px">Monthly cash bridge</h3>
+    <table class="cf">
+      <thead><tr><th>Month</th><th>Net proceeds</th><th>Payouts</th>
+        <th>Movement</th><th>Cumulative</th><th>Deferred</th></tr></thead>
+      <tbody id="cfMonths"><tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div>
+    <h3 style="font-size:14px;margin:0 0 8px">Payouts Amazon made</h3>
+    <table class="cf">
+      <thead><tr><th>Date</th><th>Amount</th></tr></thead>
+      <tbody id="cfPayouts"><tr><td colspan="2" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const U_API = "{% url 'dashboard:api_cash_flow' %}";
+let currentMP = "{{ marketplace }}";
+
+function setMP(mp, btn){
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  load();
+}
+function money(v){
+  const neg = v<0;
+  const s = Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  return `<span class="${neg?'neg':'pos'}">${neg?'-':''}$${s}</span>`;
+}
+async function load(){
+  const r = await fetch(U_API + '?mp=' + currentMP);
+  const j = await r.json();
+
+  const L = j.latest;
+  if (L){
+    document.getElementById('cProceeds').innerHTML = money(L.net_proceeds);
+    document.getElementById('cPayouts').innerHTML  = money(-L.payouts);
+    document.getElementById('cMovement').innerHTML = money(L.movement);
+    document.getElementById('cDeferred').innerHTML = money(L.deferred);
+    const n = j.payouts.filter(p=>p.month===L.month).length;
+    document.getElementById('cPayoutsN').textContent = n + ' transfer(s) to bank in ' + L.month.slice(0,7);
+  } else {
+    ['cProceeds','cPayouts','cMovement','cDeferred'].forEach(id=>
+      document.getElementById(id).textContent='—');
+  }
+
+  document.getElementById('cfMonths').innerHTML = j.months.length
+    ? j.months.map(m=>`<tr>
+        <td>${m.month.slice(0,7)}</td>
+        <td>${money(m.net_proceeds)}</td>
+        <td>${money(-m.payouts)}</td>
+        <td>${money(m.movement)}</td>
+        <td>${money(m.cumulative)}</td>
+        <td>${money(m.deferred)}</td></tr>`).join('')
+    : '<tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">No uploads yet — upload a Unified Transaction report on the Management P&L page.</td></tr>';
+
+  document.getElementById('cfPayouts').innerHTML = j.payouts.length
+    ? j.payouts.map(p=>`<tr><td>${p.date}</td><td>${money(-p.amount)}</td></tr>`).join('')
+    : '<tr><td colspan="2" style="text-align:center;color:#8A8A8A;padding:24px">No payouts recorded.</td></tr>';
+}
+load();
+</script>
+{% endblock %}

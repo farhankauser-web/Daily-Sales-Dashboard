@@ -1,0 +1,94 @@
+{% extends "base/base.html" %}
+{% block title %}Atlas Customers{% endblock %}
+{% block nav_atlas_customers %}active{% endblock %}
+{% block page_title %}Customers — {{ company.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="mp-switcher">
+  {% for c in companies %}
+  <a href="{% url 'atlas:customers' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px">
+  <div class="card"><div class="card-header"><div class="card-title">Customers</div></div>
+    <div class="card-body" style="padding:0">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#F4F6F8">
+          <th style="padding:6px 10px;text-align:left">Name</th>
+          <th style="padding:6px 10px">Kg rate (Local)</th>
+          <th style="padding:6px 10px">Kg rate (Container)</th>
+          <th style="padding:6px 10px;text-align:left">Default term</th>
+          <th style="padding:6px 10px">Quotes</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for c in rows %}
+          <tr {% if not c.is_active %}style="opacity:.5"{% endif %}>
+            <td style="padding:6px 10px">{{ c.name }}
+              {% if c.contact_person %}<div style="font-size:10px;color:#5A6470">{{ c.contact_person }} · {{ c.email }}</div>{% endif %}</td>
+            <td style="padding:6px 10px;text-align:center">{{ c.kg_rate_local|default:"—" }}</td>
+            <td style="padding:6px 10px;text-align:center">{{ c.kg_rate_container|default:"—" }}</td>
+            <td style="padding:6px 10px">{{ c.default_payment_term|default:"—" }}</td>
+            <td style="padding:6px 10px;text-align:center">{{ c.quotations.count }}</td>
+            <td style="padding:6px 10px">
+              <a class="btn btn-ghost btn-sm" href="{% url 'atlas:customer_edit' c.pk %}?co={{ company.code }}">Edit</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">No customers yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">{% if edit %}Edit — {{ edit.name }}{% else %}New Customer{% endif %}</div></div>
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="co" value="{{ company.code }}"/>
+        <div class="form-group"><label class="form-label">Name *</label>
+          <input name="name" class="form-control" value="{{ edit.name|default:'' }}" required/></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="form-group"><label class="form-label">Contact person</label>
+            <input name="contact_person" class="form-control" value="{{ edit.contact_person|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Phone</label>
+            <input name="phone" class="form-control" value="{{ edit.phone|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Email</label>
+            <input name="email" class="form-control" value="{{ edit.email|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">TRN</label>
+            <input name="trn" class="form-control" value="{{ edit.trn|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Kg rate — Local</label>
+            <input name="kg_rate_local" type="number" step="0.0001" class="form-control"
+                   value="{{ edit.kg_rate_local|default:'' }}"/></div>
+          <div class="form-group"><label class="form-label">Kg rate — Container</label>
+            <input name="kg_rate_container" type="number" step="0.0001" class="form-control"
+                   value="{{ edit.kg_rate_container|default:'' }}"/></div>
+        </div>
+        <div class="form-group"><label class="form-label">Default payment term (locked to profile)</label>
+          <select name="default_payment_term" class="form-control">
+            <option value="">—</option>
+            {% for t in terms %}
+            <option value="{{ t.pk }}" {% if edit.default_payment_term_id == t.pk %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+          </select></div>
+        <div class="form-group"><label class="form-label">Address</label>
+          <textarea name="address" class="form-control" rows="2">{{ edit.address|default:'' }}</textarea></div>
+        <div class="form-group"><label class="form-label">Terms &amp; conditions (shown on documents)</label>
+          <textarea name="terms_conditions" class="form-control" rows="2">{{ edit.terms_conditions|default:'' }}</textarea></div>
+        <div class="form-group"><label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="2">{{ edit.notes|default:'' }}</textarea></div>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:10px">
+          <input type="checkbox" name="is_active" {% if not edit or edit.is_active %}checked{% endif %}/> Active</label>
+        <button class="btn btn-primary">{% if edit %}Save changes{% else %}Create customer{% endif %}</button>
+        <div style="font-size:11px;color:#5A6470;margin-top:8px">
+          Per-article kg-rate overrides (Option 2) are managed in
+          <a href="/admin/atlas/customerkgrate/">Admin → Customer kg rates</a>.
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

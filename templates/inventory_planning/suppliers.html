@@ -1,0 +1,355 @@
+{% extends "base/base.html" %}
+{% block title %}Suppliers{% endblock %}
+{% block nav_inv_suppliers %}active{% endblock %}
+{% block page_title %}Suppliers — Procurement Ledger{% endblock %}
+
+{% block topbar_actions %}
+{% if can_edit %}
+<button class="btn btn-primary btn-sm" onclick="openUp('po')">⬆ Upload Purchase Order</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUp('opening')">⬆ Upload Opening Balance</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUp('wastage')">⬆ Upload Wastage</button>
+{% endif %}
+<a class="btn btn-ghost btn-sm" style="margin-left:6px"
+   href="{% url 'inventory_planning:purchase_orders' %}">📋 All Purchase Orders</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
+  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card .v { font-size:19px; font-weight:700; }
+  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; margin-bottom:14px; }
+  .panel h3 { margin:0; padding:10px 14px; font-size:13px; border-bottom:1px solid #EDEFF1; }
+  table.t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.t th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px;
+               border-bottom:1px solid #D5D9D9; cursor:pointer; white-space:nowrap; }
+  table.t th.l, table.t td.l { text-align:left; }
+  table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
+               white-space:nowrap; font-variant-numeric:tabular-nums; }
+  table.t tbody tr:hover { background:#F7FAFC; }
+  .clickable { cursor:pointer; }
+  .lnk { color:#0F6FDE; font-weight:600; cursor:pointer; }
+  .lnk:hover { text-decoration:underline; }
+  .muted { color:#8A94A0; }
+  .zero { color:#B0B8C0; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; font-weight:600; }
+  .p-open { background:#E7F1FD; color:#0B4FA8; }
+  .p-ready { background:#E7F1FD; color:#0B4FA8; }
+  .p-partial { background:#FFF4DC; color:#8A5A00; }
+  .p-allocated { background:#E6F4EA; color:#1E6B34; }
+  .p-closed, .p-short_closed { background:#EDEFF1; color:#5A6470; }
+  .crumb { font-size:12px; margin-bottom:10px; color:#5A6470; }
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:99;
+           align-items:center; justify-content:center; }
+  .modal.on { display:flex; }
+  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:600px;
+                max-width:94vw; max-height:88vh; overflow-y:auto; }
+  .modal-card h3 { margin:0 0 12px; font-size:15px; }
+  .f { margin-bottom:10px; }
+  .f label { display:block; font-size:11px; color:#5A6470; margin-bottom:3px; }
+  .f input, .f select { width:100%; padding:6px 8px; border:1px solid #D5D9D9; border-radius:5px;
+                        font-size:13px; box-sizing:border-box; background:#fff; }
+  .hint { font-size:11px; color:#8A94A0; margin-top:8px; line-height:1.55; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-strip">
+  <div class="kpi-card"><div class="v" id="k_pos">–</div><div class="l">Open POs</div></div>
+  <div class="kpi-card"><div class="v" id="k_open">–</div><div class="l">Opening balance</div></div>
+  <div class="kpi-card"><div class="v" id="k_ord">–</div><div class="l">Units ordered</div></div>
+  <div class="kpi-card"><div class="v" id="k_rem">–</div><div class="l">Outstanding units</div></div>
+  <div class="kpi-card"><div class="v" id="k_val">–</div><div class="l">Outstanding FOB</div></div>
+  <div class="kpi-card"><div class="v" id="k_tr">–</div><div class="l">Units in transit</div></div>
+</div>
+
+<div class="crumb" id="crumb"></div>
+
+<div class="panel" id="pnl_sup">
+  <h3>🏭 Suppliers</h3>
+  <table class="t" id="t_sup">
+    <thead><tr>
+      <th class="l" data-k="name">Supplier</th><th data-k="open_pos">Open POs</th>
+      <th data-k="opening">Opening</th><th data-k="ordered">PO Issued</th>
+      <th data-k="wastage">Wastage</th><th data-k="allocated">Allocated</th>
+      <th data-k="in_transit">In Transit</th><th data-k="received">Received</th>
+      <th data-k="remaining">Balance</th>
+      <th data-k="outstanding_value">Outstanding FOB</th><th data-k="lead_days">Lead Days</th>
+    </tr></thead><tbody></tbody>
+  </table>
+</div>
+
+<div class="panel" id="pnl_cat" style="display:none">
+  <h3>📦 <span id="cat_title"></span> — by Product Category</h3>
+  <table class="t" id="t_cat">
+    <thead><tr>
+      <th class="l" data-k="category">Category</th><th data-k="skus">SKUs</th>
+      <th data-k="opening">Opening</th><th data-k="ordered">PO Issued</th>
+      <th data-k="wastage">Wastage</th><th data-k="allocated">Allocated</th>
+      <th data-k="loaded">Loaded</th><th data-k="received">Received</th>
+      <th data-k="remaining">Balance</th><th data-k="value">Outstanding FOB</th>
+    </tr></thead><tbody></tbody>
+  </table>
+</div>
+
+<div class="panel" id="pnl_po" style="display:none">
+  <h3>📋 Purchase Orders</h3>
+  <table class="t" id="t_po">
+    <thead><tr>
+      <th class="l" data-k="po_number">PO Number</th><th class="l" data-k="order_date">Order Date</th>
+      <th data-k="ordered">Ordered</th><th data-k="allocated">Allocated</th>
+      <th data-k="received">Received</th><th data-k="remaining">Remaining</th>
+      <th data-k="fob_value">FOB Value</th><th class="l" data-k="status">Status</th>
+    </tr></thead><tbody></tbody>
+  </table>
+</div>
+
+<div class="panel" id="pnl_lines" style="display:none">
+  <h3>🧾 <span id="po_title"></span>
+    <span class="lnk" style="float:right;font-weight:400" onclick="backToSupplier()">✕ close</span>
+  </h3>
+  <div id="po_body"></div>
+</div>
+
+<div class="modal" id="upModal"><div class="modal-card" id="upCard"></div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const N = n => (n||0).toLocaleString();
+const Z = n => n ? N(n) : '<span class="zero">0</span>';
+const M = n => '$' + (n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+let SUP = [], CATS = [], POS = [], curSup = null, curCat = null, upKind = 'po';
+const URLS = {
+  po: '{% url "inventory_planning:import_po" %}',
+  wastage: '{% url "inventory_planning:import_wastage" %}',
+  opening: '{% url "inventory_planning:import_opening" %}',
+};
+function pill(s){ return `<span class="pill p-${s||'open'}">${(s||'open').replace(/_/g,' ')}</span>`; }
+function esc(s){ return String(s).replace(/'/g,"\\'"); }
+
+function crumb(){
+  let h = `<span class="lnk" onclick="showSuppliers()">Suppliers</span>`;
+  if (curSup) h += ` › <span class="lnk" onclick="openSupplier(${curSup.id})">${curSup.name}</span>`;
+  if (curCat) h += ` › <span>${curCat}</span>`;
+  document.getElementById('crumb').innerHTML = curSup ? h : '';
+}
+
+async function load(){
+  const r = await (await fetch('{% url "inventory_planning:api_suppliers" %}')).json();
+  SUP = r.rows; const t = r.totals;
+  k_pos.textContent = N(t.open_pos);  k_open.textContent = N(t.opening);
+  k_ord.textContent = N(t.ordered);   k_rem.textContent  = N(t.remaining);
+  k_val.textContent = M(t.outstanding_value); k_tr.textContent = N(t.in_transit);
+  renderSup();
+}
+
+function renderSup(){
+  document.querySelector('#t_sup tbody').innerHTML = SUP.map(s => `
+    <tr class="clickable" onclick="openSupplier(${s.id})">
+      <td class="l"><span class="lnk">${s.name}</span></td>
+      <td>${N(s.open_pos)}</td><td>${Z(s.opening)}</td><td>${N(s.ordered)}</td>
+      <td>${Z(s.wastage)}</td><td>${N(s.allocated)}</td><td>${N(s.in_transit)}</td>
+      <td>${N(s.received)}</td><td><b>${N(s.remaining)}</b></td>
+      <td>${M(s.outstanding_value)}</td><td>${s.lead_days}</td>
+    </tr>`).join('') || '<tr><td colspan="11" class="l muted" style="padding:14px">No suppliers yet — upload a Purchase Order to begin.</td></tr>';
+}
+
+function showSuppliers(){
+  curSup = curCat = null; crumb();
+  pnl_sup.style.display=''; pnl_cat.style.display='none';
+  pnl_po.style.display='none'; pnl_lines.style.display='none';
+}
+function backToSupplier(){ curCat=null; openSupplier(curSup.id); }
+
+async function openSupplier(id){
+  const r = await (await fetch(`/planning/api/supplier/${id}/`)).json();
+  curSup = r.supplier; curCat = null; CATS = r.categories; POS = r.purchase_orders;
+  crumb();
+  cat_title.textContent = curSup.name;
+  renderCats(); renderPOs();
+  pnl_sup.style.display='none'; pnl_cat.style.display='';
+  pnl_po.style.display=''; pnl_lines.style.display='none';
+}
+
+function renderCats(){
+  document.querySelector('#t_cat tbody').innerHTML = CATS.map(c => `
+    <tr class="clickable" onclick="filterCat('${esc(c.category)}')">
+      <td class="l"><span class="lnk">${c.category}</span></td>
+      <td>${N(c.skus)}</td><td>${Z(c.opening)}</td><td>${N(c.ordered)}</td>
+      <td>${Z(c.wastage)}</td><td>${N(c.allocated)}</td><td>${N(c.loaded)}</td>
+      <td>${N(c.received)}</td><td><b>${N(c.remaining)}</b></td><td>${M(c.value)}</td>
+    </tr>`).join('');
+}
+
+function renderPOs(){
+  document.querySelector('#t_po tbody').innerHTML = POS.map(p => `
+    <tr class="clickable" onclick="openPO(${p.id})">
+      <td class="l"><span class="lnk">${p.po_number}</span></td>
+      <td class="l">${p.order_date||'—'}</td><td>${N(p.ordered)}</td>
+      <td>${N(p.allocated)}</td><td>${N(p.received)}</td><td><b>${N(p.remaining)}</b></td>
+      <td>${M(p.fob_value)}</td><td class="l">${pill(p.status)}</td>
+    </tr>`).join('') || '<tr><td colspan="8" class="l muted" style="padding:14px">No purchase orders.</td></tr>';
+}
+
+function filterCat(c){ curCat = c; crumb(); if (POS.length) openPO(POS[0].id); }
+
+async function openPO(id){
+  const r = await (await fetch(`/planning/api/po/${id}/`)).json();
+  const po = r.po;
+  po_title.textContent = `${po.po_number} · ${po.supplier}`
+      + (curCat ? ` · ${curCat}` : '');
+  let h = `<div style="padding:10px 14px;font-size:12px;color:#5A6470;border-bottom:1px solid #EDEFF1">
+      PO Issued <b style="color:#232F3E">${N(po.ordered)}</b> ·
+      Wastage <b style="color:#232F3E">${N(po.wastage)}</b> ·
+      Allocated <b style="color:#232F3E">${N(po.allocated)}</b> ·
+      Received <b style="color:#232F3E">${N(po.received)}</b> ·
+      Balance <b style="color:#232F3E">${N(po.remaining)}</b> ·
+      FOB <b style="color:#232F3E">${M(po.fob_value)}</b> · ${pill(po.status)}</div>`;
+  const groups = curCat ? r.groups.filter(g => g.category === curCat) : r.groups;
+  for (const g of groups){
+    h += `<div style="padding:9px 14px;background:#F7FAFC;border-bottom:1px solid #EDEFF1;font-size:12px">
+        <b>${g.pp}</b> — <b>${g.category}</b> <span class="muted">${g.reference||''}</span> ·
+        FOB $${g.fob.toFixed(2)}/unit · ordered ${N(g.ordered)} ·
+        allocated ${N(g.allocated)} · balance <b>${N(g.remaining)}</b> · ${M(g.amount)}
+        ${g.plan_id ? `<span class="lnk" style="float:right" onclick="openPP(${g.plan_id})">view plan →</span>` : ''}</div>
+      <table class="t"><thead><tr>
+        <th class="l">SKU</th><th class="l">Name</th><th>Ordered</th><th>Wastage</th>
+        <th>Allocated</th><th>Loaded</th><th>In Transit</th><th>Received</th>
+        <th>Balance</th><th class="l">Status</th>
+      </tr></thead><tbody>` +
+      g.lines.map(l => `<tr><td class="l">${l.sku}</td><td class="l">${l.name||''}</td>
+        <td>${N(l.ordered)}</td><td>${Z(l.wastage)}</td><td>${N(l.allocated)}</td>
+        <td>${N(l.loaded)}</td><td>${N(l.transit)}</td><td>${N(l.received)}</td>
+        <td><b>${N(l.remaining)}</b></td><td class="l">${pill(l.status)}</td></tr>`).join('')
+      + `</tbody></table>`;
+  }
+  po_body.innerHTML = h;
+  pnl_lines.style.display=''; pnl_cat.style.display='none'; pnl_po.style.display='none';
+}
+
+async function openPP(id){
+  const r = await (await fetch(`/planning/api/production-plan/${id}/`)).json();
+  const p = r.plan;
+  let h = `<h3>${p.pp} · ${p.category}</h3>
+    <div style="font-size:12px;color:#5A6470;margin-bottom:12px">
+      ${p.supplier} · ${p.po} · FOB $${p.fob.toFixed(2)}/unit${p.ready ? ' · ready by '+p.ready : ''}<br>
+      Ordered <b>${N(p.ordered)}</b> · Wastage <b>${N(p.wastage)}</b> ·
+      Allocated <b>${N(p.allocated)}</b> · Loaded <b>${N(p.loaded)}</b> ·
+      Received <b>${N(p.received)}</b> · Balance <b>${N(p.remaining)}</b></div>
+    <div style="font-size:11px;font-weight:700;margin-bottom:4px">SKUs in this plan</div>
+    <table class="t"><thead><tr><th class="l">SKU</th><th>Ordered</th><th>Wastage</th>
+      <th>Allocated</th><th>Received</th><th>Balance</th></tr></thead><tbody>` +
+    r.lines.map(l => `<tr><td class="l">${l.sku}</td><td>${N(l.ordered)}</td>
+      <td>${Z(l.wastage)}</td><td>${N(l.allocated)}</td><td>${N(l.received)}</td>
+      <td><b>${N(l.remaining)}</b></td></tr>`).join('') + `</tbody></table>`;
+  h += `<div style="font-size:11px;font-weight:700;margin:14px 0 4px">Container allocations</div>`;
+  h += r.allocations.length
+    ? `<table class="t"><thead><tr><th class="l">Container</th><th class="l">SKU</th>
+       <th class="l">Region</th><th class="l">FNSKU</th><th>Units</th><th>Received</th>
+       <th class="l">Status</th><th class="l">ETA</th></tr></thead><tbody>` +
+      r.allocations.map(a => `<tr><td class="l">${a.container}</td><td class="l">${a.sku}</td>
+        <td class="l">${a.region.toUpperCase()}</td><td class="l">${a.fnsku||'—'}</td>
+        <td>${N(a.units)}</td><td>${N(a.received)}</td>
+        <td class="l">${a.status.replace(/_/g,' ')}</td><td class="l">${a.eta||'—'}</td></tr>`).join('') +
+      `</tbody></table>`
+    : `<div class="hint">No container allocations yet — this plan is fully outstanding.
+       Allocations appear here once a container packing list is uploaded.</div>`;
+  h += `<div style="text-align:right;margin-top:14px"><button class="btn btn-ghost btn-sm" onclick="closeUp()">Close</button></div>`;
+  document.getElementById('upCard').innerHTML = h;
+  upModal.classList.add('on');
+}
+
+/* ── sortable headers ── */
+document.querySelectorAll('table.t thead th[data-k]').forEach(th => {
+  th.onclick = () => {
+    const tbl = th.closest('table'), k = th.dataset.k;
+    const src = tbl.id === 't_sup' ? SUP : tbl.id === 't_cat' ? CATS : POS;
+    th._d = !th._d;
+    src.sort((a,b) => (typeof a[k] === 'string' || a[k] === null)
+      ? (th._d ? 1 : -1) * String(a[k]).localeCompare(String(b[k]))
+      : (th._d ? 1 : -1) * ((b[k]||0) - (a[k]||0)));
+    if (tbl.id === 't_sup') renderSup(); else if (tbl.id === 't_cat') renderCats();
+    else renderPOs();
+  };
+});
+
+/* ── uploads ── */
+const TITLES = {po:'Upload Purchase Order workbook',
+                opening:'Upload Opening Balance',
+                wastage:'Upload Wastage report'};
+const HINTS = {
+  po: 'Expects the ops PO workbook: a <b>Summary</b> sheet (one row per product category, carrying the FOB rate) and a <b>Production Plan</b> sheet (one row per SKU). One Production Plan is created per product. Re-uploading the same PO number replaces its lines.',
+  opening: 'Backlog owed by this supplier from <b>before</b> the system went live. Expects <b>SKU</b> and <b>Units</b> columns (Category optional). Stored against the date you choose, so it back-dates cleanly against existing POs. Re-uploading the same supplier + date replaces the previous figures.',
+  wastage: 'Factory fault report. Expects <b>SKU</b> and <b>Units</b> columns. Applied to the supplier (and PO, if chosen) you select below. Wastage reduces the outstanding balance <b>permanently</b> — we do not pay for it and the supplier does not remake it.',
+};
+
+function openUp(kind){
+  upKind = kind;
+  const needsSup = kind !== 'po';
+  const supOpts = SUP.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('upCard').innerHTML = `
+    <h3>${TITLES[kind]}</h3>
+    <form id="upForm" enctype="multipart/form-data">
+      ${kind === 'po' ? `
+        <div class="f"><label>Supplier name</label><input name="supplier" placeholder="AKT" required></div>
+        <div class="f"><label>PO number</label><input name="po_number" placeholder="AKT PO#12" required></div>
+        <div class="f"><label>Order date</label><input type="date" name="order_date"></div>
+        <div class="f"><label>Payment terms</label><input name="terms" placeholder="30% advance, 70% on B/L"></div>` : ''}
+      ${needsSup ? `
+        <div class="f"><label>Supplier</label>
+          <select name="supplier" id="f_supsel" required ${kind==='wastage'?'onchange="loadPOs()"':''}>
+            <option value="">— choose supplier —</option>${supOpts}
+          </select></div>` : ''}
+      ${kind === 'wastage' ? `
+        <div class="f"><label>Purchase order <span class="muted">(optional — leave blank to spread across all open POs, oldest first)</span></label>
+          <select name="po" id="f_posel"><option value="">— all open POs —</option></select></div>` : ''}
+      ${kind === 'opening' ? `
+        <div class="f"><label>As at date</label><input type="date" name="as_of" required></div>` : ''}
+      <div class="f"><label>File (.xlsx)</label><input type="file" name="file" accept=".xlsx" required></div>
+      <div class="hint">${HINTS[kind]}</div>
+      <div style="text-align:right;margin-top:14px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeUp()">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-left:6px">Upload</button>
+      </div>
+    </form>`;
+  bindForm();
+  upModal.classList.add('on');
+}
+
+async function loadPOs(){
+  const sid = document.getElementById('f_supsel').value;
+  const sel = document.getElementById('f_posel');
+  sel.innerHTML = '<option value="">— all open POs —</option>';
+  if (!sid) return;
+  const r = await (await fetch(`{% url "inventory_planning:api_purchase_orders" %}?supplier=${sid}`)).json();
+  for (const p of r.rows)
+    sel.innerHTML += `<option value="${p.id}">${p.po_number} — ${N(p.remaining)} units open</option>`;
+}
+
+function closeUp(){ upModal.classList.remove('on'); }
+
+function bindForm(){
+  const f = document.getElementById('upForm');
+  if (!f) return;
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const btn = f.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Uploading…';
+    try {
+      const r = await (await fetch(URLS[upKind], {method:'POST', body:new FormData(f),
+        headers:{'X-CSRFToken': getCookie('csrftoken')}})).json();
+      alert(r.message || r.status);
+      if (r.status === 'ok'){ closeUp(); showSuppliers(); load(); }
+    } catch(err){ alert('Upload failed: ' + err); }
+    btn.disabled = false; btn.textContent = 'Upload';
+  };
+}
+function getCookie(n){
+  const m = document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');
+  return m ? m.pop() : '';
+}
+load();
+</script>
+{% endblock %}

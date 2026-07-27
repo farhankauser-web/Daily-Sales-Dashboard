@@ -1,0 +1,95 @@
+{% extends "base/base.html" %}
+{% block title %}Container History{% endblock %}
+{% block nav_inv_history %}active{% endblock %}
+{% block page_title %}Container History — Received &amp; Archived{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="regionSel">
+  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  table.ip { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
+             border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.ip th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
+                text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9; }
+  table.ip td { padding:7px 10px; border-bottom:1px solid #EDEFF1; vertical-align:top; }
+  tr.hrow { cursor:pointer; } tr.hrow:hover { background:#F8FAFB; }
+  tr.drow td { background:#FAFBFC; font-size:11px; }
+  .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
+  .st.received { background:#D9F0E5; color:#046A52; }
+  .st.cancelled { background:#EAEDED; color:#777; }
+  .mono { font-family:'DM Mono',monospace; }
+  .disc { color:#C0392B; font-weight:600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+  <input id="fQ" class="form-control" style="width:280px;padding:5px 8px;font-size:12px"
+         placeholder="Search container / PO / shipment / supplier / warehouse…" onkeydown="if(event.key==='Enter')load()"/>
+  <select id="fStatus" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="load()">
+    <option value="">All statuses</option>
+    <option value="received">Received</option>
+    <option value="cancelled">Cancelled</option>
+  </select>
+  <label style="font-size:11px;color:#5A6470">Arrival from
+    <input id="fFrom" type="date" class="form-control" style="width:auto;padding:4px 6px;font-size:12px" onchange="load()"/></label>
+  <label style="font-size:11px;color:#5A6470">to
+    <input id="fTo" type="date" class="form-control" style="width:auto;padding:4px 6px;font-size:12px" onchange="load()"/></label>
+  <button class="btn btn-secondary btn-sm" onclick="load()">Search</button>
+  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+</div>
+
+<table class="ip">
+  <thead><tr>
+    <th>Container No.</th><th>PO</th><th>Shipment ID</th><th>Supplier</th>
+    <th>Destination</th><th>Departed</th><th>Arrival</th>
+    <th>Shipped</th><th>Received</th><th>Disc.</th><th>Status</th><th>Confirmed by</th>
+  </tr></thead>
+  <tbody id="tbody"><tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr></tbody>
+</table>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let curRegion='usa', data=null;
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+function n(v){ return (v===null||v===undefined||v==='')?'—':Number(v).toLocaleString('en-US'); }
+function setRegion(r,btn){ curRegion=r; document.querySelectorAll('#regionSel .mp-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); load(); }
+
+async function load(){
+  const p=new URLSearchParams({region:curRegion,
+    q:document.getElementById('fQ').value, status:document.getElementById('fStatus').value,
+    from:document.getElementById('fFrom').value, to:document.getElementById('fTo').value});
+  data=await(await fetch("{% url 'inventory_planning:api_container_history' %}"+'?'+p)).json();
+  document.getElementById('countLbl').textContent=data.rows.length+' archived container(s)';
+  const tb=document.getElementById('tbody');
+  tb.innerHTML = data.rows.length ? data.rows.map((s,i)=>`
+    <tr class="hrow" onclick="toggle(${i})">
+      <td class="mono"><a href="/planning/container/${s.id}/view/" target="_blank"
+          onclick="event.stopPropagation()" style="color:#2456A6;text-decoration:underline">${esc(s.container_no)||('#'+s.id)}</a></td>
+      <td>${esc(s.po_number)||'—'}</td>
+      <td class="mono" style="font-size:10px">${esc(s.shipment_id)||'—'}</td>
+      <td>${esc(s.vendor)||'—'}</td><td>${esc(s.destination)}</td>
+      <td>${s.departure||'—'}</td><td><b>${s.arrival||'—'}</b></td>
+      <td>${n(s.shipped)}</td><td>${n(s.received)}</td>
+      <td class="${s.discrepancy?'disc':''}">${s.discrepancy?(s.discrepancy>0?'+':'')+n(s.discrepancy):'0'}</td>
+      <td><span class="st ${s.status}">${s.status}</span></td>
+      <td style="font-size:11px">${esc(s.received_by)||'—'}<div style="font-size:10px;color:#8A8A8A">${s.received_at||''}</div></td>
+    </tr>
+    <tr class="drow" id="d${i}" style="display:none"><td colspan="12">
+      <b>Manifest (shipped → received):</b><br>
+      ${s.lines.map(l=>`${esc(l.sku)}: ${n(l.shipped)}→${n(l.received)}${l.received!==l.shipped?` <span class="disc">(${l.received-l.shipped>0?'+':''}${l.received-l.shipped})</span>`:''}`).join(' · ')||'—'}
+    </td></tr>`).join('')
+    : '<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:30px">No archived containers yet. They appear here once marked received.</td></tr>';
+}
+function toggle(i){ const r=document.getElementById('d'+i); r.style.display=r.style.display==='none'?'':'none'; }
+load();
+</script>
+{% endblock %}

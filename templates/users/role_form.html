@@ -32,66 +32,47 @@
     </div>
 
     <div class="card" style="margin-bottom:16px">
-      <div class="card-header"><div class="card-title">Permissions</div></div>
+      <div class="card-header"><div class="card-title">Permissions — pages this role can open</div></div>
       <div class="card-body">
 
         <div class="form-section">
           <div class="form-section-title">📊 Reporting & Visibility</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-            {% for field_name in "can_view_dashboard can_view_financials can_view_ppc can_view_inventory can_view_historical"|split %}
+            {% for f in form %}{% if f.name == 'can_view_dashboard' or f.name == 'can_view_financials' or f.name == 'can_view_ppc' or f.name == 'can_view_inventory' or f.name == 'can_view_historical' %}
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px;border:1px solid var(--border);border-radius:var(--r);font-size:12px">
-              {{ form|getitem:field_name }}
-              <span>{{ form|getitem:field_name|verbose_name|default:field_name }}</span>
+              {{ f }} <span>{{ f.label }}</span>
             </label>
-            {% endfor %}
+            {% endif %}{% endfor %}
           </div>
         </div>
 
         <div class="form-section">
           <div class="form-section-title">📝 Data Management</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-            {% for field_name in "can_manage_cogs can_manage_targets can_manage_catalog"|split %}
+            {% for f in form %}{% if f.name == 'can_manage_cogs' or f.name == 'can_manage_targets' or f.name == 'can_manage_catalog' %}
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px;border:1px solid var(--border);border-radius:var(--r);font-size:12px">
-              {{ form|getitem:field_name }}
-              <span style="font-size:11px">{{ field_name|cut:"can_"|replace:"_":" "|title }}</span>
+              {{ f }} <span>{{ f.label }}</span>
             </label>
-            {% endfor %}
+            {% endif %}{% endfor %}
           </div>
         </div>
 
         <div class="form-section" style="border-bottom:none;padding-bottom:0">
           <div class="form-section-title">🔐 Admin & System</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            {% for field_name in "can_configure_api can_manage_users can_view_audit_log can_generate_ai_summary"|split %}
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px;border:1px solid var(--border);border-radius:var(--r);font-size:12px">
-              {{ form|getitem:field_name }}
+            {% for f in form %}{% if f.name == 'can_configure_api' or f.name == 'can_manage_users' or f.name == 'can_view_audit_log' or f.name == 'can_generate_ai_summary' %}
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:10px;border:1px solid var(--border);border-radius:var(--r);font-size:12px">
+              {{ f }}
               <div>
-                <div style="font-size:11px;font-weight:600">{{ field_name|cut:"can_"|replace:"_":" "|title }}</div>
-                {% if field_name == "can_configure_api" %}<div style="font-size:9px;color:var(--red)">⚠️ Exposes API keys</div>{% endif %}
-                {% if field_name == "can_manage_users" %}<div style="font-size:9px;color:var(--red)">⚠️ Can create/deactivate users</div>{% endif %}
+                <div style="font-size:11px;font-weight:600">{{ f.label }}</div>
+                {% if f.name == 'can_configure_api' %}<div style="font-size:9px;color:var(--red)">⚠️ Exposes API keys</div>{% endif %}
+                {% if f.name == 'can_manage_users' %}<div style="font-size:9px;color:var(--red)">⚠️ Can create/deactivate users</div>{% endif %}
               </div>
             </label>
-            {% endfor %}
+            {% endif %}{% endfor %}
           </div>
         </div>
 
-      </div>
-    </div>
-
-    <!-- Render all permission checkboxes directly (simpler approach) -->
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header"><div class="card-title">Permission Checkboxes</div></div>
-      <div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-          {% for field in form %}
-            {% if "can_" in field.name %}
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px;border:1px solid var(--border);border-radius:var(--r);font-size:12px">
-              {{ field }}
-              <span style="font-size:11px">{{ field.label }}</span>
-            </label>
-            {% endif %}
-          {% endfor %}
-        </div>
       </div>
     </div>
 

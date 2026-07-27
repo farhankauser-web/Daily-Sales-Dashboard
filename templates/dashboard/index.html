@@ -140,6 +140,7 @@
   <div class="kpi-card blue">
     <div class="kpi-label">Revenue</div>
     <div class="kpi-val" id="k-rev">{% if initial_today.has_data %}${{ initial_today.revenue|floatformat:"0" }}{% else %}–{% endif %}</div>
+    <div class="kpi-sub" id="k-rev-net" style="display:none;font-weight:600;color:#067D62"></div>
     <div class="kpi-sub">ARPU <span id="k-arpu">{% if initial_today.has_data %}${{ initial_today.arpu|floatformat:"2" }}{% else %}–{% endif %}</span></div>
     {% if initial_today.has_data %}
     <div class="kpi-sub" style="margin-top:4px;font-size:10.5px;color:#067D62">
@@ -362,6 +363,16 @@
 {% block extra_js %}
 <script>
 let currentMP    = '{{ allowed_marketplaces.0 }}';
+const VAT_RATES  = {{ vat_rates_json|safe }};
+function updateRevNet(gross){
+  const el = document.getElementById('k-rev-net');
+  if (!el) return;
+  const r = VAT_RATES[currentMP] || 0;
+  if (r > 0 && gross > 0){
+    el.textContent = 'after VAT: $' + Math.round(gross / (1 + r)).toLocaleString();
+    el.style.display = '';
+  } else { el.style.display = 'none'; }
+}
 let currentRange = 'today';
 let customStartDate = '';
 let customEndDate = '';
@@ -647,6 +658,7 @@ function renderKPIs(sales, ads){
 function renderKPIsFromObject(d){
   const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   set('k-rev',    fmt(d.revenue));
+  updateRevNet(Number(d.revenue) || 0);
   set('k-qty',    num(d.units));
   set('k-orders', num(d.orders || 0));
   set('k-arpu',   fmt(d.arpu   || 0));
