@@ -247,6 +247,20 @@ _CAMP_PREFIX_GROUP = {
     '12WCPK':  ('Wash Cloth',    '12-Pack'),
     '4WCPK':   ('Wash Cloth',    '4-Pack'),
     '4DT':     ('Dish Towel',    '4-Pack'),
+    # ── UK / EU / ME campaign naming (UK, UAE, KSA, DE) ──────────────────────
+    # These regions name campaigns by product abbreviation, often without the
+    # pack size; the two that omit it default to the primary pack (KTH→6, LUX→4).
+    'BHTSHT':  ('Bath Sheet',    '2-Pack'),
+    'BTHSHT':  ('Bath Sheet',    '2-Pack'),
+    'BTMT':    ('Bath Mat',      '2-Pack'),
+    'HND':     ('Hand Towel',    '6-Pack'),
+    'HNDTWL':  ('Hand Towel',    '6-Pack'),
+    'KTH':     ('Kitchen Towel', '6-Pack'),   # default pack (campaign omits it)
+    'LUXPK2':  ('Bath Towels',   '2-Pack'),
+    'LUX':     ('Bath Towels',   '4-Pack'),   # default pack for non-PK2 LUX
+    'FTDDBL':  ('Mattress Protector', 'Double'),
+    'FTDKNG':  ('Mattress Protector', 'King'),
+    'FTDSKG':  ('Mattress Protector', 'Super King'),
 }
 
 # Full-word / partial-word → canonical abbreviation. Used by _match_campaign_to_group
@@ -335,19 +349,11 @@ def _match_campaign_to_group(name: str):
     if not name:
         return None
     name_upper = name.upper()
-
-    # 1. Direct hit on first segment
-    simple = name_upper.split('-')[0].strip()
-    if simple in _CAMP_PREFIX_GROUP:
-        return _CAMP_PREFIX_GROUP[simple]
-
-    # 2. Try normalised candidates of the simple prefix
-    for cand in _normalize_candidates(simple):
-        if cand in _CAMP_PREFIX_GROUP:
-            return _CAMP_PREFIX_GROUP[cand]
-
-    # 3. Try combining longer prefixes (most specific first → least specific)
     segments = [s.strip() for s in name_upper.split('-')]
+
+    # 1. Most specific first — combine the first 4,3,2 segments (longest first)
+    #    so e.g. `LUX-PK2-…` (→ LUXPK2 → 2-Pack) wins before the bare `LUX`
+    #    fallback (→ 4-Pack), and `2-BTH-SHT-…` (→ 2BS) resolves correctly.
     for n_segs in range(min(4, len(segments)), 1, -1):
         combined = ''.join(segments[:n_segs])
         if combined in _CAMP_PREFIX_GROUP:
@@ -355,6 +361,14 @@ def _match_campaign_to_group(name: str):
         for cand in _normalize_candidates(combined):
             if cand in _CAMP_PREFIX_GROUP:
                 return _CAMP_PREFIX_GROUP[cand]
+
+    # 2. Least specific — single first segment (+ normalised candidates)
+    simple = segments[0]
+    if simple in _CAMP_PREFIX_GROUP:
+        return _CAMP_PREFIX_GROUP[simple]
+    for cand in _normalize_candidates(simple):
+        if cand in _CAMP_PREFIX_GROUP:
+            return _CAMP_PREFIX_GROUP[cand]
 
     return None
 
