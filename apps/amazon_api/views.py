@@ -258,10 +258,54 @@ _CAMP_PREFIX_GROUP = {
     'KTH':     ('Kitchen Towel', '6-Pack'),   # default pack (campaign omits it)
     'LUXPK2':  ('Bath Towels',   '2-Pack'),
     'LUX':     ('Bath Towels',   '4-Pack'),   # default pack for non-PK2 LUX
+    'PK2':     ('Bath Towels',   '2-Pack'),
+    'PK4':     ('Bath Towels',   '4-Pack'),
+    'PK8':     ('Bath Towels',   '8-Pack'),
+    'WSH':     ('Wash Cloth',    '12-Pack'),  # default pack (campaign omits it)
     'FTDDBL':  ('Mattress Protector', 'Double'),
     'FTDKNG':  ('Mattress Protector', 'King'),
     'FTDSKG':  ('Mattress Protector', 'Super King'),
+    'MP':      ('Mattress Protector', 'Double'),   # default size (MP- omits it)
 }
+
+
+# Whole-name product scan — for campaigns that put the product LATER in the name
+# (e.g. "SP - EXACT - bath towels - WHT", "SB - BANNER - PK8 - towel set").
+# Order matters: most specific product phrases first. Pack/size tokens found
+# anywhere in the name override the product's default.
+_NAME_PRODUCT_RULES = [
+    (('BATH SHEET', 'BATHSHEET', 'BHT SHT', 'BHTSHT', 'BTH SHT'), 'Bath Sheet',    '2-Pack'),
+    (('BATH MAT', 'BATHMAT'),                                      'Bath Mat',      '2-Pack'),
+    (('HAND TOWEL', 'HANDTOWEL', 'HND TWL', 'HNDTWL'),             'Hand Towel',    '6-Pack'),
+    (('KITCHEN TOWEL', 'KITCHENTOWEL', 'TEA TOWEL', 'TEATOWEL'),   'Kitchen Towel', '6-Pack'),
+    (('WASH CLOTH', 'WASHCLOTH', 'FACE CLOTH', 'FACECLOTH',
+      'FC CLT', 'FC TWL', 'WSHCLT'),                               'Wash Cloth',    '12-Pack'),
+    (('MATTRESS PROTECTOR', 'MATTRESSPROTECTOR'),                  'Mattress Protector', 'Double'),
+    (('DISH TOWEL', 'DISHTOWEL'),                                  'Dish Towel',    '4-Pack'),
+    (('BATH TOWEL', 'BATHTOWEL', 'TOWEL SET', 'TOWELSET',
+      'BTHRMTWLS'),                                                'Bath Towels',   '4-Pack'),
+]
+
+
+def _scan_name_for_group(name_upper: str):
+    """Find the product group anywhere in a campaign name (2nd naming style)."""
+    pack = None
+    if   'PK8' in name_upper or '8-PACK' in name_upper or '8 PACK' in name_upper: pack = '8-Pack'
+    elif 'PK4' in name_upper or '4-PACK' in name_upper or '4 PACK' in name_upper: pack = '4-Pack'
+    elif 'PK2' in name_upper or '2-PACK' in name_upper or '2 PACK' in name_upper: pack = '2-Pack'
+    size = None
+    if   'SUPER KING' in name_upper or 'SKG' in name_upper:  size = 'Super King'
+    elif 'KING' in name_upper or 'KNG' in name_upper:        size = 'King'
+    elif 'DOUBLE' in name_upper or 'DBL' in name_upper:      size = 'Double'
+    for needles, pt, default_pack in _NAME_PRODUCT_RULES:
+        if any(nd in name_upper for nd in needles):
+            if pt == 'Mattress Protector':
+                return (pt, size or default_pack)
+            return (pt, pack or default_pack)
+    # A bare pack token (PK2/PK4/PK8) with no product word → Bath Towels multipack
+    if pack:
+        return ('Bath Towels', pack)
+    return None
 
 # Full-word / partial-word → canonical abbreviation. Used by _match_campaign_to_group
 # to recognise campaigns named with full words (e.g. "Bath Sheet") or alternative
@@ -369,6 +413,12 @@ def _match_campaign_to_group(name: str):
     for cand in _normalize_candidates(simple):
         if cand in _CAMP_PREFIX_GROUP:
             return _CAMP_PREFIX_GROUP[cand]
+
+    # 3. Whole-name scan — for ad-type-first names that spell the product out
+    #    later, e.g. "SP - EXACT - bath towels - WHT" or "SB - BANNER - PK8 …".
+    scanned = _scan_name_for_group(name_upper)
+    if scanned:
+        return scanned
 
     return None
 
