@@ -2522,6 +2522,13 @@ def api_sync_pnl_month(request):
     try:
         res = sync_unified_from_api(mp, month, user=request.user)
         return JsonResponse(res)
+    except LookupError as exc:
+        # No Seller-Central Date-Range Transaction report for this month yet.
+        # Return the actionable instruction immediately instead of falling
+        # through to the slow Finances-API pull — on a loaded server that pull
+        # can hang long enough that the browser reports "Failed to fetch" and
+        # buries this message.
+        return JsonResponse({'status': 'failed', 'error': str(exc)}, status=200)
     except Exception as exc:
         report_err = f'{type(exc).__name__}: {exc}'
     try:

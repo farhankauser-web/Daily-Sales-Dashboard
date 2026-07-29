@@ -101,6 +101,9 @@ class Command(BaseCommand):
         ))
 
         client  = AdsAPIClient(cfg)
+        # Region-correct Ads endpoint (NA vs EU/FE). UK/DE/AE/SA live in EU, so
+        # they must NOT hit advertising-api.amazon.com or Amazon returns 400.
+        self.ads_endpoint = client.ADS_ENDPOINT
 
         # Amazon Ads API v3 allows max 31 days per report — split into chunks
         CHUNK = 30
@@ -328,7 +331,7 @@ class Command(BaseCommand):
             group_by = ['advertiser'] if report_type_id == 'spAdvertisedProduct' else ['campaign']
         if pre_delay:
             time.sleep(pre_delay)
-        ADS = 'https://advertising-api.amazon.com'
+        ADS = self.ads_endpoint
         for attempt in range(3):
             resp = requests.post(
                 f'{ADS}/reporting/reports',
@@ -370,7 +373,7 @@ class Command(BaseCommand):
           rows_list = None  → timed-out or hard failure (caller should skip chunk)
           rows_list = []    → completed but empty / non-fatal error (SB/SD may be empty)
         """
-        ADS = 'https://advertising-api.amazon.com'
+        ADS = self.ads_endpoint
         deadline = time.time() + MAX_WAIT
 
         # Build tracking state

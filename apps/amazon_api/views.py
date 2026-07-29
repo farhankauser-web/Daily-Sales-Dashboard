@@ -632,7 +632,14 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
             unallocated['sb'] = unallocated_sbsd.get('sb', 0.0)
             unallocated['sd'] = unallocated_sbsd.get('sd', 0.0)
 
-        # Aggregate SKU snapshots into product groups
+        # Aggregate SKU snapshots into product groups.
+        # Canonical key collapses case/whitespace variants in Product.title
+        # ("Bath Towels · 4-Pack" vs "· 4-pack") so one product never splits
+        # into two rows, and campaign-attributed PPC (keyed off
+        # _CAMP_PREFIX_GROUP) reconciles to the same group.
+        def _ck(_pt, _pack):
+            return (str(_pt or '').strip().lower(), str(_pack or '').strip().lower())
+
         grouped = {}
         for snap in _SkuSnap.objects.filter(marketplace=marketplace, date=date):
             sku  = snap.sku.upper()
@@ -643,7 +650,7 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
             else:
                 pt, pack, var = sku[:30], '—', ''
 
-            gk = (pt, pack)
+            gk = _ck(pt, pack)
             if gk not in grouped:
                 grouped[gk] = {
                     'group':     f'{pt}-{pack}'.upper().replace(' ', '-')[:12].rstrip('-'),
@@ -723,12 +730,22 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
                 'ppc_state':       (_alloc.get('state') if _alloc else None),
             })
 
+        # Re-key campaign-attributed PPC by the same canonical key so spend
+        # keyed "4-Pack" attaches to a catalog group titled "4-pack".
+        grouped_ppc_ck = {}
+        for _k, _v in grouped_ppc.items():
+            _c = _ck(*_k)
+            _dst = grouped_ppc_ck.setdefault(_c, {'sp': 0.0, 'sb': 0.0, 'sd': 0.0})
+            for _t in ('sp', 'sb', 'sd'):
+                _dst[_t] += float(_v.get(_t, 0.0) or 0.0)
+
         out = []
-        for (pt, pack), g in sorted(grouped.items(), key=lambda x: -x[1]['revenue']):
+        for _gk_canon, g in sorted(grouped.items(), key=lambda x: -x[1]['revenue']):
+            pt   = g['_pt']
+            pack = g['_pack']
             rev = g['revenue']
             cm  = g['cm']
-            _gk = (pt, pack)
-            _ppc_for_group = grouped_ppc.get(_gk, {'sp': 0.0, 'sb': 0.0, 'sd': 0.0})
+            _ppc_for_group = grouped_ppc_ck.get(_gk_canon, {'sp': 0.0, 'sb': 0.0, 'sd': 0.0})
             # Allocator-driven path (preferred): group SP/SB/SD are the
             # sum of variant rows — already reconciled to campaign spend.
             # Legacy path: SP comes from campaign attribution (today) or
