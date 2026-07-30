@@ -320,6 +320,35 @@ const RENDER = {
       <span class="cc-chip chip-${x.tag}"> </span></div>`).join('')
       : '<div class="cc-loading">No recommendations yet</div>';
   },
+  container_timeline(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const s=d.shipments||[];
+    body.innerHTML = s.length ? s.map(x=>`<div class="cc-row"><span>🚢 ${x.name}</span>
+      <span style="text-align:right">${x.eta?`<b>${x.eta}</b>`:'<span style="color:var(--text3)">no ETA</span>'}${x.days!=null?` <span style="color:var(--text3)">(${x.days}d)</span>`:''}</span></div>`).join('')
+      : '<div class="cc-loading">No shipments in transit</div>';
+  },
+  inventory_risk(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const r=d.rows||[];
+    body.innerHTML = r.length ? r.map(x=>`<div class="cc-row"><span>${x.sku}</span>
+      <span class="cc-chip ${x.available<=0?'chip-crit':(x.available<20?'chip-warn':'chip-good')}">${x.available} left</span></div>`).join('')
+      : '<div class="cc-loading">No stock data</div>';
+  },
+  cash_runway(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const rec=d.recent||[];
+    body.innerHTML = `<div style="margin-bottom:8px"><div class="cc-kpi-lab">Payouts · last 30 days</div>
+      <div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums">${money(d.total_30d)}</div></div>`
+      + (rec.map(p=>`<div class="cc-row"><span>${p.date}</span><b>${money(p.amount,p.mp)}</b></div>`).join('')
+         || '<div class="cc-loading">No payouts recorded</div>');
+  },
+  ba_share(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const r=d.rows||[];
+    body.innerHTML = r.length ? r.map(x=>`<div class="cc-row"><span title="${x.query}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.query}</span>
+      <b>${x.share}%</b></div>`).join('')
+      : '<div class="cc-loading">No Brand-Analytics data yet</div>';
+  },
 };
 
 /* ── chart helpers (reuse app's Chart.js) ── */
@@ -338,7 +367,7 @@ function lineChart(cv,el,labels,data){
     borderWidth:2.2,fill:true,backgroundColor:'rgba(0,113,133,.10)',tension:.3,pointRadius:0}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6,font:{size:10},color:'#8A8A8A'}},
-              y:{grid:{color:'#EAEDED'},ticks:{font:{size:10},color:'#8A8A8A',
+              y:{grid:{color:'rgba(128,128,128,.15)'},ticks:{font:{size:10},color:'#8A8A8A',
                  callback:v=>curSym(REGION!=='all'?REGION:null)+(v/1000)+'k'}}}}});
 }
 function donut(cv,el,vals){

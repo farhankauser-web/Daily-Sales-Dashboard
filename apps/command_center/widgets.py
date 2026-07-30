@@ -272,6 +272,58 @@ def w_ai_recs(user, cfg):
     return {'recs': out}
 
 
+def w_container_timeline(user, cfg):
+    from apps.inventory_planning.models import InTransitShipment as S
+    today = timezone.localdate(); rows = []
+    for s in S.objects.order_by('eta_destination', 'eta_port')[:8]:
+        eta = getattr(s, 'eta_destination', None) or getattr(s, 'eta_port', None)
+        name = (getattr(s, 'name', None) or getattr(s, 'reference', None)
+                or getattr(s, 'container_no', None) or f'Shipment {s.pk}')
+        rows.append({'name': str(name)[:28],
+                     'eta': eta.isoformat() if eta else None,
+                     'days': (eta - today).days if eta else None,
+                     'freight': float(getattr(s, 'freight_cost', 0) or 0)})
+    return {'shipments': rows}
+
+
+def w_inventory_risk(user, cfg):
+    from apps.inventory_planning.models import WarehouseStock as W
+    agg = {}
+    for w in W.objects.all()[:400]:
+        d = getattr(w, 'detail', {}) or {}
+        avail = (d.get('available') or d.get('sellable') or 0) if isinstance(d, dict) else 0
+        sku = str(getattr(w, 'sku', None) or getattr(w, 'planning_sku', None) or '')
+        if sku:
+            agg[sku] = agg.get(sku, 0) + int(avail or 0)
+    rows = sorted(({'sku': k, 'available': v} for k, v in agg.items()),
+                  key=lambda x: x['available'])[:6]
+    return {'rows': rows}
+
+
+def w_cash_runway(user, cfg):
+    from apps.dashboard.models import AmazonPayout as P
+    today = timezone.localdate(); start = today - timedelta(days=30)
+    qs = _mp_filter(P.objects.filter(payout_date__range=(start, today)), cfg)
+    total = float(qs.aggregate(s=Sum('amount'))['s'] or 0)
+    recent = [{'date': p.payout_date.isoformat(), 'amount': float(p.amount),
+               'mp': p.marketplace}
+              for p in _mp_filter(P.objects.all(), cfg).order_by('-payout_date')[:5]]
+    return {'total_30d': total, 'recent': recent}
+
+
+def w_ba_share(user, cfg):
+    from apps.sqp.models import SQPSnapshot as Q
+    rows = []
+    for s in Q.objects.order_by('-period_start', '-search_query_volume')[:6]:
+        q = (getattr(s, 'search_query', None)
+             or getattr(getattr(s, 'query', None), 'query_text', None)
+             or getattr(getattr(s, 'query', None), 'search_query', None) or '')
+        share = float(getattr(s, 'purchases_asin_share', 0) or 0) * 100
+        rows.append({'query': str(q)[:34], 'share': round(share, 1),
+                     'volume': int(getattr(s, 'search_query_volume', 0) or 0)})
+    return {'rows': [r for r in rows if r['query']]}
+
+
 def _placeholder(user, cfg):
     return {'placeholder': True,
             'note': 'Wiring to live data in the next build phase.'}
@@ -283,6 +335,8 @@ _PRODUCERS = {
     'walmart_mcf': w_walmart_mcf, 'data_freshness': w_data_freshness,
     'hourly_heatmap': w_hourly_heatmap, 'top_skus': w_top_skus,
     'ppc_vs_sales': w_ppc_vs_sales, 'ai_recs': w_ai_recs,
+    'container_timeline': w_container_timeline, 'inventory_risk': w_inventory_risk,
+    'cash_runway': w_cash_runway, 'ba_share': w_ba_share,
 }
 
 
