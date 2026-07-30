@@ -9,6 +9,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('auth/',      include('apps.users.urls',       namespace='users')),
+    path('command-center/', include('apps.command_center.urls', namespace='command_center')),
     path('dashboard/', include('apps.dashboard.urls',   namespace='dashboard')),
     path('sqp/',       include('apps.sqp.urls',         namespace='sqp')),
     path('api-config/',include('apps.amazon_api.urls',  namespace='amazon_api')),

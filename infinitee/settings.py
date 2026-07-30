@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'crispy_bootstrap5',
     'apps.core',
     'apps.users',
+    'apps.command_center',
     'apps.dashboard',
     'apps.amazon_api',
     'apps.sqp',
@@ -117,7 +118,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LOGIN_URL           = '/auth/login/'
-LOGIN_REDIRECT_URL  = '/dashboard/'
+LOGIN_REDIRECT_URL  = '/command-center/'   # Command Center is the post-login home
 LOGOUT_REDIRECT_URL = '/auth/login/'
 
 SESSION_COOKIE_HTTPONLY   = True

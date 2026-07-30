@@ -1,0 +1,314 @@
+{% extends "base/base.html" %}
+{% block title %}Command Center{% endblock %}
+{% block page_title %}Command Center{% endblock %}
+{% block nav_command_center %}active{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css" rel="stylesheet">
+<style>
+  :root{ --cc-crit:#C40000; --cc-warn:#B4740A; --cc-good:#067D62; }
+  .cc-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .cc-hint{color:var(--text3);font-size:12px}
+  .grid-stack{background:transparent;margin:0 -6px}
+  .grid-stack-item-content{inset:6px!important}
+  .cc-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);
+    box-shadow:var(--shadow-sm);height:100%;display:flex;flex-direction:column;overflow:hidden}
+  .cc-head{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;
+    border-bottom:1px solid var(--border);background:var(--bg4)}
+  .cc-title{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;
+    letter-spacing:.05em;display:flex;align-items:center;gap:7px}
+  .cc-tools{display:flex;gap:8px;align-items:center;color:var(--text3)}
+  .cc-remove{cursor:pointer;border:0;background:none;color:var(--text3);font-size:15px;
+    line-height:1;display:none;padding:0}
+  .cc-remove:hover{color:var(--red)}
+  .cc-drag{cursor:grab;display:none;color:var(--text3)}
+  .grid-stack.editing .cc-remove,.grid-stack.editing .cc-drag{display:inline-block}
+  .grid-stack.editing .cc-card{border-color:var(--border2);box-shadow:0 0 0 2px rgba(255,153,0,.10)}
+  .cc-body{flex:1;padding:12px 13px;overflow:auto;min-height:0}
+  .cc-body.pad0{padding:0}
+  .cc-loading{color:var(--text3);font-size:12px;display:grid;place-items:center;height:100%}
+
+  /* KPI */
+  .cc-kpi-lab{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em}
+  .cc-kpi-val{font-size:26px;font-weight:700;letter-spacing:-.6px;line-height:1;margin:5px 0 6px;
+    font-variant-numeric:tabular-nums}
+  .cc-delta{font-size:12px;font-weight:700}
+  .cc-up{color:var(--cc-good)} .cc-dn{color:var(--cc-crit)}
+  .cc-spark{width:100%;height:34px;display:block;margin-top:8px}
+
+  /* alerts */
+  .cc-alert{display:flex;gap:9px;padding:8px 9px;border-radius:6px;background:var(--bg4);
+    border:1px solid var(--border);margin-bottom:7px}
+  .cc-alert .st{width:3px;border-radius:3px;flex:none}
+  .cc-alert h5{margin:0 0 1px;font-size:12.5px;font-weight:700;color:var(--text)}
+  .cc-alert p{margin:0;font-size:11.5px;color:var(--text2);line-height:1.4}
+  .a-crit .st{background:var(--cc-crit)} .a-warn .st{background:var(--cc-warn)} .a-good .st{background:var(--cc-good)}
+
+  /* scorecard / tables in widgets */
+  .cc-body table{font-size:12px} .cc-body td,.cc-body th{padding:6px 8px}
+  .cc-pos{color:var(--cc-good);font-weight:600}
+
+  /* mini rows */
+  .cc-row{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+  .cc-row:last-child{border-bottom:0}
+  .cc-chip{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px}
+  .chip-good{background:#EBF5F0;color:var(--cc-good)} .chip-crit{background:#FDF0F0;color:var(--cc-crit)}
+  .chip-warn{background:#FEF9EE;color:var(--cc-warn)}
+
+  /* ghost + drawer */
+  .cc-ghost{display:none} .grid-stack.editing ~ .cc-ghost{display:flex}
+  .cc-scrim{position:fixed;inset:0;background:rgba(15,17,17,.35);opacity:0;pointer-events:none;
+    transition:.2s;z-index:200}
+  .cc-scrim.open{opacity:1;pointer-events:auto}
+  .cc-drawer{position:fixed;top:0;right:0;height:100vh;width:330px;background:var(--bg2);
+    border-left:1px solid var(--border);box-shadow:-8px 0 30px rgba(0,0,0,.14);z-index:201;
+    transform:translateX(100%);transition:transform .26s ease;overflow-y:auto;padding:18px}
+  .cc-drawer.open{transform:translateX(0)}
+  .cc-drawer h3{margin:0 0 2px;font-size:15px}
+  .cc-cat{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--text3);margin:16px 0 7px}
+  .cc-wopt{display:flex;gap:10px;align-items:center;padding:9px;border:1px solid var(--border);
+    border-radius:8px;margin-bottom:7px;cursor:pointer;background:var(--bg4)}
+  .cc-wopt:hover{border-color:var(--orange);background:#FFFBF2}
+  .cc-wopt .ic{width:30px;height:30px;border-radius:7px;background:#EDF6F8;color:var(--teal);
+    display:grid;place-items:center;font-size:14px;flex:none}
+  .cc-wopt .t{font-size:12.5px;font-weight:600} .cc-wopt .d{font-size:11px;color:var(--text3)}
+  .cc-wopt .pl{margin-left:auto;color:var(--orange);font-weight:800}
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+  <button class="btn btn-secondary btn-sm" id="ccEdit">⧉ Edit layout</button>
+  <button class="btn btn-secondary btn-sm" id="ccReset" title="Restore default layout">↺</button>
+  <button class="btn btn-primary btn-sm" id="ccAdd">＋ Add widget</button>
+{% endblock %}
+
+{% block content %}
+<div class="cc-bar">
+  <span class="cc-hint" id="ccStatus">Your personal Command Center · drag &amp; resize in Edit mode</span>
+</div>
+
+<div class="grid-stack" id="grid"></div>
+<button class="btn btn-ghost cc-ghost" id="ccAdd2" style="margin-top:12px">＋ Add widget</button>
+
+<div class="cc-scrim" id="ccScrim"></div>
+<aside class="cc-drawer" id="ccDrawer" aria-label="Widget library">
+  <h3>Add a widget</h3>
+  <div class="cc-hint">Click to place it on your board</div>
+  {% for cat, widgets in catalog_by_cat.items %}
+  <div class="cc-cat">{{ cat }}</div>
+  {% for w in widgets %}
+  <div class="cc-wopt" data-key="{{ w.key }}" data-w="{{ w.w }}" data-h="{{ w.h }}">
+    <div class="ic">{{ w.icon }}</div>
+    <div><div class="t">{{ w.title }}</div><div class="d">{{ w.desc }}</div></div>
+    <span class="pl">＋</span>
+  </div>
+  {% endfor %}
+  {% endfor %}
+</aside>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.min.js"></script>
+<script>
+const CATALOG = {{ catalog_json|safe }};
+const LAYOUT  = {{ layout_json|safe }};
+const charts = {};   // domId -> Chart instance
+let uid = 0;
+
+const grid = GridStack.init({
+  column: 12, cellHeight: 74, margin: 0, float: true,
+  handle: '.cc-drag', staticGrid: true,          // start in view mode
+}, document.getElementById('grid'));
+
+function money(n){ n=+n||0; const a=Math.abs(n);
+  if(a>=1000) return '$'+(n/1000).toFixed(a>=100000?0:1)+'k'; return '$'+n.toFixed(0); }
+function fmt(v,f){ if(f==='currency')return money(v); if(f==='pct')return (+v).toFixed(2)+'%';
+  if(f==='int')return (+v||0).toLocaleString(); return v; }
+
+function cardShell(key){
+  const spec = CATALOG[key] || {title:key,icon:'▦'};
+  return `<div class="cc-card">
+    <div class="cc-head">
+      <span class="cc-title"><span>${spec.icon||''}</span>${spec.title||key}</span>
+      <span class="cc-tools"><span class="cc-drag" title="Drag">⠿</span>
+        <button class="cc-remove" title="Remove">✕</button></span>
+    </div>
+    <div class="cc-body"><div class="cc-loading">Loading…</div></div>
+  </div>`;
+}
+
+function addItem(w){
+  const id = 'cc'+(uid++);
+  const el = grid.addWidget({x:w.x,y:w.y,w:w.w,h:w.h,
+    minW:(CATALOG[w.key]||{}).minW,minH:(CATALOG[w.key]||{}).minH,
+    content: cardShell(w.key), id});
+  el.dataset.key = w.key;
+  el.dataset.cfg = JSON.stringify(w.config||{});
+  el.querySelector('.cc-remove').onclick = () => { removeItem(el); };
+  loadWidget(el);
+  return el;
+}
+
+function removeItem(el){
+  const c = charts[el.getAttribute('gs-id')]; if(c){c.destroy();}
+  grid.removeWidget(el); scheduleSave();
+}
+
+async function loadWidget(el){
+  const key = el.dataset.key, cfg = el.dataset.cfg;
+  const body = el.querySelector('.cc-body');
+  try{
+    const r = await fetch(`/command-center/api/widget/?key=${encodeURIComponent(key)}&config=${encodeURIComponent(cfg)}`);
+    const d = await r.json();
+    (RENDER[key]||RENDER._default)(body, d, el);
+  }catch(e){ body.innerHTML = `<div class="cc-loading">Couldn’t load.</div>`; }
+}
+
+/* ── renderers ── */
+const RENDER = {
+  _default(body,d){
+    if(d.error){ body.innerHTML=`<div class="cc-loading" style="color:var(--cc-crit)">${d.error}</div>`; return; }
+    body.innerHTML = `<div class="cc-loading">Coming online next phase</div>`;
+  },
+  kpi(body,d,el){
+    if(d.error){ return RENDER._default(body,d); }
+    const good = d.delta_good==='down' ? (d.delta<=0) : (d.delta>=0);
+    const arrow = d.delta>=0?'▲':'▼';
+    const cls = good?'cc-up':'cc-dn';
+    const dv = Math.abs(d.delta||0).toFixed(d.delta_unit==='pt'?2:1)+(d.delta_unit||'%');
+    const id='sp'+el.getAttribute('gs-id');
+    body.innerHTML = `<div class="cc-kpi-lab">${d.label||''}</div>
+      <div class="cc-kpi-val">${fmt(d.value,d.format)}</div>
+      <span class="cc-delta ${cls}">${arrow} ${dv} <span style="color:var(--text3);font-weight:600">${d.delta_label||''}</span></span>
+      <canvas class="cc-spark" id="${id}"></canvas>`;
+    drawSpark(id, d.spark||[]);
+  },
+  revenue_trend(body,d,el){
+    if(d.error) return RENDER._default(body,d);
+    body.classList.add('pad0'); body.innerHTML='<canvas></canvas>';
+    lineChart(body.querySelector('canvas'), el, d.labels, d.data);
+  },
+  marketplace_split(body,d,el){
+    if(d.error) return RENDER._default(body,d);
+    const names={usa:'🇺🇸 USA',uk:'🇬🇧 UK',ae:'🇦🇪 UAE',sa:'🇸🇦 KSA',ca:'🇨🇦 CA',de:'🇩🇪 DE'};
+    body.innerHTML = `<div style="display:flex;gap:12px;align-items:center;height:100%">
+      <div style="width:110px"><canvas></canvas></div>
+      <div style="flex:1">${(d.slices||[]).map(s=>{
+        const pct=d.total? (s.revenue/d.total*100):0;
+        return `<div class="cc-row"><span>${names[s.mp]||s.mp}</span><b>${pct.toFixed(0)}%</b></div>`;}).join('')}</div></div>`;
+    donut(body.querySelector('canvas'), el, (d.slices||[]).map(s=>s.revenue));
+  },
+  scorecard(body,d,el){
+    if(d.error) return RENDER._default(body,d);
+    const names={usa:'🇺🇸 USA',uk:'🇬🇧 UK',ae:'🇦🇪 UAE',sa:'🇸🇦 KSA',ca:'🇨🇦 CA',de:'🇩🇪 DE'};
+    body.classList.add('pad0');
+    body.innerHTML = `<table><thead><tr><th>Market</th><th>Revenue</th><th>Units</th><th>PPC</th><th>TACoS</th><th>GM%</th><th>Net</th></tr></thead>
+      <tbody>${(d.rows||[]).map(r=>`<tr><td>${names[r.mp]||r.mp}</td>
+        <td>${money(r.revenue)}</td><td>${r.units.toLocaleString()}</td><td>${money(r.ppc)}</td>
+        <td>${r.tacos.toFixed(1)}%</td><td>${r.gm_pct.toFixed(1)}%</td>
+        <td class="cc-pos">${money(r.net)}</td></tr>`).join('')||'<tr><td colspan=7 style="color:var(--text3)">No data yet</td></tr>'}</tbody></table>`;
+  },
+  profit_alerts(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const a=d.alerts||[];
+    body.innerHTML = a.length ? a.map(x=>`<div class="cc-alert a-${x.severity}"><div class="st"></div>
+      <div><h5>${x.title}</h5><p>${x.body||''}</p></div></div>`).join('')
+      : '<div class="cc-loading">No active alerts 🎉</div>';
+  },
+  walmart_mcf(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const c=d.counts||{}; const g=(k)=>c[k]||0;
+    const items=[['MCF_CREATED','Created','chip-good'],['NEW','Pending','chip-warn'],
+      ['HOLD','Held','chip-warn'],['CANCELLED','Cancelled','chip-crit'],['COMPLETED','Completed','chip-good']];
+    body.innerHTML = items.filter(i=>g(i[0])).map(i=>`<div class="cc-row"><span>${i[1]}</span>
+      <span class="cc-chip ${i[2]}">${g(i[0])}</span></div>`).join('')||'<div class="cc-loading">No orders</div>';
+  },
+  data_freshness(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const nm={sp_hourly:'PPC hourly (AMS)',orders:'Orders'};
+    body.innerHTML = (d.sources||[]).map(s=>`<div class="cc-row"><span>${nm[s.source]||s.source}</span>
+      <span class="cc-chip ${s.ok?'chip-good':'chip-crit'}">${s.latest?('T-'+s.lag):'—'}</span></div>`).join('')
+      || '<div class="cc-loading">No sync log</div>';
+  },
+};
+
+/* ── chart helpers (reuse app's Chart.js) ── */
+function drawSpark(id,pts){
+  const cv=document.getElementById(id); if(!cv||!pts.length) return;
+  charts[id] && charts[id].destroy();
+  charts[id]=new Chart(cv,{type:'line',data:{labels:pts.map((_,i)=>i),
+    datasets:[{data:pts,borderColor:'#007185',borderWidth:2,fill:true,
+      backgroundColor:'rgba(0,113,133,.12)',tension:.35,pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{x:{display:false},y:{display:false}}}});
+}
+function lineChart(cv,el,labels,data){
+  const id=el.getAttribute('gs-id'); charts[id]&&charts[id].destroy();
+  charts[id]=new Chart(cv,{type:'line',data:{labels,datasets:[{data,borderColor:'#007185',
+    borderWidth:2.2,fill:true,backgroundColor:'rgba(0,113,133,.10)',tension:.3,pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6,font:{size:10},color:'#8A8A8A'}},
+              y:{grid:{color:'#EAEDED'},ticks:{font:{size:10},color:'#8A8A8A',
+                 callback:v=>'$'+(v/1000)+'k'}}}}});
+}
+function donut(cv,el,vals){
+  const id=el.getAttribute('gs-id'); charts[id]&&charts[id].destroy();
+  charts[id]=new Chart(cv,{type:'doughnut',data:{datasets:[{data:vals,
+    backgroundColor:['#007185','#FF9900','#067D62','#8A8A8A','#232F3E','#C40000'],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'66%',plugins:{legend:{display:false}}}});
+}
+
+/* ── save / edit / add ── */
+let saveT=null;
+function currentLayout(){
+  return grid.getGridItems().map(el=>{const n=el.gridstackNode;
+    return {key:el.dataset.key,x:n.x,y:n.y,w:n.w,h:n.h,config:JSON.parse(el.dataset.cfg||'{}')};});
+}
+function scheduleSave(){ clearTimeout(saveT); saveT=setTimeout(saveLayout,700); }
+async function saveLayout(){
+  const st=document.getElementById('ccStatus'); st.textContent='Saving…';
+  try{
+    await fetch('/command-center/api/layout/save/',{method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF_TOKEN},
+      body:JSON.stringify({layout:currentLayout()})});
+    st.textContent='All changes saved ✓';
+  }catch(e){ st.textContent='Save failed'; }
+}
+grid.on('change added removed resizestop dragstop', scheduleSave);
+
+let editing=false;
+document.getElementById('ccEdit').onclick=function(){
+  editing=!editing; grid.setStatic(!editing);
+  document.getElementById('grid').classList.toggle('editing',editing);
+  this.classList.toggle('btn-primary',editing); this.classList.toggle('btn-secondary',!editing);
+  this.innerHTML = editing?'✓ Done':'⧉ Edit layout';
+  document.getElementById('ccStatus').textContent = editing
+    ? 'Edit mode — drag to move, pull corners to resize, ✕ to remove'
+    : 'Your personal Command Center · drag & resize in Edit mode';
+};
+
+// drawer
+function openD(){document.getElementById('ccDrawer').classList.add('open');document.getElementById('ccScrim').classList.add('open');}
+function closeD(){document.getElementById('ccDrawer').classList.remove('open');document.getElementById('ccScrim').classList.remove('open');}
+document.getElementById('ccAdd').onclick=openD;
+document.getElementById('ccAdd2').onclick=openD;
+document.getElementById('ccScrim').onclick=closeD;
+document.querySelectorAll('.cc-wopt').forEach(o=>o.onclick=function(){
+  const key=this.dataset.key, spec=CATALOG[key]||{};
+  addItem({key,x:0,y:1000,w:+this.dataset.w||spec.w||3,h:+this.dataset.h||spec.h||2,config:(spec.config||{})});
+  scheduleSave(); closeD();
+});
+document.getElementById('ccReset').onclick=async function(){
+  if(!confirm('Restore the default layout? Your arrangement will be replaced.'))return;
+  const r=await fetch('/command-center/api/layout/reset/',{method:'POST',
+    headers:{'X-CSRFToken':CSRF_TOKEN}}); const d=await r.json();
+  grid.removeAll(); Object.values(charts).forEach(c=>c.destroy());
+  (d.layout||[]).forEach(addItem);
+};
+
+// initial render
+LAYOUT.forEach(addItem);
+</script>
+{% endblock %}

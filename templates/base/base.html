@@ -503,6 +503,10 @@ tfoot td:first-child { text-align: left; }
     </div>
   </div>
 
+  <a href="{% url 'command_center:home' %}" class="nav-item {% block nav_command_center %}{% endblock %}" style="margin-top:8px">
+    <span class="nav-icon">◧</span> Command Center
+  </a>
+
   <div class="nav-section">Reporting</div>
   <a href="{% url 'dashboard:index' %}" class="nav-item {% block nav_dashboard %}{% endblock %}">
     <span class="nav-icon">📊</span> Daily Dashboard
