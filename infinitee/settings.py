@@ -37,6 +37,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',   # serve static under DEBUG=False
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -130,14 +131,36 @@ CSRF_COOKIE_SECURE        = not DEBUG
 CSRF_COOKIE_HTTPONLY      = False
 X_FRAME_OPTIONS           = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY      = 'same-origin'
+
+# ── HTTPS / reverse-proxy hardening (VAPT H1/H2/M3) ────────────────────────
+# TLS terminates upstream (nginx+Let's Encrypt on the box, or Cloudflare/LB);
+# traffic reaches Django over HTTP carrying X-Forwarded-Proto. Trust it so
+# request.is_secure()/redirects/Secure-cookies behave correctly behind the proxy.
+# All flags are env-gated so nothing activates until the proxy is live and the
+# env vars are set on deploy (avoids redirect loops / lockouts before then).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get(
+    'CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]   # e.g. https://dashboard.infinitee.biz
+SECURE_SSL_REDIRECT            = os.environ.get('SECURE_SSL_REDIRECT', 'False') == 'True'
+SECURE_HSTS_SECONDS            = int(os.environ.get('SECURE_HSTS_SECONDS', '0') or '0')
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+SECURE_HSTS_PRELOAD            = SECURE_HSTS_SECONDS > 0
 
 FIELD_ENCRYPTION_KEY = os.environ.get('FIELD_ENCRYPTION_KEY', 'CHANGE-ME-generate-fernet-key=')
 ANTHROPIC_API_KEY    = os.environ.get('ANTHROPIC_API_KEY', '')
 ANTHROPIC_MODEL      = 'claude-sonnet-4-20250514'
 
 STATIC_URL       = '/static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATICFILES_DIRS = [d for d in [BASE_DIR / 'static'] if d.exists()]  # avoid W004 when absent
 STATIC_ROOT      = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    # Non-manifest: compresses + long-cache headers, but won't hard-fail on a
+    # missing {% static %} reference (safer for the first prod cutover). Switch
+    # to CompressedManifestStaticFilesStorage later for hashed cache-busting.
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage'},
+}
 MEDIA_URL        = '/media/'
 MEDIA_ROOT       = BASE_DIR / 'media'
 
