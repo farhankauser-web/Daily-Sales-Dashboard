@@ -22,17 +22,17 @@
 {% block extra_head %}
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
-  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:19px; font-weight:700; }
   .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.short .v { color:#B42318; }
-  .open-card { display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #D5D9D9;
+  .open-card { display:flex; align-items:center; gap:10px; background:var(--bg2); border:1px solid var(--border);
                border-radius:8px; padding:8px 12px; margin-bottom:12px; font-size:12px; }
-  .open-card input { padding:5px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:12px; }
-  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  .open-card input { padding:5px 8px; border:1px solid var(--border); border-radius:5px; font-size:12px; }
+  .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
   table.t th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px;
-               border-bottom:1px solid #D5D9D9; white-space:nowrap; position:sticky; top:0; z-index:1; }
+               border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; z-index:1; }
   table.t th.l, table.t td.l { text-align:left; }
   table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
                white-space:nowrap; font-variant-numeric:tabular-nums; }
@@ -50,10 +50,10 @@
   .muted { color:#8A94A0; }
   .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:99; align-items:center; justify-content:center; }
   .modal.on { display:flex; }
-  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:480px; max-width:94vw; }
+  .modal-card { background:var(--bg2); border-radius:10px; padding:20px 24px; width:480px; max-width:94vw; }
   .modal-card h3 { margin:0 0 12px; font-size:15px; }
   .f { margin-bottom:10px; } .f label { display:block; font-size:11px; color:#5A6470; margin-bottom:3px; }
-  .f input, .f select { width:100%; padding:6px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:13px; box-sizing:border-box; }
+  .f input, .f select { width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:5px; font-size:13px; box-sizing:border-box; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 </style>
 {% endblock %}

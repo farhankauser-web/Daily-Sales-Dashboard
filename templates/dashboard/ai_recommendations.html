@@ -31,32 +31,32 @@
 
   .ai-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .ai-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .ai-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:10px 14px; }
-  .ai-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .ai-kpi .val { font-size:24px; font-weight:700; color:#0F1111;
+  .ai-kpi .lbl { font-size:11px; color:var(--text3); }
+  .ai-kpi .val { font-size:24px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; }
-  .ai-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .ai-kpi .sub { font-size:11px; color:var(--text2); margin-top:2px; }
   .ai-kpi.critical    { border-left:4px solid #C40000; }
   .ai-kpi.warning     { border-left:4px solid #B7710E; }
   .ai-kpi.opportunity { border-left:4px solid #067D62; }
 
-  .ai-filter-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .ai-filter-bar { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
                     padding:8px 12px; margin-bottom:10px;
                     display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .ai-filter-bar .lbl { font-size:11px; color:#8A8A8A; }
-  .ai-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+  .ai-filter-bar .lbl { font-size:11px; color:var(--text3); }
+  .ai-pill { background:var(--bg); color:var(--text2); border:1px solid var(--border);
               padding:4px 10px; border-radius:14px; cursor:pointer;
               font-size:11px; font-weight:600; user-select:none; }
-  .ai-pill:hover { background:#EAEDED; }
-  .ai-pill.active { background:#067D62; color:#FFF; border-color:#067D62; }
+  .ai-pill:hover { background:var(--bg3); }
+  .ai-pill.active { background:#067D62; color:#FFF; border-color:var(--green); }
   .ai-pill .count { background:rgba(0,0,0,0.12); margin-left:6px;
                      padding:1px 6px; border-radius:8px; font-size:10px; }
   .ai-pill.active .count { background:rgba(255,255,255,0.25); }
 
   .ai-card-list { display:flex; flex-direction:column; gap:10px; }
 
-  .ai-card { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+  .ai-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
               padding:14px 16px; transition:opacity 200ms; }
   .ai-card.critical    { border-left:4px solid #C40000; }
   .ai-card.warning     { border-left:4px solid #B7710E; }
@@ -70,40 +70,40 @@
                     font-size:10px; font-weight:600; }
   .ai-card .badge.severity_critical    { background:#FBE2E0; color:#9C3431; }
   .ai-card .badge.severity_warning     { background:#FFF1D5; color:#8A5500; }
-  .ai-card .badge.severity_opportunity { background:#E0F2EC; color:#067D62; }
+  .ai-card .badge.severity_opportunity { background:#E0F2EC; color:var(--green); }
   .ai-card .badge.severity_info        { background:#E1EFFA; color:#1B4A75; }
-  .ai-card .badge.category { background:#F3F4F5; color:#555; }
-  .ai-card .badge.status   { background:#FFFFFF; color:#555; border:1px solid #D5D9D9; }
-  .ai-card .badge.confidence { background:#FFFFFF; color:#555; border:1px solid #D5D9D9;
+  .ai-card .badge.category { background:var(--bg); color:var(--text2); }
+  .ai-card .badge.status   { background:var(--bg2); color:var(--text2); border:1px solid var(--border); }
+  .ai-card .badge.confidence { background:var(--bg2); color:var(--text2); border:1px solid var(--border);
                                 font-family:'DM Mono',monospace; }
 
-  .ai-card .headline { font-size:15px; font-weight:700; color:#0F1111;
+  .ai-card .headline { font-size:15px; font-weight:700; color:var(--text);
                         margin-top:6px; line-height:1.35; }
-  .ai-card .scope { font-size:11px; color:#777; margin-top:2px;
+  .ai-card .scope { font-size:11px; color:var(--text3); margin-top:2px;
                      font-family:'DM Mono',monospace; }
-  .ai-card .scope a { color:#067D62; text-decoration:none; }
+  .ai-card .scope a { color:var(--green); text-decoration:none; }
   .ai-card .scope a:hover { text-decoration:underline; }
-  .ai-card .meta { font-size:11px; color:#777; margin-top:2px; }
+  .ai-card .meta { font-size:11px; color:var(--text3); margin-top:2px; }
 
   .ai-card .section { margin-top:8px; }
-  .ai-card .section .lbl { font-size:10px; color:#777; text-transform:uppercase;
+  .ai-card .section .lbl { font-size:10px; color:var(--text3); text-transform:uppercase;
                             letter-spacing:0.3px; font-weight:600; margin-bottom:2px; }
-  .ai-card .section .body { font-size:12px; color:#0F1111; line-height:1.55; }
+  .ai-card .section .body { font-size:12px; color:var(--text); line-height:1.55; }
 
   .ai-card .actions { display:flex; gap:6px; margin-top:10px;
                        padding-top:10px; border-top:1px solid #EAEDED; }
   .ai-card .actions button { padding:5px 12px; font-size:11px; font-weight:600;
-                              border-radius:4px; border:1px solid #D5D9D9;
-                              background:#FFF; cursor:pointer; color:#0F1111; }
-  .ai-card .actions button:hover { background:#F3F4F5; }
-  .ai-card .actions button.done       { border-color:#067D62; color:#067D62; }
+                              border-radius:4px; border:1px solid var(--border);
+                              background:var(--bg2); cursor:pointer; color:var(--text); }
+  .ai-card .actions button:hover { background:var(--bg); }
+  .ai-card .actions button.done       { border-color:var(--green); color:var(--green); }
   .ai-card .actions button.snooze     { border-color:#B7710E; color:#B7710E; }
-  .ai-card .actions button.dismiss    { border-color:#C40000; color:#C40000; }
+  .ai-card .actions button.dismiss    { border-color:var(--red); color:var(--red); }
 
-  .ai-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-              padding:40px; text-align:center; color:#555; }
+  .ai-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+              padding:40px; text-align:center; color:var(--text2); }
   .ai-empty .icon { font-size:36px; margin-bottom:8px; }
-  .ai-empty .ttl { font-size:15px; font-weight:700; color:#0F1111;
+  .ai-empty .ttl { font-size:15px; font-weight:700; color:var(--text);
                     margin-bottom:6px; }
 </style>
 {% endblock %}
@@ -137,7 +137,7 @@
   <span style="flex:1"></span>
   <span class="lbl">Status:</span>
   <select id="statusFilter" onchange="loadData()"
-          style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid #D5D9D9">
+          style="padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid var(--border)">
     <option value="new,acknowledged,snoozed">Active (new + ack + snoozed)</option>
     <option value="new">New only</option>
     <option value="acknowledged">Acknowledged</option>
@@ -225,7 +225,7 @@ function renderCards(d) {
       document.getElementById('emptyMsg').innerHTML =
         'Click <strong>🔄 Regenerate</strong> above to ask Claude to analyse your latest data. ' +
         'If you see <code>credit balance too low</code>, top up at ' +
-        '<a href="https://console.anthropic.com" target="_blank" style="color:#067D62">console.anthropic.com</a>.';
+        '<a href="https://console.anthropic.com" target="_blank" style="color:var(--green)">console.anthropic.com</a>.';
     }
     return;
   }

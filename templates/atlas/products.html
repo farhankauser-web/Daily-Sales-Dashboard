@@ -38,7 +38,7 @@
               <a class="btn btn-ghost btn-sm" href="{% url 'atlas:product_edit' p.pk %}?co={{ company.code }}">Edit</a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="8" style="text-align:center;color:#8A8A8A;padding:24px">No products yet.</td></tr>
+          <tr><td colspan="8" style="text-align:center;color:var(--text3);padding:24px">No products yet.</td></tr>
         {% endfor %}
         </tbody>
       </table>

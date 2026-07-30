@@ -30,29 +30,29 @@
 <style>
   .pnl-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
                     margin-bottom:14px; }
-  .pnl-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .pnl-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
               padding:12px 14px; }
-  .pnl-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .pnl-kpi .val { font-size:22px; font-weight:700; color:#0F1111;
+  .pnl-kpi .lbl { font-size:11px; color:var(--text3); }
+  .pnl-kpi .val { font-size:22px; font-weight:700; color:var(--text);
                    font-family:'DM Mono',monospace; margin-top:2px; }
   .pnl-kpi .delta { font-size:11px; margin-top:4px; font-family:'DM Mono',monospace; }
-  .pnl-kpi .delta.up  { color:#067D62; }
-  .pnl-kpi .delta.down { color:#C40000; }
-  .pnl-kpi .prev { font-size:10px; color:#8A8A8A; margin-top:2px; }
+  .pnl-kpi .delta.up  { color:var(--green); }
+  .pnl-kpi .delta.down { color:var(--red); }
+  .pnl-kpi .prev { font-size:10px; color:var(--text3); margin-top:2px; }
   .pnl-kpi.profit { border-left:4px solid #067D62; }
   .pnl-kpi.cost   { border-left:4px solid #C40000; }
 
-  .pnl-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+  .pnl-section { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
                   padding:14px 18px; margin-bottom:14px; }
-  .pnl-section h3 { margin:0 0 12px; font-size:14px; font-weight:700; color:#0F1111; }
-  .pnl-section .subtitle { font-size:11px; color:#777; margin-top:-8px; margin-bottom:10px; }
+  .pnl-section h3 { margin:0 0 12px; font-size:14px; font-weight:700; color:var(--text); }
+  .pnl-section .subtitle { font-size:11px; color:var(--text3); margin-top:-8px; margin-bottom:10px; }
 
   /* Waterfall */
   .wf-grid { display:grid; gap:8px; }
   .wf-row { display:grid; grid-template-columns: 130px 1fr 110px; align-items:center;
              gap:10px; min-height:28px; }
-  .wf-row .lbl { font-size:12px; font-weight:600; color:#0F1111; }
-  .wf-row .bar-track { position:relative; height:22px; background:#F8F9FA;
+  .wf-row .lbl { font-size:12px; font-weight:600; color:var(--text); }
+  .wf-row .bar-track { position:relative; height:22px; background:var(--bg4);
                         border-radius:4px; overflow:hidden; }
   .wf-row .bar { position:absolute; top:0; bottom:0; border-radius:3px; }
   .wf-row .bar.start  { background:#1B4A75; }
@@ -61,25 +61,25 @@
   .wf-row .bar.end.neg{ background:#C40000; }
   .wf-row .amount { font-family:'DM Mono',monospace; font-size:12px; font-weight:700;
                      text-align:right; }
-  .wf-row .amount.minus { color:#C40000; }
-  .wf-row .amount.end   { color:#067D62; font-size:13px; }
-  .wf-row .amount.end.neg { color:#C40000; }
+  .wf-row .amount.minus { color:var(--red); }
+  .wf-row .amount.end   { color:var(--green); font-size:13px; }
+  .wf-row .amount.end.neg { color:var(--red); }
 
   .wf-summary { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:14px;
                  padding-top:12px; border-top:1px solid #EAEDED; }
   .wf-summary .cell { font-size:12px; }
-  .wf-summary .cell .lbl { color:#777; }
+  .wf-summary .cell .lbl { color:var(--text3); }
   .wf-summary .cell .val { font-family:'DM Mono',monospace; font-weight:700;
-                            font-size:14px; color:#0F1111; }
+                            font-size:14px; color:var(--text); }
 
   /* Trend chart */
-  .trend-wrap { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .trend-wrap { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
                  padding:10px 14px; }
   .trend-head { display:flex; justify-content:space-between; align-items:center;
                  margin-bottom:8px; }
-  .trend-head .lbl { font-size:13px; font-weight:700; color:#0F1111; }
+  .trend-head .lbl { font-size:13px; font-weight:700; color:var(--text); }
   .trend-head select { padding:3px 8px; font-size:11px; border-radius:4px;
-                        border:1px solid #D5D9D9; }
+                        border:1px solid var(--border); }
 </style>
 {% endblock %}
 
@@ -223,7 +223,7 @@ function renderWaterfall(d) {
   const max = Math.max(...wf.map(r => Math.abs(r.running)));
   if (max === 0) {
     document.getElementById('waterfall').innerHTML =
-      '<div style="color:#8A8A8A;font-size:12px;padding:12px">No data for this window.</div>';
+      '<div style="color:var(--text3);font-size:12px;padding:12px">No data for this window.</div>';
     return;
   }
   const html = wf.map(r => {

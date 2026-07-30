@@ -9,13 +9,13 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
-  background: #EAEDED;
+  background:var(--bg3);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 40px 16px;
-  color: #0F1111;
+  color:var(--text);
   font-size: 13px;
 }
 
@@ -35,15 +35,15 @@ body {
 .brand-name span { color: #FF9900; }
 .brand-sub {
   font-size: 11px;
-  color: #555;
+  color:var(--text2);
   margin-top: 3px;
   letter-spacing: .3px;
 }
 
 /* Card */
 .login-card {
-  background: #FFFFFF;
-  border: 1px solid #D5D9D9;
+  background:var(--bg2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 28px 28px 22px;
   width: 100%;
@@ -53,7 +53,7 @@ body {
 .login-title {
   font-size: 19px;
   font-weight: 700;
-  color: #0F1111;
+  color:var(--text);
   margin-bottom: 18px;
 }
 
@@ -63,15 +63,15 @@ body {
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #0F1111;
+  color:var(--text);
   margin-bottom: 5px;
 }
 .form-control {
   width: 100%;
-  background: #FFFFFF;
+  background:var(--bg2);
   border: 1px solid #888C8C;
   border-radius: 4px;
-  color: #0F1111;
+  color:var(--text);
   padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
@@ -84,7 +84,7 @@ body {
 }
 .form-control::placeholder { color: #B2B2B2; }
 .field-error {
-  color: #C40000;
+  color:var(--red);
   font-size: 11.5px;
   margin-top: 4px;
 }
@@ -112,7 +112,7 @@ body {
 .alert-error {
   background: #FDF0F0;
   border: 1px solid #F5C6C6;
-  color: #C40000;
+  color:var(--red);
   border-radius: 4px;
   padding: 10px 12px;
   font-size: 12.5px;
@@ -135,9 +135,9 @@ body {
   align-items: center;
   gap: 7px;
   font-size: 11px;
-  color: #555;
-  background: #F3F4F5;
-  border: 1px solid #D5D9D9;
+  color:var(--text2);
+  background:var(--bg);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px 12px;
   margin-top: 14px;
@@ -150,7 +150,7 @@ body {
   font-size: 11px;
   color: #767676;
 }
-.login-footer a { color: #007185; }
+.login-footer a { color:var(--accent); }
 </style>
 </head>
 <body>

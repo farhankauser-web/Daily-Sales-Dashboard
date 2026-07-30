@@ -36,24 +36,24 @@
 
 {% block extra_head %}
 <style>
-  .pl-wrap { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  .pl-wrap { background:var(--bg2); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   .pl-meta { padding:8px 14px; font-size:11px; color:#5A6470; background:#F4F6F8;
-             border-bottom:1px solid #D5D9D9; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+             border-bottom:1px solid var(--border); display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
   .pl-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-  .pl-badge.settled  { background:#E0F2EC; color:#067D62; }
+  .pl-badge.settled  { background:#E0F2EC; color:var(--green); }
   .pl-badge.estimate { background:#FFF4DC; color:#9D6500; }
 
   table.pl { width:100%; border-collapse:collapse; font-size:12px; }
   table.pl th { background:#F4F6F8; padding:7px 10px; text-align:right; font-weight:600;
-                color:#0F1111; border-bottom:2px solid #232F3E; white-space:nowrap; }
+                color:var(--text); border-bottom:2px solid #232F3E; white-space:nowrap; }
   table.pl th.lbl { text-align:left; }
   table.pl td { padding:5px 10px; text-align:right; border-bottom:1px solid #F2F4F6; white-space:nowrap; }
   table.pl td.lbl { text-align:left; }
 
   tr.sec-header td { background:#EEF3F8; font-weight:700; color:#232F3E;
                      text-transform:uppercase; font-size:10px; letter-spacing:0.5px;
-                     border-top:1px solid #D5D9D9; }
-  tr.subtotal td { font-weight:700; background:#F7F9FB; border-top:1px solid #D5D9D9; }
+                     border-top:1px solid var(--border); }
+  tr.subtotal td { font-weight:700; background:#F7F9FB; border-top:1px solid var(--border); }
   tr.grand td    { font-weight:800; background:#EAF1EE; border-top:2px solid #067D62;
                    border-bottom:2px solid #067D62; font-size:13px; }
   tr.metric td   { color:#5A6470; font-style:italic; }
@@ -65,8 +65,8 @@
   td.editable input { width:90px; text-align:right; font-size:12px; border:1px solid #232F3E;
                       border-radius:4px; padding:2px 4px; }
   .neg { color:#B12704; }
-  .pos { color:#067D62; }
-  .mom.up   { color:#067D62; }
+  .pos { color:var(--green); }
+  .mom.up   { color:var(--green); }
   .mom.down { color:#B12704; }
   .src-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; }
   .src-settlement { background:#067D62; }
@@ -75,11 +75,11 @@
 
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
   .modal-bg.show { display:flex; align-items:center; justify-content:center; }
-  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:460px; max-width:92vw; }
+  .modal-card { background:var(--bg2); border-radius:10px; padding:20px 24px; width:460px; max-width:92vw; }
   .modal-card h3 { margin:0 0 12px; font-size:15px; }
-  .modal-card label { font-size:11px; color:#555; display:block; margin:8px 0 3px; }
+  .modal-card label { font-size:11px; color:var(--text2); display:block; margin:8px 0 3px; }
   .modal-card input, .modal-card select { width:100%; padding:6px 8px; font-size:12px;
-                                           border:1px solid #D5D9D9; border-radius:5px; }
+                                           border:1px solid var(--border); border-radius:5px; }
   .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
 </style>
 {% endblock %}
@@ -109,7 +109,7 @@
         </tr>
       </thead>
       <tbody id="plBody">
-        <tr><td class="lbl" colspan="6" style="padding:40px;text-align:center;color:#8A8A8A">Loading…</td></tr>
+        <tr><td class="lbl" colspan="6" style="padding:40px;text-align:center;color:var(--text3)">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -124,7 +124,7 @@
     <input type="number" id="entryAmount" step="0.01" value="0"/>
     <label>Comment (optional)</label>
     <textarea id="entryNote" rows="2" maxlength="512" style="width:100%;padding:6px 8px;
-      font-size:12px;border:1px solid #D5D9D9;border-radius:5px;resize:vertical"
+      font-size:12px;border:1px solid var(--border);border-radius:5px;resize:vertical"
       placeholder="e.g. April warehouse rent, credit from landlord…"></textarea>
     <label>Invoice / receipt (optional, max 15 MB)</label>
     <input type="file" id="entryInvoice" accept=".pdf,.png,.jpg,.jpeg,.webp,.xlsx,.csv"/>
@@ -300,7 +300,7 @@ function render(){
           style="display:inline-block;transition:transform .15s;${open?'transform:rotate(90deg)':''}">▸</span>
           ${SECTION_LABELS[row.section]}</td>
         <td colspan="2" style="font-weight:700">${stCell}</td>
-        <td colspan="3" style="color:#8A8A8A;font-size:10px">${open?'':'click to expand'}</td></tr>`;
+        <td colspan="3" style="color:var(--text3);font-size:10px">${open?'':'click to expand'}</td></tr>`;
     }
     lastSection = row.section;
     if (row.is_header) return; // pnl_lines header rows already covered by section header
@@ -365,9 +365,9 @@ function render(){
       <td class="lbl ${indentCls}">${arrow}${srcDot}${row.label}${recMark}</td>
       <td ${debAttr}>${debCell}</td>
       <td>${creCell}</td>
-      <td style="color:#8A8A8A">${prevCell}</td>
+      <td style="color:var(--text3)">${prevCell}</td>
       <td>${momCell}</td>
-      <td style="color:#8A8A8A">${yoyCell}</td>
+      <td style="color:var(--text3)">${yoyCell}</td>
     </tr>`;
 
     // Head sub-rows — only when this row is visible and expanded.

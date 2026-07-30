@@ -10,16 +10,16 @@
 
 {% block extra_head %}
 <style>
-  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; margin-bottom:14px; }
+  .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:14px; }
   .panel h3 { margin:0; padding:10px 14px; font-size:13px; border-bottom:1px solid #EDEFF1; }
   .body { padding:14px; }
   .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
   .f label { display:block; font-size:11px; color:#5A6470; margin-bottom:3px; }
-  .f input, .f select { width:100%; padding:6px 8px; border:1px solid #D5D9D9;
-                        border-radius:5px; font-size:13px; box-sizing:border-box; background:#fff; }
+  .f input, .f select { width:100%; padding:6px 8px; border:1px solid var(--border);
+                        border-radius:5px; font-size:13px; box-sizing:border-box; background:var(--bg2); }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
   table.t th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px;
-               border-bottom:1px solid #D5D9D9; white-space:nowrap; }
+               border-bottom:1px solid var(--border); white-space:nowrap; }
   table.t th.l, table.t td.l { text-align:left; }
   table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
                white-space:nowrap; font-variant-numeric:tabular-nums; vertical-align:top; }
@@ -39,7 +39,7 @@
   .banner.e { background:#FEF2F2; color:#B42318; border:1px solid #FECDCA; }
   .banner.w { background:#FFFBEB; color:#8A5A00; border:1px solid #FDE68A; }
   .banner.k { background:#ECFDF3; color:#1E6B34; border:1px solid #A6F4C5; }
-  select.posel { font-size:11px; padding:2px 4px; border:1px solid #D5D9D9; border-radius:4px; }
+  select.posel { font-size:11px; padding:2px 4px; border:1px solid var(--border); border-radius:4px; }
 </style>
 {% endblock %}
 

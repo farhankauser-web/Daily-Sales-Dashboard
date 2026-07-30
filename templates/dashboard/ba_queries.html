@@ -15,12 +15,12 @@
   </button>
   {% endfor %}
 </div>
-<span style="margin-left:12px;font-size:11px;color:#8A8A8A">ASIN:</span>
+<span style="margin-left:12px;font-size:11px;color:var(--text3)">ASIN:</span>
 <select id="asinPicker" class="form-control"
         style="margin-left:6px;padding:5px 10px;font-size:11px;font-family:'DM Mono',monospace;
-               width:auto;min-width:220px;background:#FFF;border:1px solid #067D62"
+               width:auto;min-width:220px;background:var(--bg2);border:1px solid #067D62"
         onchange="setAsin(this.value)"></select>
-<span style="margin-left:8px;font-size:11px;color:#8A8A8A">Week:</span>
+<span style="margin-left:8px;font-size:11px;color:var(--text3)">Week:</span>
 <select id="weekPicker" class="form-control"
         style="margin-left:6px;padding:5px 10px;font-size:11px;width:auto"
         onchange="setWeek(this.value)"></select>
@@ -32,43 +32,43 @@
                 padding:10px 14px; border-radius:6px; margin-bottom:12px;
                 font-size:13px; }
 
-  .ba-meta { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .ba-meta { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
               padding:10px 14px; margin-bottom:12px; font-size:12px;
               display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  .ba-meta strong { color:#0F1111; }
-  .ba-meta .asin { font-family:'DM Mono',monospace; background:#F3F4F5;
+  .ba-meta strong { color:var(--text); }
+  .ba-meta .asin { font-family:'DM Mono',monospace; background:var(--bg);
                     padding:2px 8px; border-radius:4px; }
 
   .ba-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .ba-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .ba-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:10px 14px; }
-  .ba-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .ba-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+  .ba-kpi .lbl { font-size:11px; color:var(--text3); }
+  .ba-kpi .val { font-size:20px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; }
-  .ba-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .ba-kpi .sub { font-size:11px; color:var(--text2); margin-top:2px; }
   .ba-kpi.share { border-left:4px solid #067D62; }
 
-  .ba-tag-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .ba-tag-bar { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
                  padding:8px 12px; margin-bottom:10px;
                  display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .ba-tag-bar .lbl { font-size:11px; color:#8A8A8A; margin-right:4px; }
-  .ba-tag-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+  .ba-tag-bar .lbl { font-size:11px; color:var(--text3); margin-right:4px; }
+  .ba-tag-pill { background:var(--bg); color:var(--text2); border:1px solid var(--border);
                   padding:4px 10px; border-radius:14px; cursor:pointer;
                   font-size:11px; font-weight:600; user-select:none; }
-  .ba-tag-pill:hover { background:#EAEDED; }
-  .ba-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:#067D62; }
+  .ba-tag-pill:hover { background:var(--bg3); }
+  .ba-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:var(--green); }
   .ba-tag-pill .count { background:rgba(0,0,0,0.12); margin-left:6px;
                         padding:1px 6px; border-radius:8px; font-size:10px; }
   .ba-tag-pill.active .count { background:rgba(255,255,255,0.25); }
 
   .ba-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .ba-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555;
+  .ba-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2);
                         position:sticky; top:0; z-index:1; cursor:pointer;
                         user-select:none; }
   .ba-table thead th.text-left { text-align:left; }
-  .ba-table thead th.sorted { color:#0F1111; }
+  .ba-table thead th.sorted { color:var(--text); }
   .ba-table tbody td { padding:6px 8px; text-align:right;
                         border-bottom:1px solid #EAEDED;
                         font-family:'DM Mono',monospace; font-size:11px; }
@@ -76,28 +76,28 @@
                                   max-width:280px; white-space:nowrap;
                                   overflow:hidden; text-overflow:ellipsis; }
   .ba-table tbody td.tags-cell { text-align:left; font-family:inherit; }
-  .ba-table tbody tr:hover { background:#F8F9FA; }
-  .ba-table tbody td.delta-up   { color:#067D62; }
-  .ba-table tbody td.delta-down { color:#C40000; }
+  .ba-table tbody tr:hover { background:var(--bg4); }
+  .ba-table tbody td.delta-up   { color:var(--green); }
+  .ba-table tbody td.delta-down { color:var(--red); }
 
   /* Share % visual bar */
   .ba-share-cell { padding:0 !important; height:28px; min-width:90px;
                     position:relative; }
   .ba-share-bar { position:absolute; top:6px; bottom:6px; left:4px; right:4px;
-                  background:#F3F4F5; border-radius:3px; overflow:hidden; }
+                  background:var(--bg); border-radius:3px; overflow:hidden; }
   .ba-share-bar > div { height:100%; background:#067D62; transition:width 250ms; }
   .ba-share-cell .pct { position:relative; z-index:1; padding:6px 8px;
                         font-family:'DM Mono',monospace; font-weight:600; }
 
   .ba-row-tag { display:inline-block; padding:1px 6px; border-radius:3px;
                  font-size:9px; font-weight:600; margin-right:2px; }
-  .ba-row-tag.dominant     { background:#E0F2EC; color:#067D62; }
+  .ba-row-tag.dominant     { background:#E0F2EC; color:var(--green); }
   .ba-row-tag.weak         { background:#FFF1ED; color:#9C5331; }
   .ba-row-tag.losing_pdp   { background:#FBE2E0; color:#9C3431; }
   .ba-row-tag.scaling_opp  { background:#E1EFFA; color:#1B4A75; }
 
-  .ba-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-                padding:32px; text-align:center; color:#555; }
+  .ba-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:var(--text2); }
 </style>
 {% endblock %}
 
@@ -146,11 +146,11 @@
 
 <div id="emptyState" class="ba-empty" style="display:none">
   <div style="font-size:32px;margin-bottom:8px">🔎</div>
-  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No search query data</div>
+  <div style="font-weight:700;color:var(--text);margin-bottom:4px">No search query data</div>
   <div id="emptyMsg"></div>
 </div>
 
-<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
             padding:8px;overflow:auto;max-height:calc(100vh - 340px)">
   <table class="ba-table" id="baTable">
     <thead><tr>
@@ -165,11 +165,11 @@
       <th data-sort="delta_purchase_share">Δ vs prior</th>
       <th class="text-left">Tags</th>
     </tr></thead>
-    <tbody id="baBody"><tr><td colspan="10" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+    <tbody id="baBody"><tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
   </table>
 </div>
 
-<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+<div id="footnote" style="margin-top:8px;font-size:11px;color:var(--text3)"></div>
 
 <script>
 let currentMP    = '{{ marketplace }}';
@@ -231,7 +231,7 @@ function renderKPI(d) {
     (d.asin_label.brand ? `<span>· ${d.asin_label.brand}</span>` : '') +
     (d.asin_label.sku ? `<span>· SKU ${d.asin_label.sku}</span>` : '') +
     `<span>· Week ${d.week_start} → ${d.week_end}</span>` +
-    `<span style="margin-left:auto;color:#777;font-size:11px">` +
+    `<span style="margin-left:auto;color:var(--text3);font-size:11px">` +
     `${d.weeks.length} week(s) ingested for this ASIN</span>`;
 
   // Δ-vs-prior banner — explains WHY the delta column is empty when there's no
@@ -240,7 +240,7 @@ function renderKPI(d) {
   if (d.delta_state && !d.delta_state.has_prior_week && d.delta_state.message) {
     dBanner.innerHTML =
       `<strong>⚠️ Δ vs prior is empty.</strong> ` + d.delta_state.message
-        .replace(/`([^`]+)`/g, '<code style="background:#FFF;padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
+        .replace(/`([^`]+)`/g, '<code style="background:var(--bg2);padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
     dBanner.style.display = 'block';
   } else {
     dBanner.style.display = 'none';
@@ -282,7 +282,7 @@ function shareCell(pct) {
 function renderTable(d) {
   const tbody = document.getElementById('baBody');
   if (!d.rows || d.rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#8A8A8A;padding:24px">No queries match the active filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px">No queries match the active filters.</td></tr>';
     return;
   }
   const sorted = d.rows.slice().sort((a, b) => {

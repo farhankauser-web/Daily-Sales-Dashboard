@@ -13,18 +13,18 @@
 {% block extra_head %}
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
-  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:19px; font-weight:700; } .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.ps .v { color:#B42318; } .kpi-card.ts .v { color:#B25E09; }
   .tabs { display:flex; gap:6px; margin-bottom:12px; }
-  .tab { padding:6px 14px; border:1px solid #D5D9D9; border-radius:6px; font-size:12px; cursor:pointer; background:#fff; }
+  .tab { padding:6px 14px; border:1px solid var(--border); border-radius:6px; font-size:12px; cursor:pointer; background:var(--bg2); }
   .tab.on { background:#232F3E; color:#fff; border-color:#232F3E; }
   .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
   .bar-row select, .bar-row label { font-size:12px; }
-  .bar-row select { padding:5px 8px; border:1px solid #D5D9D9; border-radius:5px; }
-  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; }
+  .bar-row select { padding:5px 8px; border:1px solid var(--border); border-radius:5px; }
+  .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
-  table.t th { background:#F4F6F8; text-align:right; padding:7px 9px; font-size:11px; border-bottom:1px solid #D5D9D9; white-space:nowrap; position:sticky; top:0; }
+  table.t th { background:#F4F6F8; text-align:right; padding:7px 9px; font-size:11px; border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; }
   table.t th.l, table.t td.l { text-align:left; }
   table.t td { padding:6px 9px; text-align:right; border-bottom:1px solid #EDEFF1; white-space:nowrap; font-variant-numeric:tabular-nums; }
   table.t tbody tr:hover { background:#F7FAFC; }
@@ -34,7 +34,7 @@
   .p-open { background:#E7F1FD; color:#0B4FA8; } .p-closed,.p-short_closed { background:#EDEFF1; color:#5A6470; }
   .p-allocated,.p-ready { background:#E6F4EA; color:#1E6B34; } .p-partial { background:#FFF4DC; color:#8A5A00; }
   .act { font-size:11px; color:#0F6FDE; cursor:pointer; } .act:hover { text-decoration:underline; }
-  .rsel { font-size:11px; padding:2px 4px; border:1px solid #D5D9D9; border-radius:4px; }
+  .rsel { font-size:11px; padding:2px 4px; border:1px solid var(--border); border-radius:4px; }
   .cont-h { background:#F7FAFC; font-weight:600; }
 </style>
 {% endblock %}

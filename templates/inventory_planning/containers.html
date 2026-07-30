@@ -24,17 +24,17 @@
 {% block extra_head %}
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; max-width:600px; }
-  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:20px; font-weight:700; }
   .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
   /* matrix — single sticky header row; freeze left (Type/Name/SKU) + top */
-  .mwrap { overflow:auto; max-height:76vh; border:1px solid #D5D9D9; border-radius:8px; background:#fff; }
+  .mwrap { overflow:auto; max-height:76vh; border:1px solid var(--border); border-radius:8px; background:var(--bg2); }
   table.mx { border-collapse:separate; border-spacing:0; font-size:12px; white-space:nowrap; table-layout:fixed; }
   table.mx th, table.mx td { border-bottom:1px solid #EDEFF1; border-right:1px solid #EDEFF1;
                              padding:5px 9px; box-sizing:border-box; overflow:hidden; }
   table.mx thead th { position:sticky; top:0; z-index:3; background:#F4F6F8; vertical-align:bottom; cursor:pointer; }
   /* frozen left columns (both header + body) */
-  .c-type, .c-name, .c-sku { position:sticky; background:#fff; z-index:2; text-align:left; }
+  .c-type, .c-name, .c-sku { position:sticky; background:var(--bg2); z-index:2; text-align:left; }
   .c-type { left:0; width:64px; min-width:64px; max-width:64px; }
   .c-name { left:64px; width:210px; min-width:210px; max-width:210px; }
   .c-sku  { left:274px; width:130px; min-width:130px; max-width:130px; }
@@ -43,27 +43,27 @@
   th.cont { text-align:right; width:118px; min-width:118px; max-width:118px; }
   th.cont .cno  { font-weight:700; font-family:'DM Mono',monospace; font-size:11px; white-space:normal; }
   th.cont .meta { font-size:10px; color:#5A6470; font-weight:400; white-space:normal; line-height:1.35; }
-  th.cont .uh   { font-weight:700; color:#232F3E; margin-top:4px; border-top:1px solid #D5D9D9; padding-top:3px; }
+  th.cont .uh   { font-weight:700; color:#232F3E; margin-top:4px; border-top:1px solid var(--border); padding-top:3px; }
   th.cont.at_port { background:#FFF7E8; } th.cont.customs { background:#FFF1F0; }
   td.num  { text-align:right; font-variant-numeric:tabular-nums; }
   td.zero { color:#C9CDD1; text-align:right; }
-  .c-total { position:sticky; right:0; background:#EAF1EE; color:#0F1111; font-weight:700;
+  .c-total { position:sticky; right:0; background:#EAF1EE; color:var(--text); font-weight:700;
              text-align:right; z-index:2; width:78px; min-width:78px; max-width:78px; }
-  thead .c-total { background:#D6E4DD; color:#0F1111; z-index:6; }
+  thead .c-total { background:#D6E4DD; color:var(--text); z-index:6; }
   tr.srow:hover td, tr.srow:hover .c-type, tr.srow:hover .c-name, tr.srow:hover .c-sku { background:#F8FAFB; }
   .sortarr { color:#232F3E; }
   .st { display:inline-block; padding:1px 6px; border-radius:9px; font-size:9px; font-weight:700; }
-  .st.departed { background:#E0F2EC; color:#067D62; }
+  .st.departed { background:#E0F2EC; color:var(--green); }
   .st.at_port  { background:#FFF4DC; color:#9D6500; }
   .st.pending  { background:#EDF2FB; color:#2456A6; }
-  .st.received,.st.cancelled { background:#EAEDED; color:#777; }
+  .st.received,.st.cancelled { background:var(--bg3); color:var(--text3); }
   .mono { font-family:'DM Mono',monospace; }
   .pdsedit { color:#2456A6; cursor:pointer; text-decoration:underline dotted; }
-  .pickup { color:#067D62; cursor:pointer; font-size:10px; font-weight:600; }
+  .pickup { color:var(--green); cursor:pointer; font-size:10px; font-weight:600; }
   .pickup:hover { text-decoration:underline; }
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
   .modal-bg.show { display:flex; align-items:center; justify-content:center; }
-  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:720px; max-width:94vw; max-height:88vh; overflow-y:auto; }
+  .modal-card { background:var(--bg2); border-radius:10px; padding:20px 24px; width:720px; max-width:94vw; max-height:88vh; overflow-y:auto; }
   .modal-card h3 { margin:0 0 10px; font-size:15px; }
 </style>
 {% endblock %}
@@ -87,7 +87,7 @@
 </div>
 <div class="mwrap">
   <table class="mx" id="mx"><thead id="mhead"></thead><tbody id="tbody">
-    <tr><td style="padding:30px;color:#8A8A8A">Loading…</td></tr>
+    <tr><td style="padding:30px;color:var(--text3)">Loading…</td></tr>
   </tbody></table>
 </div>
 
@@ -97,17 +97,17 @@
     <h3 id="contTitle">Add Container</h3>
     <input type="hidden" id="contId"/>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div><label style="font-size:11px;color:#555">Container No.</label>
+      <div><label style="font-size:11px;color:var(--text2)">Container No.</label>
         <input id="contNo" class="form-control" placeholder="e.g. ONEU1234567"/></div>
-      <div><label style="font-size:11px;color:#555">Vendor / Supplier</label>
+      <div><label style="font-size:11px;color:var(--text2)">Vendor / Supplier</label>
         <input id="contVendor" class="form-control" placeholder="e.g. Al Karam"/></div>
-      <div><label style="font-size:11px;color:#555">PO Number</label>
+      <div><label style="font-size:11px;color:var(--text2)">PO Number</label>
         <input id="contPo" class="form-control" placeholder="optional"/></div>
-      <div><label style="font-size:11px;color:#555">Shipment ID</label>
+      <div><label style="font-size:11px;color:var(--text2)">Shipment ID</label>
         <input id="contShip" class="form-control" placeholder="optional (FBA STA)"/></div>
-      <div><label style="font-size:11px;color:#555">Destination</label>
+      <div><label style="font-size:11px;color:var(--text2)">Destination</label>
         <select id="contDest" class="form-control"></select></div>
-      <div><label style="font-size:11px;color:#555">Status</label>
+      <div><label style="font-size:11px;color:var(--text2)">Status</label>
         <select id="contStatus" class="form-control">
           <option value="production_complete">Production Complete</option>
           <option value="waiting_pickup">Waiting for Pickup</option>
@@ -119,9 +119,9 @@
           <option value="out_for_delivery">Out for Delivery</option>
           <option value="cancelled">Cancelled</option>
         </select></div>
-      <div><label style="font-size:11px;color:#555">Departure date</label>
+      <div><label style="font-size:11px;color:var(--text2)">Departure date</label>
         <input id="contDep" type="date" class="form-control"/></div>
-      <div><label style="font-size:11px;color:#555">ETA Port (ETA→FC = +10d)</label>
+      <div><label style="font-size:11px;color:var(--text2)">ETA Port (ETA→FC = +10d)</label>
         <input id="contEta" type="date" class="form-control"/></div>
     </div>
     <div style="margin-top:12px;font-size:12px;font-weight:600">SKUs &amp; Units</div>
@@ -134,7 +134,7 @@
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
       <button class="btn btn-ghost btn-sm" id="contDelBtn" style="display:none" onclick="deleteContainer()">Delete</button>
       <div style="display:flex;gap:8px;margin-left:auto">
-        <button class="btn btn-secondary btn-sm" id="contRecvBtn" style="display:none;background:#E0F2EC;color:#067D62;border-color:#067D62" onclick="openReceive()">✓ Mark Received</button>
+        <button class="btn btn-secondary btn-sm" id="contRecvBtn" style="display:none;background:#E0F2EC;color:var(--green);border-color:var(--green)" onclick="openReceive()">✓ Mark Received</button>
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('contModal').classList.remove('show')">Cancel</button>
         <button class="btn btn-primary btn-sm" onclick="saveContainer()">Save</button>
       </div>
@@ -148,9 +148,9 @@
     <h3>Receive Container <span id="recvCont" class="mono"></span></h3>
     <p style="font-size:11px;color:#5A6470">Confirm the quantity received at the destination warehouse. This adds the stock to that warehouse, archives the container to Container History, and records the receipt. Edit a cell if the count differs (discrepancy is logged).</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <div><label style="font-size:11px;color:#555">Receiving warehouse</label>
+      <div><label style="font-size:11px;color:var(--text2)">Receiving warehouse</label>
         <select id="recvWh" class="form-control"></select></div>
-      <div><label style="font-size:11px;color:#555">Arrival date</label>
+      <div><label style="font-size:11px;color:var(--text2)">Arrival date</label>
         <input id="recvDate" type="date" class="form-control"/></div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -175,9 +175,9 @@
     <input type="hidden" id="pickId">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label style="font-size:11px;color:#5A6470">Departure date
-        <input type="date" id="pickDep" style="width:100%;padding:6px 8px;border:1px solid #D5D9D9;border-radius:5px"></label>
+        <input type="date" id="pickDep" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px"></label>
       <label style="font-size:11px;color:#5A6470">ETA port
-        <input type="date" id="pickEta" style="width:100%;padding:6px 8px;border:1px solid #D5D9D9;border-radius:5px"></label>
+        <input type="date" id="pickEta" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px"></label>
     </div>
     <div id="pickMsg" style="font-size:11px;margin-top:8px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -285,7 +285,7 @@ function render(){
         return u ? `<td class="num">${n(u)}</td>` : '<td class="zero">–</td>'; }).join('')}
       <td class="c-total">${n(r.total)}</td>
     </tr>`).join('')
-    : `<tr><td colspan="${conts.length+4}" style="text-align:center;color:#8A8A8A;padding:30px">No SKUs in transit${CAN_EDIT?' — click “🚢 Add Container”.':'.'}</td></tr>`;
+    : `<tr><td colspan="${conts.length+4}" style="text-align:center;color:var(--text3);padding:30px">No SKUs in transit${CAN_EDIT?' — click “🚢 Add Container”.':'.'}</td></tr>`;
 }
 
 // ── modal ──
@@ -294,7 +294,7 @@ function renderContLines(){
     ? contLines.map((l,i)=>`<div style="display:flex;gap:6px;font-size:12px;padding:2px 0">
         <span class="mono" style="flex:2">${esc(l.sku)}</span><span style="flex:1;text-align:right">${n(l.units)}</span>
         <span class="pdsedit" onclick="contLines.splice(${i},1);renderContLines()">remove</span></div>`).join('')
-    : '<div style="font-size:11px;color:#8A8A8A">No SKUs yet.</div>';
+    : '<div style="font-size:11px;color:var(--text3)">No SKUs yet.</div>';
 }
 function addContLine(){
   const sku=document.getElementById('clSku').value.trim().toUpperCase();

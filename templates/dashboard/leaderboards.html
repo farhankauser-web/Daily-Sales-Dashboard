@@ -40,16 +40,16 @@
                 font-size:12px; }
 
   .lb-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-  .lb-card { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+  .lb-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
               overflow:hidden; display:flex; flex-direction:column; }
   .lb-card .head { padding:10px 14px; border-bottom:1px solid #EAEDED;
                     display:flex; justify-content:space-between; align-items:center; }
-  .lb-card .head .ttl { font-size:13px; font-weight:700; color:#0F1111; }
+  .lb-card .head .ttl { font-size:13px; font-weight:700; color:var(--text); }
   .lb-card .head .ttl .icon { margin-right:6px; }
-  .lb-card .head .meta { font-size:11px; color:#777; }
+  .lb-card .head .meta { font-size:11px; color:var(--text3); }
   .lb-card .head .meta .pill { display:inline-block; padding:2px 8px;
-                                background:#F3F4F5; border-radius:10px;
-                                font-weight:600; color:#555; }
+                                background:var(--bg); border-radius:10px;
+                                font-weight:600; color:var(--text2); }
   .lb-card .body { max-height:calc(100vh - 320px); overflow:auto; }
 
   .lb-card.profit  .head { border-left:4px solid #067D62; }
@@ -60,8 +60,8 @@
   .lb-card.waste   .head { border-left:4px solid #9C3431; }
 
   .lb-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .lb-table thead th { background:#F8F9FA; padding:6px 8px; text-align:right;
-                        font-size:10px; font-weight:600; color:#555;
+  .lb-table thead th { background:var(--bg4); padding:6px 8px; text-align:right;
+                        font-size:10px; font-weight:600; color:var(--text2);
                         position:sticky; top:0; z-index:1; }
   .lb-table thead th.text-left { text-align:left; }
   .lb-table tbody td { padding:6px 8px; text-align:right;
@@ -71,11 +71,11 @@
                                   font-weight:600; max-width:260px;
                                   white-space:nowrap; overflow:hidden;
                                   text-overflow:ellipsis; }
-  .lb-table tbody td.text-left a { color:#0F1111; text-decoration:none; }
-  .lb-table tbody td.text-left a:hover { color:#067D62; text-decoration:underline; }
-  .lb-table tbody tr:hover { background:#F8F9FA; }
-  .lb-table tbody td.profit-pos { color:#067D62; font-weight:600; }
-  .lb-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .lb-table tbody td.text-left a { color:var(--text); text-decoration:none; }
+  .lb-table tbody td.text-left a:hover { color:var(--green); text-decoration:underline; }
+  .lb-table tbody tr:hover { background:var(--bg4); }
+  .lb-table tbody td.profit-pos { color:var(--green); font-weight:600; }
+  .lb-table tbody td.profit-neg { color:var(--red); font-weight:600; }
   .lb-table tbody td.rank { color:#A0A5AA; font-weight:700; width:24px; padding-left:10px; }
   .lb-table tbody tr:first-child td.rank { color:#FFB300; }
   .lb-table tbody tr:nth-child(2) td.rank { color:#A0A5AA; }
@@ -88,7 +88,7 @@
   .type-badge.sb { background:#EDE3F7; color:#4A2080; }
   .type-badge.sd { background:#FDF1DC; color:#7A5400; }
 
-  .lb-empty { padding:20px; text-align:center; color:#8A8A8A; font-size:12px; }
+  .lb-empty { padding:20px; text-align:center; color:var(--text3); font-size:12px; }
 
   @media (max-width: 1000px) {
     .lb-grid { grid-template-columns: 1fr; }
@@ -99,9 +99,9 @@
 {% block content %}
 <div id="cmWarning" class="lb-banner" style="display:none"></div>
 
-<div id="metaBar" style="background:#FFFFFF;border:1px solid #D5D9D9;
+<div id="metaBar" style="background:var(--bg2);border:1px solid var(--border);
                           border-radius:6px;padding:8px 12px;margin-bottom:10px;
-                          font-size:11px;color:#555">
+                          font-size:11px;color:var(--text2)">
   <span id="metaText">Loading…</span>
 </div>
 
@@ -148,7 +148,7 @@
       <div class="ttl"><span class="icon">📈</span>Highest Margin Campaigns</div>
       <div class="meta">
         <span class="pill" id="meta-hmc">—</span>
-        <span style="margin-left:6px;font-size:10px;color:#777">min spend $50</span>
+        <span style="margin-left:6px;font-size:10px;color:var(--text3)">min spend $50</span>
       </div>
     </div>
     <div class="body">
@@ -218,7 +218,7 @@
   </div>
 </div>
 
-<div id="footnote" style="margin-top:10px;font-size:11px;color:#777"></div>
+<div id="footnote" style="margin-top:10px;font-size:11px;color:var(--text3)"></div>
 
 <script>
 let currentMP     = '{{ marketplace }}';

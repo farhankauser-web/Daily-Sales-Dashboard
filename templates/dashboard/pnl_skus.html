@@ -35,35 +35,35 @@
 <style>
   .sk-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .sk-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .sk-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:10px 14px; }
-  .sk-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .sk-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+  .sk-kpi .lbl { font-size:11px; color:var(--text3); }
+  .sk-kpi .val { font-size:20px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; }
-  .sk-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .sk-kpi .sub { font-size:11px; color:var(--text2); margin-top:2px; }
   .sk-kpi.profit { border-left:4px solid #067D62; }
 
-  .sk-tag-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .sk-tag-bar { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
                  padding:8px 12px; margin-bottom:10px;
                  display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .sk-tag-bar .lbl { font-size:11px; color:#8A8A8A; margin-right:4px; }
-  .sk-tag-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+  .sk-tag-bar .lbl { font-size:11px; color:var(--text3); margin-right:4px; }
+  .sk-tag-pill { background:var(--bg); color:var(--text2); border:1px solid var(--border);
                   padding:4px 10px; border-radius:14px; cursor:pointer;
                   font-size:11px; font-weight:600; user-select:none; }
-  .sk-tag-pill:hover { background:#EAEDED; }
-  .sk-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:#067D62; }
+  .sk-tag-pill:hover { background:var(--bg3); }
+  .sk-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:var(--green); }
   .sk-tag-pill .count { background:rgba(0,0,0,0.12); color:inherit;
                         margin-left:6px; padding:1px 6px; border-radius:8px;
                         font-size:10px; }
   .sk-tag-pill.active .count { background:rgba(255,255,255,0.25); }
 
   .sk-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .sk-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555;
+  .sk-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2);
                         position:sticky; top:0; z-index:1; cursor:pointer;
                         user-select:none; }
   .sk-table thead th.text-left { text-align:left; }
-  .sk-table thead th.sorted { color:#0F1111; }
+  .sk-table thead th.sorted { color:var(--text); }
   .sk-table tbody td { padding:6px 8px; text-align:right;
                         border-bottom:1px solid #EAEDED;
                         font-family:'DM Mono',monospace; font-size:11px; }
@@ -71,9 +71,9 @@
                                   max-width:280px; white-space:nowrap;
                                   overflow:hidden; text-overflow:ellipsis; }
   .sk-table tbody td.tags-cell { text-align:left; font-family:inherit; }
-  .sk-table tbody tr:hover { background:#F8F9FA; }
-  .sk-table tbody td.profit-pos { color:#067D62; font-weight:600; }
-  .sk-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .sk-table tbody tr:hover { background:var(--bg4); }
+  .sk-table tbody td.profit-pos { color:var(--green); font-weight:600; }
+  .sk-table tbody td.profit-neg { color:var(--red); font-weight:600; }
   .sk-table tbody td.contrib-cell {
     background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
     text-align:left; padding-left:8px;
@@ -83,11 +83,11 @@
                  font-size:9px; font-weight:600; margin-right:2px; }
   .sk-row-tag.negative_margin         { background:#FBE2E0; color:#9C3431; }
   .sk-row-tag.high_revenue_low_profit { background:#FFF1ED; color:#9C5331; }
-  .sk-row-tag.profitable              { background:#E0F2EC; color:#067D62; }
+  .sk-row-tag.profitable              { background:#E0F2EC; color:var(--green); }
   .sk-row-tag.ad_dependent            { background:#E1EFFA; color:#1B4A75; }
 
-  .sk-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-                padding:32px; text-align:center; color:#555; }
+  .sk-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:var(--text2); }
 </style>
 {% endblock %}
 
@@ -125,11 +125,11 @@
 
 <div id="emptyState" class="sk-empty" style="display:none">
   <div style="font-size:32px;margin-bottom:8px">📦</div>
-  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No SKU data</div>
+  <div style="font-weight:700;color:var(--text);margin-bottom:4px">No SKU data</div>
   <div id="emptyMsg">No DailySkuSnapshot rows for the selected window.</div>
 </div>
 
-<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
             padding:8px;overflow:auto;max-height:calc(100vh - 340px)">
   <table class="sk-table" id="skTable">
     <thead><tr>
@@ -150,11 +150,11 @@
       <th class="text-left" data-sort="contribution_pct">Contribution %</th>
       <th class="text-left" data-sort="tags">Tags</th>
     </tr></thead>
-    <tbody id="skBody"><tr><td colspan="16" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+    <tbody id="skBody"><tr><td colspan="16" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
   </table>
 </div>
 
-<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+<div id="footnote" style="margin-top:8px;font-size:11px;color:var(--text3)"></div>
 
 <script>
 let currentMP     = '{{ marketplace }}';
@@ -245,8 +245,8 @@ function renderTable(d) {
     ).join('');
     return `<tr>
       <td class="text-left" title="${r.product_name}">${r.product_name || '—'}</td>
-      <td class="text-left" style="color:#555">${r.sku || '—'}</td>
-      <td class="text-left" style="color:#555">${r.brand || '—'}</td>
+      <td class="text-left" style="color:var(--text2)">${r.sku || '—'}</td>
+      <td class="text-left" style="color:var(--text2)">${r.brand || '—'}</td>
       <td class="${profClass}">${fmtCurrency(r.gross_profit)}</td>
       <td>${fmtPct(r.margin_pct)}</td>
       <td>${fmtCurrency(r.revenue)}</td>

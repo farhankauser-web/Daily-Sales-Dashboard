@@ -22,37 +22,37 @@
   .st-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
                 padding:10px 14px; border-radius:6px; margin-bottom:12px;
                 font-size:13px; }
-  .st-banner code { background:#FFF; padding:1px 4px; border-radius:3px;
+  .st-banner code { background:var(--bg2); padding:1px 4px; border-radius:3px;
                      font-size:11px; }
 
   .st-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .st-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .st-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:12px 16px; }
-  .st-kpi .lbl { font-size:11px; color:#8A8A8A; text-transform:uppercase;
+  .st-kpi .lbl { font-size:11px; color:var(--text3); text-transform:uppercase;
                   letter-spacing:0.3px; }
-  .st-kpi .val { font-size:24px; font-weight:700; color:#0F1111;
+  .st-kpi .val { font-size:24px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; margin-top:2px; }
   .st-kpi .delta { font-size:12px; margin-top:4px; font-family:'DM Mono',monospace; }
-  .st-kpi .delta.up   { color:#067D62; }
-  .st-kpi .delta.down { color:#C40000; }
+  .st-kpi .delta.up   { color:var(--green); }
+  .st-kpi .delta.down { color:var(--red); }
   .st-kpi.click    { border-left:4px solid #067D62; }
   .st-kpi.purchase { border-left:4px solid #1B4A75; }
 
-  .st-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+  .st-section { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
                  padding:14px 18px; margin-bottom:14px; }
-  .st-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
-  .st-section .sub { font-size:11px; color:#777; margin-bottom:10px; }
+  .st-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:var(--text); }
+  .st-section .sub { font-size:11px; color:var(--text3); margin-bottom:10px; }
   .st-section h3 .pill { display:inline-block; margin-left:6px; font-size:10px;
-                          background:#F3F4F5; padding:2px 8px; border-radius:10px;
-                          color:#555; font-weight:600; vertical-align:middle; }
+                          background:var(--bg); padding:2px 8px; border-radius:10px;
+                          color:var(--text2); font-weight:600; vertical-align:middle; }
 
   .st-grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
   @media (max-width:1100px) { .st-grid-2 { grid-template-columns: 1fr; } }
 
   .st-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .st-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555; }
+  .st-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2); }
   .st-table thead th.text-left { text-align:left; }
   .st-table tbody td { padding:6px 8px; text-align:right;
                         border-bottom:1px solid #EAEDED;
@@ -60,12 +60,12 @@
   .st-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
                                   max-width:300px; white-space:nowrap;
                                   overflow:hidden; text-overflow:ellipsis; }
-  .st-table tbody tr:hover { background:#F8F9FA; }
-  .st-table tbody td.delta-pos { color:#067D62; font-weight:600; }
-  .st-table tbody td.delta-neg { color:#C40000; font-weight:600; }
+  .st-table tbody tr:hover { background:var(--bg4); }
+  .st-table tbody td.delta-pos { color:var(--green); font-weight:600; }
+  .st-table tbody td.delta-neg { color:var(--red); font-weight:600; }
 
-  .st-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-              padding:24px; text-align:center; color:#555; font-size:12px; }
+  .st-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+              padding:24px; text-align:center; color:var(--text2); font-size:12px; }
 
   .st-spark { display:inline-block; width:120px; height:24px; vertical-align:middle; }
 </style>
@@ -259,7 +259,7 @@ function sparkline(series) {
   // Tiny SVG sparkline from a series of {click_share} values, ignoring nulls
   const vals = series.map(s => s.click_share).filter(v => v != null);
   if (!vals.length) return '<span style="color:#C0C5CA">—</span>';
-  if (vals.length === 1) return `<span style="color:#777">single point: ${fmtPct(vals[0])}</span>`;
+  if (vals.length === 1) return `<span style="color:var(--text3)">single point: ${fmtPct(vals[0])}</span>`;
   const max = Math.max(...vals, 0.001);
   const min = Math.min(...vals);
   const W = 120, H = 24, P = 2;

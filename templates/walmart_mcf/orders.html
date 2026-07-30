@@ -23,14 +23,14 @@
 {% block extra_head %}
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
-  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:20px; font-weight:700; }
   .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.err .v { color:#C0392B; }
-  table.wm { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
-             border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.wm { width:100%; border-collapse:collapse; font-size:12px; background:var(--bg2);
+             border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   table.wm th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
-                text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9; }
+                text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border); }
   table.wm td { padding:7px 10px; border-bottom:1px solid #EDEFF1; vertical-align:top; }
   tr.orow { cursor:pointer; }
   tr.orow:hover { background:#F8FAFB; }
@@ -39,19 +39,19 @@
   .st.NEW,.st.VALIDATED,.st.PROCESSING { background:#EDF2FB; color:#2456A6; }
   .st.HOLD { background:#FFF4DC; color:#9D6500; }
   .st.MCF_CREATED { background:#E8ECFD; color:#4C3FD4; }
-  .st.SHIPPED { background:#E0F2EC; color:#067D62; }
+  .st.SHIPPED { background:#E0F2EC; color:var(--green); }
   .st.TRACKING_UPLOADED,.st.COMPLETED { background:#D9F0E5; color:#046A52; }
   .st.ERROR,.st.CANCELLED { background:#FDE8E6; color:#C0392B; }
   .warnbar { background:#FFF4DC; border:1px solid #EAC26B; color:#7A5200;
              border-radius:8px; padding:8px 12px; font-size:12px; margin-bottom:12px; }
   .vtab { padding:7px 16px; font-size:12px; font-weight:600; cursor:pointer;
-          border:1px solid #D5D9D9; background:#F4F6F8; color:#5A6470; }
+          border:1px solid var(--border); background:#F4F6F8; color:#5A6470; }
   .vtab:first-child { border-radius:8px 0 0 8px; }
   .vtab:last-child  { border-radius:0 8px 8px 0; border-left:none; }
   .vtab.active { background:#232F3E; color:#fff; border-color:#232F3E; }
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
   .modal-bg.show { display:flex; align-items:center; justify-content:center; }
-  .modal-card { background:#fff; border-radius:12px; padding:22px 24px; width:420px; max-width:92vw;
+  .modal-card { background:var(--bg2); border-radius:12px; padding:22px 24px; width:420px; max-width:92vw;
                 box-shadow:0 8px 30px rgba(0,0,0,.18); }
 </style>
 {% endblock %}
@@ -93,7 +93,7 @@
   </tr></thead>
   <tbody id="tbody">
 
-    <tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr>
+    <tr><td colspan="12" style="text-align:center;color:var(--text3);padding:30px">Loading…</td></tr>
   </tbody>
 </table>
 
@@ -166,10 +166,10 @@ async function load(){
     </tr>
     <tr class="drow" id="d${i}" style="display:none"><td colspan="12">
       ${o.error ? `<div style="color:#C0392B;margin-bottom:6px">⚠ ${esc(o.error)}</div>` : ''}
-      <b>Audit trail:</b> ${o.audit.map(a=>`${a.at} ${a.from||'∅'}→${a.to} <span style="color:#8A8A8A">(${esc(a.actor)})</span>`).join(' · ') || '—'}<br>
+      <b>Audit trail:</b> ${o.audit.map(a=>`${a.at} ${a.from||'∅'}→${a.to} <span style="color:var(--text3)">(${esc(a.actor)})</span>`).join(' · ') || '—'}<br>
       <b>Packages:</b> ${o.packages.map(p=>`${esc(p.carrier)} ${esc(p.tracking)} ${p.uploaded?'(uploaded ✓)':'(pending)'}`).join(' · ') || 'none yet'}
     </td></tr>`;
-  }).join('') : `<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:30px">${
+  }).join('') : `<tr><td colspan="12" style="text-align:center;color:var(--text3);padding:30px">${
     curView==='archive'
       ? 'Archive is empty — orders move here automatically once their tracking is uploaded to Walmart.'
       : 'No active Walmart orders — click “⬇ Import Orders”, or check the Archive tab.'}</td></tr>`;

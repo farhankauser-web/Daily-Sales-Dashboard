@@ -73,7 +73,7 @@
           <th></th><th>SKU</th><th>Description</th><th>Quality</th><th>Size / GSM</th>
           <th>Stock</th><th>Weight kg</th><th>Kg rate</th><th>Unit price</th>
         </tr></thead><tbody id="pickBody">
-          <tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:16px">—</td></tr>
+          <tr><td colspan="9" style="text-align:center;color:var(--text3);padding:16px">—</td></tr>
         </tbody></table>
       </div>
     </div>
@@ -134,7 +134,7 @@ async function loadProducts(){
       <td>${p.kg_rate != null ? p.kg_rate : '—'}</td>
       <td style="font-weight:600">${price}</td></tr>`;
   }).join('') :
-  '<tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:16px">No products for this quality.</td></tr>';
+  '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:16px">No products for this quality.</td></tr>';
 }
 
 function addLine(id){

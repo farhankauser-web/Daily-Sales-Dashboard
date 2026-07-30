@@ -38,12 +38,12 @@
 <style>
   .cmp-kpi-strip { display:grid; grid-template-columns: repeat(6, 1fr); gap:10px;
                     margin-bottom:14px; }
-  .cmp-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .cmp-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
              padding:10px 14px; }
-  .cmp-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .cmp-kpi .val { font-size:18px; font-weight:700; color:#0F1111;
+  .cmp-kpi .lbl { font-size:11px; color:var(--text3); }
+  .cmp-kpi .val { font-size:18px; font-weight:700; color:var(--text);
                    font-family:'DM Mono',monospace; }
-  .cmp-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .cmp-kpi .sub { font-size:11px; color:var(--text2); margin-top:2px; }
   .cmp-kpi.profit  { border-left:4px solid #067D62; }
   .cmp-kpi.loss    { border-left:4px solid #C40000; }
 
@@ -52,26 +52,26 @@
                  font-size:12px; }
 
   .cmp-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .cmp-table thead th { background:#F3F4F5; padding:8px 8px; text-align:right;
-                         font-size:11px; font-weight:600; color:#555;
+  .cmp-table thead th { background:var(--bg); padding:8px 8px; text-align:right;
+                         font-size:11px; font-weight:600; color:var(--text2);
                          cursor:pointer; user-select:none;
                          position:sticky; top:0; z-index:1; }
   .cmp-table thead th:first-child,
   .cmp-table thead th.text-left { text-align:left; }
   .cmp-table thead th .sort-arrow { color:#C0C5CA; margin-left:4px; font-size:9px; }
-  .cmp-table thead th.sorted .sort-arrow { color:#0F1111; }
+  .cmp-table thead th.sorted .sort-arrow { color:var(--text); }
   .cmp-table tbody td { padding:6px 8px; text-align:right;
                          border-bottom:1px solid #EAEDED;
                          font-family:'DM Mono',monospace; font-size:11px; }
   .cmp-table tbody td.name-cell { text-align:left; font-weight:600; max-width:280px;
                                    white-space:nowrap; overflow:hidden;
                                    text-overflow:ellipsis; font-family:inherit; }
-  .cmp-table tbody td.name-cell a { color:#0F1111; text-decoration:none; }
-  .cmp-table tbody td.name-cell a:hover { text-decoration:underline; color:#067D62; }
+  .cmp-table tbody td.name-cell a { color:var(--text); text-decoration:none; }
+  .cmp-table tbody td.name-cell a:hover { text-decoration:underline; color:var(--green); }
   .cmp-table tbody td.type-cell { text-align:left; font-family:inherit; }
-  .cmp-table tbody tr:hover { background:#F8F9FA; }
-  .cmp-table tbody td.profit-pos { color:#067D62; font-weight:600; }
-  .cmp-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .cmp-table tbody tr:hover { background:var(--bg4); }
+  .cmp-table tbody td.profit-pos { color:var(--green); font-weight:600; }
+  .cmp-table tbody td.profit-neg { color:var(--red); font-weight:600; }
   .cmp-table tbody td.coverage-low { background:#FFF1ED; color:#9C3431; }
 
   .type-badge { display:inline-block; padding:1px 6px; border-radius:3px;
@@ -80,8 +80,8 @@
   .type-badge.sb { background:#EDE3F7; color:#4A2080; }
   .type-badge.sd { background:#FDF1DC; color:#7A5400; }
 
-  .cmp-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-                padding:32px; text-align:center; color:#555; }
+  .cmp-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:var(--text2); }
 </style>
 {% endblock %}
 
@@ -105,11 +105,11 @@
 
 <div id="emptyState" class="cmp-empty" style="display:none">
   <div style="font-size:32px;margin-bottom:8px">📭</div>
-  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No campaign data</div>
+  <div style="font-weight:700;color:var(--text);margin-bottom:4px">No campaign data</div>
   <div id="emptyMsg">No CampaignProfitDaily rows found for the selected period.</div>
 </div>
 
-<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
             padding:8px;overflow:auto;max-height:calc(100vh - 280px)">
   <table class="cmp-table" id="cmpTable">
     <thead><tr>
@@ -135,7 +135,7 @@
   </table>
 </div>
 
-<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+<div id="footnote" style="margin-top:8px;font-size:11px;color:var(--text3)"></div>
 
 <script>
 let currentMP     = '{{ marketplace }}';

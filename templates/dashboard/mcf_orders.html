@@ -23,19 +23,19 @@
 {% block extra_head %}
 <style>
   .mcf-filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-                 background:#FFF; border:1px solid #D5D9D9; border-radius:8px;
+                 background:var(--bg2); border:1px solid var(--border); border-radius:8px;
                  padding:10px 14px; margin-bottom:14px; font-size:12px; }
   .mcf-filters select, .mcf-filters input {
-    padding:5px 8px; font-size:12px; border:1px solid #D5D9D9; border-radius:5px; }
+    padding:5px 8px; font-size:12px; border:1px solid var(--border); border-radius:5px; }
   table.mcf { width:100%; border-collapse:collapse; font-size:12px;
-              background:#FFF; border:1px solid #D5D9D9; }
+              background:var(--bg2); border:1px solid var(--border); }
   table.mcf th { background:#F4F6F8; padding:8px 10px; text-align:left;
                  border-bottom:2px solid #232F3E; white-space:nowrap; }
   table.mcf td { padding:6px 10px; border-bottom:1px solid #F2F4F6;
                  vertical-align:top; }
   .st { display:inline-block; padding:2px 8px; border-radius:10px;
         font-size:10px; font-weight:700; }
-  .st.Complete, .st.CompletePartialled { background:#E0F2EC; color:#067D62; }
+  .st.Complete, .st.CompletePartialled { background:#E0F2EC; color:var(--green); }
   .st.Cancelled, .st.Unfulfillable     { background:#FBE2E0; color:#7A2B25; }
   .st.Planning, .st.Processing, .st.New, .st.Received
         { background:#FFF4DC; color:#9D6500; }
@@ -73,7 +73,7 @@
     <th>Ship date</th><th>ETA</th>
   </tr></thead>
   <tbody id="tbody">
-    <tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr>
+    <tr><td colspan="9" style="text-align:center;color:var(--text3);padding:30px">Loading…</td></tr>
   </tbody>
 </table>
 {% endblock %}
@@ -116,7 +116,7 @@ async function load(){
     const carrier = pkgs.map(p=>p.carrier).join('<br>') || '—';
     const trk = pkgs.length
       ? pkgs.map(p=>`<span class="trk" title="click to copy" onclick="copyTrk('${p.tracking}')">${p.tracking}</span>`).join('<br>')
-      : '<span style="color:#8A8A8A">not shipped yet</span>';
+      : '<span style="color:var(--text3)">not shipped yet</span>';
     const ship = pkgs.map(p=>p.ship_date||'').join('<br>');
     const eta  = pkgs.map(p=>p.eta||'').join('<br>');
     return `<tr>
@@ -128,7 +128,7 @@ async function load(){
       <td>${carrier}</td><td>${trk}</td>
       <td>${ship}</td><td>${eta}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="9" style="text-align:center;color:#8A8A8A;padding:30px">No MCF orders in this window — click “Sync from Amazon”.</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:30px">No MCF orders in this window — click “Sync from Amazon”.</td></tr>';
 }
 async function syncMcf(){
   const btn = document.getElementById('syncBtn');

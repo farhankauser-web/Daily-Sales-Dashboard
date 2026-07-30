@@ -27,21 +27,21 @@
 {% block extra_head %}
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
-  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; cursor:pointer; }
+  .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; cursor:pointer; }
   .kpi-card .v { font-size:20px; font-weight:700; }
   .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.crit .v { color:#C0392B; }
   .kpi-card.warn .v { color:#9D6500; }
   .kpi-card.exc  .v { color:#2456A6; }
-  .ipwrap { overflow:auto; max-height:74vh; border:1px solid #D5D9D9; border-radius:8px; background:#fff; }
-  table.ip { border-collapse:separate; border-spacing:0; font-size:12px; background:#fff; }
+  .ipwrap { overflow:auto; max-height:74vh; border:1px solid var(--border); border-radius:8px; background:var(--bg2); }
+  table.ip { border-collapse:separate; border-spacing:0; font-size:12px; background:var(--bg2); }
   table.ip th { background:#EDEFF3; text-align:right; padding:6px 8px; font-size:10px;
-                text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9;
+                text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border);
                 border-right:1px solid #EDEFF1; white-space:nowrap; cursor:pointer; }
   table.ip thead th { position:sticky; top:0; z-index:3; }
   table.ip th.lbl { text-align:left; }
   table.ip td { padding:6px 8px; border-bottom:1px solid #EDEFF1; border-right:1px solid #EDEFF1;
-                text-align:right; white-space:nowrap; background:#fff; }
+                text-align:right; white-space:nowrap; background:var(--bg2); }
   table.ip td.lbl { text-align:left; }
   /* freeze the 4 left identity columns (Type/Category/Name/SKU) */
   table.ip th:nth-child(1), table.ip td:nth-child(1){ position:sticky; left:0;    width:60px;  min-width:60px; z-index:2; }
@@ -54,23 +54,23 @@
   .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
   .st.critical { background:#FDE8E6; color:#C0392B; }
   .st.warning  { background:#FFF4DC; color:#9D6500; }
-  .st.ok       { background:#E0F2EC; color:#067D62; }
+  .st.ok       { background:#E0F2EC; color:var(--green); }
   .st.excess   { background:#EDF2FB; color:#2456A6; }
-  .st.dormant  { background:#EAEDED; color:#777; }
+  .st.dormant  { background:var(--bg3); color:var(--text3); }
   .mono { font-family:'DM Mono',monospace; }
-  .muted { color:#8A8A8A; }
+  .muted { color:var(--text3); }
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
   .modal-bg.show { display:flex; align-items:center; justify-content:center; }
-  .modal-card { background:#fff; border-radius:10px; padding:20px 24px; width:720px; max-width:94vw;
+  .modal-card { background:var(--bg2); border-radius:10px; padding:20px 24px; width:720px; max-width:94vw;
                 max-height:88vh; overflow-y:auto; }
   .modal-card h3 { margin:0 0 10px; font-size:15px; }
   .pdsedit { color:#2456A6; cursor:pointer; text-decoration:underline dotted; }
   .data-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-              background:#F4F6F8; border:1px solid #D5D9D9; border-radius:8px;
+              background:#F4F6F8; border:1px solid var(--border); border-radius:8px;
               padding:8px 12px; margin-bottom:14px; }
   .data-bar .db-label { font-weight:700; font-size:12px; color:#232F3E; }
   .data-bar .db-sep { width:1px; height:22px; background:#D5D9D9; }
-  .data-bar .db-hint { font-size:11px; color:#8A8A8A; margin-left:auto; }
+  .data-bar .db-hint { font-size:11px; color:var(--text3); margin-left:auto; }
 </style>
 {% endblock %}
 
@@ -154,7 +154,7 @@
     <th data-k="total_cov" title="(Amazon+WH+Transit+Pakistan) ÷ PDS">Total Cov Days</th>
     <th data-k="status">Status</th>
   </tr></thead>
-  <tbody id="tbody"><tr><td colspan="30" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr></tbody>
+  <tbody id="tbody"><tr><td colspan="30" style="text-align:center;color:var(--text3);padding:30px">Loading…</td></tr></tbody>
 </table>
 </div>
 
@@ -172,7 +172,7 @@
   <div class="modal-card" style="width:400px">
     <h3 style="margin:0 0 4px">Set Potential Daily Sale</h3>
     <div id="pdsSub" style="font-size:12px;color:#5A6470;margin-bottom:14px"></div>
-    <label style="font-size:11px;color:#555">PDS — potential units sold per day</label>
+    <label style="font-size:11px;color:var(--text2)">PDS — potential units sold per day</label>
     <input id="pdsInput" type="number" min="0" step="0.1" class="form-control"
            style="font-size:16px;padding:8px" onkeydown="if(event.key==='Enter')savePdsModal()"/>
     <div id="pdsMsg" style="font-size:11px;color:#C0392B;margin-top:6px;min-height:14px"></div>
@@ -189,22 +189,22 @@
     <h3 id="contTitle">Add Container</h3>
     <input type="hidden" id="contId"/>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div><label style="font-size:11px;color:#555">Container No.</label>
+      <div><label style="font-size:11px;color:var(--text2)">Container No.</label>
         <input id="contNo" class="form-control" placeholder="e.g. ONEU1234567"/></div>
-      <div><label style="font-size:11px;color:#555">Vendor</label>
+      <div><label style="font-size:11px;color:var(--text2)">Vendor</label>
         <input id="contVendor" class="form-control" placeholder="e.g. AKT"/></div>
-      <div><label style="font-size:11px;color:#555">Destination</label>
+      <div><label style="font-size:11px;color:var(--text2)">Destination</label>
         <select id="contDest" class="form-control"></select></div>
-      <div><label style="font-size:11px;color:#555">Status</label>
+      <div><label style="font-size:11px;color:var(--text2)">Status</label>
         <select id="contStatus" class="form-control">
           <option value="departed">On the water</option>
           <option value="pending">Pending departure</option>
           <option value="at_port">At port</option>
           <option value="received">Received</option>
         </select></div>
-      <div><label style="font-size:11px;color:#555">Departure date</label>
+      <div><label style="font-size:11px;color:var(--text2)">Departure date</label>
         <input id="contDep" type="date" class="form-control"/></div>
-      <div><label style="font-size:11px;color:#555">ETA Port (ETA dest = +10d)</label>
+      <div><label style="font-size:11px;color:var(--text2)">ETA Port (ETA dest = +10d)</label>
         <input id="contEta" type="date" class="form-control"/></div>
     </div>
     <div style="margin-top:12px;font-size:12px;font-weight:600">SKUs & Units</div>
@@ -351,7 +351,7 @@ function renderGrid(){
       <td><b>${cov(r.total_cov)}</b></td>
       <td><span class="st ${r.status}">${r.status.replace('_',' ').toUpperCase()}</span></td>
     </tr>`;
-  }).join('') : '<tr><td colspan="30" style="text-align:center;color:#8A8A8A;padding:30px">No SKUs match.</td></tr>';
+  }).join('') : '<tr><td colspan="30" style="text-align:center;color:var(--text3);padding:30px">No SKUs match.</td></tr>';
 }
 
 function renderTransit(){

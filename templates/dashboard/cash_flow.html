@@ -20,24 +20,24 @@
 <style>
   .cf-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
               gap:12px; margin-bottom:16px; }
-  .cf-card  { background:#FFF; border:1px solid #D5D9D9; border-radius:8px;
+  .cf-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
               padding:14px 16px; border-left:4px solid #232F3E; }
   .cf-card .lbl { font-size:11px; color:#5A6470; text-transform:uppercase;
                   letter-spacing:.4px; }
   .cf-card .val { font-size:22px; font-weight:700; margin-top:4px; }
-  .cf-card .sub { font-size:11px; color:#8A8A8A; margin-top:3px; }
-  .cf-card.green { border-left-color:#067D62; }
+  .cf-card .sub { font-size:11px; color:var(--text3); margin-top:3px; }
+  .cf-card.green { border-left-color:var(--green); }
   .cf-card.red   { border-left-color:#B12704; }
   .cf-card.amber { border-left-color:#D17B00; }
   table.cf { width:100%; border-collapse:collapse; font-size:12px;
-             background:#FFF; border:1px solid #D5D9D9; border-radius:8px; }
+             background:var(--bg2); border:1px solid var(--border); border-radius:8px; }
   table.cf th { background:#F4F6F8; padding:8px 12px; text-align:right;
                 border-bottom:2px solid #232F3E; white-space:nowrap; }
   table.cf th:first-child, table.cf td:first-child { text-align:left; }
   table.cf td { padding:6px 12px; text-align:right; border-bottom:1px solid #F2F4F6; }
-  .neg { color:#B12704; } .pos { color:#067D62; }
+  .neg { color:#B12704; } .pos { color:var(--green); }
   .cf-note { font-size:11px; color:#5A6470; background:#F4F6F8;
-             border:1px solid #D5D9D9; border-radius:6px; padding:8px 12px;
+             border:1px solid var(--border); border-radius:6px; padding:8px 12px;
              margin-bottom:14px; }
 </style>
 {% endblock %}
@@ -68,14 +68,14 @@
     <table class="cf">
       <thead><tr><th>Month</th><th>Net proceeds</th><th>Payouts</th>
         <th>Movement</th><th>Cumulative</th><th>Deferred</th></tr></thead>
-      <tbody id="cfMonths"><tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      <tbody id="cfMonths"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
     </table>
   </div>
   <div>
     <h3 style="font-size:14px;margin:0 0 8px">Payouts Amazon made</h3>
     <table class="cf">
       <thead><tr><th>Date</th><th>Amount</th></tr></thead>
-      <tbody id="cfPayouts"><tr><td colspan="2" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      <tbody id="cfPayouts"><tr><td colspan="2" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -122,11 +122,11 @@ async function load(){
         <td>${money(m.movement)}</td>
         <td>${money(m.cumulative)}</td>
         <td>${money(m.deferred)}</td></tr>`).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">No uploads yet — upload a Unified Transaction report on the Management P&L page.</td></tr>';
+    : '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">No uploads yet — upload a Unified Transaction report on the Management P&L page.</td></tr>';
 
   document.getElementById('cfPayouts').innerHTML = j.payouts.length
     ? j.payouts.map(p=>`<tr><td>${p.date}</td><td>${money(-p.amount)}</td></tr>`).join('')
-    : '<tr><td colspan="2" style="text-align:center;color:#8A8A8A;padding:24px">No payouts recorded.</td></tr>';
+    : '<tr><td colspan="2" style="text-align:center;color:var(--text3);padding:24px">No payouts recorded.</td></tr>';
 }
 load();
 </script>

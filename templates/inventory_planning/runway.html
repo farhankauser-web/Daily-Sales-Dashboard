@@ -15,20 +15,20 @@
 {% block extra_head %}
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
-  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; cursor:pointer; }
+  .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; cursor:pointer; }
   .kpi-card .v { font-size:22px; font-weight:700; }
   .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.gap .v { color:#C0392B; }
   .kpi-card.tr  .v { color:#9D6500; }
-  .kpi-card.safe .v { color:#067D62; }
+  .kpi-card.safe .v { color:var(--green); }
 
   .legend { font-size:11px; color:#5A6470; margin-bottom:10px; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
   .legend .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
 
-  .rwtable { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
-             border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  .rwtable { width:100%; border-collapse:collapse; font-size:12px; background:var(--bg2);
+             border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   .rwtable th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
-                text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9; }
+                text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border); }
   .rwtable td { padding:6px 10px; border-bottom:1px solid #EDEFF1; vertical-align:middle; }
   tr.rw:hover { background:#F8FAFB; }
   .mono { font-family:'DM Mono',monospace; }
@@ -44,8 +44,8 @@
   .badge { display:inline-block; padding:2px 7px; border-radius:9px; font-size:10px; font-weight:700; }
   .badge.gap { background:#FDE8E6; color:#C0392B; }
   .badge.tr  { background:#FFF4DC; color:#9D6500; }
-  .badge.safe{ background:#E0F2EC; color:#067D62; }
-  .badge.nopds{ background:#EAEDED; color:#777; }
+  .badge.safe{ background:#E0F2EC; color:var(--green); }
+  .badge.nopds{ background:var(--bg3); color:var(--text3); }
   .sorth { cursor:pointer; user-select:none; white-space:nowrap; }
   .sorth:hover { background:#E9EDF1; }
   .ar { font-size:9px; color:#0F6FDE; }
@@ -94,7 +94,7 @@
     <th style="width:110px" class="sorth" onclick="sortBy('runs')">Runs out <span class="ar" data-k="runs"></span></th>
     <th>Runway (next <span id="horiz2">120</span> days)</th>
   </tr></thead>
-  <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:30px">Loading…</td></tr></tbody>
+  <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Loading…</td></tr></tbody>
 </table>
 {% endblock %}
 
@@ -233,20 +233,20 @@ function render(){
   const label={expedite:'EXPEDITE',ship_now:'SHIP NOW',short_transit:'SHORT',safe:'OK',nopds:'—'};
   document.getElementById('tbody').innerHTML = rows.length ? rows.map(r=>{
     const c=cat(r);
-    const runs = r.stockout_date ? `${r.stockout_date}<br><span style="font-size:10px;color:#8A8A8A">in ${offset(r.stockout_date)}d</span>` : '<span style="color:#067D62">120d+</span>';
+    const runs = r.stockout_date ? `${r.stockout_date}<br><span style="font-size:10px;color:var(--text3)">in ${offset(r.stockout_date)}d</span>` : '<span style="color:var(--green)">120d+</span>';
     const pdsCell = CAN_EDIT
       ? `<span class="pdsedit" onclick="editPds('${r.sku}',${r.pds===null?'null':r.pds})">${r.pds===null?'set':n(r.pds)}</span>`
       : n(r.pds);
     return `<tr class="rw">
       <td><span class="mono">${esc(r.sku)}</span> <span class="badge ${badge[c]}">${label[c]}</span>
-        <div style="font-size:10px;color:#8A8A8A">${esc((r.name||'').slice(0,40))}</div></td>
+        <div style="font-size:10px;color:var(--text3)">${esc((r.name||'').slice(0,40))}</div></td>
       <td>${pdsCell}</td>
       <td title="Amazon ${n(r.total_amazon)} + WH ${n(r.total_wh)} = ${r.cover_onhand_days??'—'}d cover">${n(r.total_amazon + r.total_wh)}</td>
       <td>${r.transit?n(r.transit):'<span style="color:#C0392B">0</span>'}</td>
       <td>${runs}</td>
       <td data-tip="${encodeURIComponent(tipHtml(r))}">${track(r)}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:30px">No SKUs match.</td></tr>';
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">No SKUs match.</td></tr>';
   wireTips();
 }
 

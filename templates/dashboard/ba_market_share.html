@@ -15,7 +15,7 @@
   </button>
   {% endfor %}
 </div>
-<span style="margin-left:12px;font-size:11px;color:#8A8A8A">Week:</span>
+<span style="margin-left:12px;font-size:11px;color:var(--text3)">Week:</span>
 <select id="weekPicker" class="form-control"
         style="margin-left:6px;padding:5px 10px;font-size:11px;width:auto"
         onchange="setWeek(this.value)"></select>
@@ -29,28 +29,28 @@
 
   .ms-kpi-strip { display:grid; grid-template-columns: repeat(6, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .ms-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .ms-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:10px 14px; }
-  .ms-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .ms-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+  .ms-kpi .lbl { font-size:11px; color:var(--text3); }
+  .ms-kpi .val { font-size:20px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; }
-  .ms-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .ms-kpi .sub { font-size:11px; color:var(--text2); margin-top:2px; }
   .ms-kpi.share-click    { border-left:4px solid #067D62; }
   .ms-kpi.share-purchase { border-left:4px solid #1B4A75; }
   .ms-kpi.wins           { border-left:4px solid #067D62; }
   .ms-kpi.losses         { border-left:4px solid #C40000; }
 
-  .ms-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+  .ms-section { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
                  padding:14px 18px; margin-bottom:14px; }
-  .ms-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
-  .ms-section .sub { font-size:11px; color:#777; margin-bottom:10px; }
+  .ms-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:var(--text); }
+  .ms-section .sub { font-size:11px; color:var(--text3); margin-bottom:10px; }
   .ms-section h3 .pill { display:inline-block; margin-left:6px; font-size:10px;
-                          background:#F3F4F5; padding:2px 8px; border-radius:10px;
-                          color:#555; font-weight:600; vertical-align:middle; }
+                          background:var(--bg); padding:2px 8px; border-radius:10px;
+                          color:var(--text2); font-weight:600; vertical-align:middle; }
 
   .ms-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .ms-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555;
+  .ms-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2);
                         position:sticky; top:0; z-index:1; }
   .ms-table thead th.text-left { text-align:left; }
   .ms-table tbody td { padding:6px 8px; text-align:right;
@@ -59,9 +59,9 @@
   .ms-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
                                   max-width:280px; white-space:nowrap;
                                   overflow:hidden; text-overflow:ellipsis; }
-  .ms-table tbody tr:hover { background:#F8F9FA; }
-  .ms-table tbody td.share-pos { color:#067D62; font-weight:600; }
-  .ms-table tbody td.share-neg { color:#C40000; font-weight:600; }
+  .ms-table tbody tr:hover { background:var(--bg4); }
+  .ms-table tbody td.share-pos { color:var(--green); font-weight:600; }
+  .ms-table tbody td.share-neg { color:var(--red); font-weight:600; }
   .ms-table tbody td.share-cell {
     background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
     text-align:left; padding-left:8px;
@@ -76,8 +76,8 @@
   .ms-grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
   @media (max-width:1100px) { .ms-grid-2 { grid-template-columns: 1fr; } }
 
-  .ms-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-              padding:32px; text-align:center; color:#555; }
+  .ms-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+              padding:32px; text-align:center; color:var(--text2); }
 </style>
 {% endblock %}
 
@@ -107,7 +107,7 @@
 
 <div id="emptyState" class="ms-empty" style="display:none">
   <div style="font-size:32px;margin-bottom:8px">📊</div>
-  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No market share data</div>
+  <div style="font-weight:700;color:var(--text);margin-bottom:4px">No market share data</div>
   <div id="emptyMsg"></div>
 </div>
 
@@ -124,7 +124,7 @@
           <th class="text-left">Our click share</th>
           <th>Purchase</th>
         </tr></thead>
-        <tbody id="winsBody"><tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+        <tbody id="winsBody"><tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -141,7 +141,7 @@
           <th class="text-left">Our click share</th>
           <th>Our ASINs in top-3</th>
         </tr></thead>
-        <tbody id="lossesBody"><tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+        <tbody id="lossesBody"><tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -160,7 +160,7 @@
         <th class="text-left">Avg co-purchase %</th>
         <th>Peak co-purchase %</th>
       </tr></thead>
-      <tbody id="competitorsBody"><tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      <tbody id="competitorsBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -179,7 +179,7 @@
         <th class="text-left">Avg click share</th>
         <th class="text-left">Avg purchase share</th>
       </tr></thead>
-      <tbody id="perAsinBody"><tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+      <tbody id="perAsinBody"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -233,7 +233,7 @@ function renderKPI(d) {
 function renderWins(d) {
   const body = document.getElementById('winsBody');
   if (!d.wins.length) {
-    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">No queries with ≥30% click share yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">No queries with ≥30% click share yet.</td></tr>';
     return;
   }
   body.innerHTML = d.wins.map(r => `<tr>
@@ -247,7 +247,7 @@ function renderWins(d) {
 function renderLosses(d) {
   const body = document.getElementById('lossesBody');
   if (!d.losses.length) {
-    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#8A8A8A;padding:24px">No high-volume queries where we appear but lose. ✅</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">No high-volume queries where we appear but lose. ✅</td></tr>';
     return;
   }
   body.innerHTML = d.losses.map(r => `<tr>
@@ -261,7 +261,7 @@ function renderLosses(d) {
 function renderCompetitors(d) {
   const body = document.getElementById('competitorsBody');
   if (!d.competitors.length) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">No external competitor pairs in Market Basket data for this week.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">No external competitor pairs in Market Basket data for this week.</td></tr>';
     return;
   }
   body.innerHTML = d.competitors.map(c => `<tr>
@@ -276,7 +276,7 @@ function renderCompetitors(d) {
 function renderPerAsin(d) {
   const body = document.getElementById('perAsinBody');
   if (!d.per_asin.length) {
-    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#8A8A8A;padding:24px">No per-ASIN data.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">No per-ASIN data.</td></tr>';
     return;
   }
   body.innerHTML = d.per_asin.map(r => `<tr>

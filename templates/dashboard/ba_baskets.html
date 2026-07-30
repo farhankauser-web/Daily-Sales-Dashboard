@@ -28,23 +28,23 @@
 
   .bk-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .bk-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .bk-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:10px 14px; }
-  .bk-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .bk-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+  .bk-kpi .lbl { font-size:11px; color:var(--text3); }
+  .bk-kpi .val { font-size:20px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; }
-  .bk-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .bk-kpi .sub { font-size:11px; color:var(--text2); margin-top:2px; }
   .bk-kpi.cross  { border-left:4px solid #1B4A75; }
   .bk-kpi.repeat { border-left:4px solid #067D62; }
 
-  .bk-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+  .bk-section { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
                  padding:14px 18px; margin-bottom:14px; }
-  .bk-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
-  .bk-section .sub { font-size:11px; color:#777; margin-bottom:10px; }
+  .bk-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:var(--text); }
+  .bk-section .sub { font-size:11px; color:var(--text3); margin-bottom:10px; }
 
   .bk-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .bk-table thead th { background:#F3F4F5; padding:8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555; }
+  .bk-table thead th { background:var(--bg); padding:8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2); }
   .bk-table thead th.text-left { text-align:left; }
   .bk-table tbody td { padding:7px 8px; text-align:right;
                         border-bottom:1px solid #EAEDED;
@@ -52,32 +52,32 @@
   .bk-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit;
                                   max-width:260px; white-space:nowrap;
                                   overflow:hidden; text-overflow:ellipsis; }
-  .bk-table tbody tr:hover { background:#F8F9FA; }
+  .bk-table tbody tr:hover { background:var(--bg4); }
 
   .bk-pair-badge { display:inline-block; padding:1px 6px; border-radius:3px;
                     font-size:9px; font-weight:600; margin-left:4px; }
-  .bk-pair-badge.internal { background:#E0F2EC; color:#067D62; }
-  .bk-pair-badge.external { background:#F3F4F5; color:#555; }
+  .bk-pair-badge.internal { background:#E0F2EC; color:var(--green); }
+  .bk-pair-badge.external { background:var(--bg); color:var(--text2); }
 
   .bk-combo-cell { padding:0 !important; height:28px; min-width:90px;
                     position:relative; }
   .bk-combo-bar { position:absolute; top:6px; bottom:6px; left:4px; right:4px;
-                  background:#F3F4F5; border-radius:3px; overflow:hidden; }
+                  background:var(--bg); border-radius:3px; overflow:hidden; }
   .bk-combo-bar > div { height:100%; background:#1B4A75; transition:width 250ms; }
   .bk-combo-cell .pct { position:relative; z-index:1; padding:6px 8px;
                         font-family:'DM Mono',monospace; font-weight:600; }
 
-  .bk-tabs { display:flex; gap:2px; border-bottom:1px solid #D5D9D9;
+  .bk-tabs { display:flex; gap:2px; border-bottom:1px solid var(--border);
               margin-bottom:10px; }
   .bk-tab  { padding:8px 14px; cursor:pointer; font-size:12px; font-weight:600;
-              color:#555; border-bottom:2px solid transparent; user-select:none; }
-  .bk-tab:hover  { color:#0F1111; }
-  .bk-tab.active { color:#0F1111; border-bottom-color:#067D62; }
+              color:var(--text2); border-bottom:2px solid transparent; user-select:none; }
+  .bk-tab:hover  { color:var(--text); }
+  .bk-tab.active { color:var(--text); border-bottom-color:var(--green); }
   .bk-pane { display:none; }
   .bk-pane.active { display:block; }
 
-  .bk-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-              padding:32px; text-align:center; color:#555; }
+  .bk-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+              padding:32px; text-align:center; color:var(--text2); }
 </style>
 {% endblock %}
 
@@ -104,7 +104,7 @@
 
 <div id="emptyState" class="bk-empty" style="display:none">
   <div style="font-size:32px;margin-bottom:8px">🛍️</div>
-  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No basket data yet</div>
+  <div style="font-weight:700;color:var(--text);margin-bottom:4px">No basket data yet</div>
   <div id="emptyMsg"></div>
 </div>
 
@@ -127,7 +127,7 @@
           <th>Combo %</th>
           <th class="text-left">Title</th>
         </tr></thead>
-        <tbody id="pairsBody"><tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+        <tbody id="pairsBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -148,7 +148,7 @@
           <th class="text-left">Top partner</th>
           <th>Top combo</th>
         </tr></thead>
-        <tbody id="perAsinBody"><tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+        <tbody id="perAsinBody"><tr><td colspan="7" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -169,7 +169,7 @@
           <th>Repeat revenue</th>
           <th>Repeat % of rev</th>
         </tr></thead>
-        <tbody id="repeatBody"><tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+        <tbody id="repeatBody"><tr><td colspan="7" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -232,7 +232,7 @@ function renderPairs(d) {
   const body = document.getElementById('pairsBody');
   const pairs = d.market_basket.pairs;
   if (!pairs || pairs.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8A8A8A;padding:24px">No co-purchase pairs.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">No co-purchase pairs.</td></tr>';
     return;
   }
   body.innerHTML = pairs.map(p => {
@@ -254,7 +254,7 @@ function renderPerAsin(d) {
   const body = document.getElementById('perAsinBody');
   const rows = d.market_basket.per_asin;
   if (!rows || rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">No data.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:24px">No data.</td></tr>';
     return;
   }
   body.innerHTML = rows.map(r => {
@@ -276,7 +276,7 @@ function renderRepeat(d) {
   const body = document.getElementById('repeatBody');
   const rows = d.repeat_purchase.rows;
   if (!rows || rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8A8A8A;padding:24px">No data.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:24px">No data.</td></tr>';
     return;
   }
   body.innerHTML = rows.map(r => `<tr>

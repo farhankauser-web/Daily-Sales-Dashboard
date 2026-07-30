@@ -15,10 +15,10 @@
 
 {% block extra_head %}
 <style>
-  .po-card { background:#fff;border:1px solid #D5D9D9;border-radius:8px;margin-bottom:12px;padding:12px 14px; }
+  .po-card { background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;padding:12px 14px; }
   .stages { display:flex;gap:4px;flex-wrap:wrap;margin:8px 0; }
-  .stg { padding:3px 9px;border-radius:10px;font-size:10px;font-weight:600;background:#EAEDED;color:#555; }
-  .stg.done { background:#E0F2EC;color:#067D62; }
+  .stg { padding:3px 9px;border-radius:10px;font-size:10px;font-weight:600;background:var(--bg3);color:var(--text2); }
+  .stg.done { background:#E0F2EC;color:var(--green); }
   .stg.cur  { background:#FFF4DC;color:#9D6500; }
   .stg.late { background:#FDE8E6;color:#C0392B; }
   table.lines { border-collapse:collapse;font-size:11px;width:100%; }
@@ -84,7 +84,7 @@
       {% if po.notes %}<div style="font-size:11px;color:#5A6470;margin-top:6px">{{ po.notes }}</div>{% endif %}
     </div>
     {% empty %}
-    <div style="text-align:center;color:#8A8A8A;padding:40px">No purchase orders yet.</div>
+    <div style="text-align:center;color:var(--text3);padding:40px">No purchase orders yet.</div>
     {% endfor %}
 
     {% if open_backorders %}

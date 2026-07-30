@@ -37,35 +37,35 @@
 <style>
   .st-kpi-strip { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .st-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .st-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:10px 14px; }
-  .st-kpi .lbl { font-size:11px; color:#8A8A8A; }
-  .st-kpi .val { font-size:20px; font-weight:700; color:#0F1111;
+  .st-kpi .lbl { font-size:11px; color:var(--text3); }
+  .st-kpi .val { font-size:20px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; }
-  .st-kpi .sub { font-size:11px; color:#555; margin-top:2px; }
+  .st-kpi .sub { font-size:11px; color:var(--text2); margin-top:2px; }
   .st-kpi.profit  { border-left:4px solid #067D62; }
 
-  .st-tag-bar { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .st-tag-bar { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
                  padding:8px 12px; margin-bottom:10px;
                  display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .st-tag-bar .lbl { font-size:11px; color:#8A8A8A; margin-right:4px; }
-  .st-tag-pill { background:#F3F4F5; color:#555; border:1px solid #E5E7E8;
+  .st-tag-bar .lbl { font-size:11px; color:var(--text3); margin-right:4px; }
+  .st-tag-pill { background:var(--bg); color:var(--text2); border:1px solid var(--border);
                   padding:4px 10px; border-radius:14px; cursor:pointer;
                   font-size:11px; font-weight:600; user-select:none; }
-  .st-tag-pill:hover { background:#EAEDED; }
-  .st-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:#067D62; }
+  .st-tag-pill:hover { background:var(--bg3); }
+  .st-tag-pill.active { background:#067D62; color:#FFFFFF; border-color:var(--green); }
   .st-tag-pill .count { background:rgba(0,0,0,0.12); color:inherit;
                         margin-left:6px; padding:1px 6px; border-radius:8px;
                         font-size:10px; }
   .st-tag-pill.active .count { background:rgba(255,255,255,0.25); }
 
   .st-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .st-table thead th { background:#F3F4F5; padding:8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555;
+  .st-table thead th { background:var(--bg); padding:8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2);
                         position:sticky; top:0; z-index:1; cursor:pointer;
                         user-select:none; }
   .st-table thead th.text-left { text-align:left; }
-  .st-table thead th.sorted { color:#0F1111; }
+  .st-table thead th.sorted { color:var(--text); }
   .st-table thead th .help { display:inline-block; margin-left:4px;
                               width:13px; height:13px; line-height:13px;
                               border-radius:50%; background:#D5D9D9; color:#FFF;
@@ -78,17 +78,17 @@
                                   white-space:nowrap; overflow:hidden;
                                   text-overflow:ellipsis; font-family:inherit;
                                   cursor:pointer; }
-  .st-table tbody td.term-cell:hover { color:#067D62; text-decoration:underline; }
+  .st-table tbody td.term-cell:hover { color:var(--green); text-decoration:underline; }
   .st-table tbody td.tags-cell { text-align:left; font-family:inherit; }
-  .st-table tbody tr:hover { background:#F8F9FA; }
-  .st-table tbody td.profit-pos { color:#067D62; font-weight:600; }
-  .st-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .st-table tbody tr:hover { background:var(--bg4); }
+  .st-table tbody td.profit-pos { color:var(--green); font-weight:600; }
+  .st-table tbody td.profit-neg { color:var(--red); font-weight:600; }
 
   .st-row-tag { display:inline-block; padding:1px 6px; border-radius:3px;
                  font-size:9px; font-weight:600; margin-right:2px; }
   .st-row-tag.high_spend_no_sales  { background:#FBE2E0; color:#9C3431; }
   .st-row-tag.high_ctr_low_cvr     { background:#FFF1ED; color:#9C5331; }
-  .st-row-tag.high_profit          { background:#E0F2EC; color:#067D62; }
+  .st-row-tag.high_profit          { background:#E0F2EC; color:var(--green); }
   .st-row-tag.scaling_opportunity  { background:#E1EFFA; color:#1B4A75; }
   .st-row-tag.losing_money         { background:#FBE2E0; color:#9C3431; }
 
@@ -96,20 +96,20 @@
   .st-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.4);
                   display:flex; align-items:center; justify-content:center;
                   z-index:1000; }
-  .st-modal    { background:#FFFFFF; border-radius:10px; padding:18px 20px;
+  .st-modal    { background:var(--bg2); border-radius:10px; padding:18px 20px;
                   max-width:800px; width:90%; max-height:80vh; overflow:auto; }
-  .st-modal h3 { margin:0 0 8px; font-size:15px; color:#0F1111; }
-  .st-modal .close-x { float:right; cursor:pointer; color:#8A8A8A; }
+  .st-modal h3 { margin:0 0 8px; font-size:15px; color:var(--text); }
+  .st-modal .close-x { float:right; cursor:pointer; color:var(--text3); }
   .st-modal table { width:100%; font-size:11px; border-collapse:collapse; }
-  .st-modal th { background:#F3F4F5; padding:6px; text-align:right;
-                  font-size:11px; font-weight:600; color:#555; }
+  .st-modal th { background:var(--bg); padding:6px; text-align:right;
+                  font-size:11px; font-weight:600; color:var(--text2); }
   .st-modal th.text-left { text-align:left; }
   .st-modal td { padding:5px; text-align:right; border-bottom:1px solid #EAEDED;
                   font-family:'DM Mono',monospace; }
   .st-modal td.text-left { text-align:left; font-family:inherit; }
 
-  .st-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-                padding:32px; text-align:center; color:#555; }
+  .st-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+                padding:32px; text-align:center; color:var(--text2); }
 </style>
 {% endblock %}
 
@@ -152,11 +152,11 @@
 
 <div id="emptyState" class="st-empty" style="display:none">
   <div style="font-size:32px;margin-bottom:8px">🔍</div>
-  <div style="font-weight:700;color:#0F1111;margin-bottom:4px">No search terms found</div>
+  <div style="font-weight:700;color:var(--text);margin-bottom:4px">No search terms found</div>
   <div id="emptyMsg">No AdsSearchTermDailySnapshot rows for the selected window.</div>
 </div>
 
-<div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
             padding:8px;overflow:auto;max-height:calc(100vh - 360px)">
   <table class="st-table" id="stTable">
     <thead><tr>
@@ -177,17 +177,17 @@
       <th>Campaigns</th>
       <th class="text-left">Tags</th>
     </tr></thead>
-    <tbody id="stBody"><tr><td colspan="13" style="text-align:center;color:#8A8A8A;padding:24px">Loading…</td></tr></tbody>
+    <tbody id="stBody"><tr><td colspan="13" style="text-align:center;color:var(--text3);padding:24px">Loading…</td></tr></tbody>
   </table>
 </div>
 
-<div id="footnote" style="margin-top:8px;font-size:11px;color:#777"></div>
+<div id="footnote" style="margin-top:8px;font-size:11px;color:var(--text3)"></div>
 
 <div id="drillModal" class="st-modal-bg" style="display:none" onclick="closeDrill(event)">
   <div class="st-modal" onclick="event.stopPropagation()">
     <span class="close-x" onclick="closeDrill()">×</span>
     <h3 id="drillTitle">Term breakdown</h3>
-    <div id="drillBody"><div style="color:#8A8A8A">Loading…</div></div>
+    <div id="drillBody"><div style="color:var(--text3)">Loading…</div></div>
   </div>
 </div>
 
@@ -359,12 +359,12 @@ async function openDrill(term) {
   const body  = document.getElementById('drillBody');
   modal.style.display = 'flex';
   title.textContent = `“${term}” — per-campaign breakdown`;
-  body.innerHTML = '<div style="color:#8A8A8A">Loading…</div>';
+  body.innerHTML = '<div style="color:var(--text3)">Loading…</div>';
   try {
     const r = await fetch(`/dashboard/api/search-terms/detail/?mp=${currentMP}&period=${currentPeriod}&term=${encodeURIComponent(term)}`);
     const d = await r.json();
     if (!d.rows || d.rows.length === 0) {
-      body.innerHTML = '<div style="color:#8A8A8A">No campaign rows found for this term.</div>';
+      body.innerHTML = '<div style="color:var(--text3)">No campaign rows found for this term.</div>';
       return;
     }
     body.innerHTML = `<table>
@@ -375,7 +375,7 @@ async function openDrill(term) {
       </tr></thead><tbody>
       ${d.rows.map(r => `<tr>
         <td class="text-left" title="${r.campaign_name}">
-          <a href="/dashboard/campaigns/${encodeURIComponent(r.campaign_id)}/?mp=${currentMP}" style="color:#0F1111">
+          <a href="/dashboard/campaigns/${encodeURIComponent(r.campaign_id)}/?mp=${currentMP}" style="color:var(--text)">
             ${r.campaign_name}
           </a>
         </td>
@@ -390,7 +390,7 @@ async function openDrill(term) {
       </tbody></table>`;
   } catch (e) {
     console.error('drill failed', e);
-    body.innerHTML = `<div style="color:#C40000">Failed: ${e.message}</div>`;
+    body.innerHTML = `<div style="color:var(--red)">Failed: ${e.message}</div>`;
   }
 }
 

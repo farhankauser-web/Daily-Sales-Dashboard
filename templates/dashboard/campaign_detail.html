@@ -32,11 +32,11 @@
 {% block extra_head %}
 <style>
   /* KPI strip */
-  .cd-meta { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .cd-meta { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
               padding:10px 14px; margin-bottom:10px; display:flex;
               align-items:center; gap:14px; flex-wrap:wrap; font-size:12px; }
-  .cd-meta .ttl { font-size:13px; font-weight:600; color:#0F1111; }
-  .cd-meta .sub { color:#555; }
+  .cd-meta .ttl { font-size:13px; font-weight:600; color:var(--text); }
+  .cd-meta .sub { color:var(--text2); }
   .cd-meta .badge { display:inline-block; padding:2px 8px; border-radius:4px;
                     font-size:10px; font-weight:600; }
   .cd-meta .badge.sp { background:#E1EFFA; color:#1B4A75; }
@@ -45,12 +45,12 @@
 
   .cd-kpi-strip { display:grid; grid-template-columns: repeat(8, 1fr); gap:8px;
                    margin-bottom:14px; }
-  .cd-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .cd-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:8px 10px; }
-  .cd-kpi .lbl { font-size:10px; color:#8A8A8A; }
-  .cd-kpi .val { font-size:16px; font-weight:700; color:#0F1111;
+  .cd-kpi .lbl { font-size:10px; color:var(--text3); }
+  .cd-kpi .val { font-size:16px; font-weight:700; color:var(--text);
                   font-family:'DM Mono',monospace; }
-  .cd-kpi .sub { font-size:10px; color:#555; margin-top:1px; }
+  .cd-kpi .sub { font-size:10px; color:var(--text2); margin-top:1px; }
   .cd-kpi.profit  { border-left:4px solid #067D62; }
   .cd-kpi.loss    { border-left:4px solid #C40000; }
 
@@ -59,46 +59,46 @@
                 font-size:12px; }
 
   /* Trend chart */
-  .cd-chart-wrap { background:#FFFFFF; border:1px solid #D5D9D9;
+  .cd-chart-wrap { background:var(--bg2); border:1px solid var(--border);
                     border-radius:8px; padding:10px; margin-bottom:14px; }
   .cd-chart-head { display:flex; justify-content:space-between;
                     align-items:center; margin-bottom:8px; }
-  .cd-chart-head .lbl { font-size:13px; font-weight:600; color:#0F1111; }
+  .cd-chart-head .lbl { font-size:13px; font-weight:600; color:var(--text); }
   .cd-chart-head select { padding:3px 8px; font-size:11px; border-radius:4px;
-                            border:1px solid #D5D9D9; }
+                            border:1px solid var(--border); }
 
   /* Tabs */
-  .cd-tabs { display:flex; gap:2px; border-bottom:1px solid #D5D9D9;
+  .cd-tabs { display:flex; gap:2px; border-bottom:1px solid var(--border);
               margin-bottom:10px; }
   .cd-tab  { padding:8px 14px; cursor:pointer; font-size:12px; font-weight:600;
-              color:#555; border-bottom:2px solid transparent; user-select:none; }
-  .cd-tab:hover { color:#0F1111; }
-  .cd-tab.active { color:#0F1111; border-bottom-color:#067D62; }
+              color:var(--text2); border-bottom:2px solid transparent; user-select:none; }
+  .cd-tab:hover { color:var(--text); }
+  .cd-tab.active { color:var(--text); border-bottom-color:var(--green); }
 
   .cd-tab-pane { display:none; }
   .cd-tab-pane.active { display:block; }
 
   /* Table */
   .cd-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .cd-table thead th { background:#F3F4F5; padding:7px 8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555;
+  .cd-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2);
                         position:sticky; top:0; z-index:1; cursor:pointer; }
   .cd-table thead th.text-left { text-align:left; }
-  .cd-table thead th.sorted { color:#0F1111; }
+  .cd-table thead th.sorted { color:var(--text); }
   .cd-table tbody td { padding:6px 8px; text-align:right;
                         border-bottom:1px solid #EAEDED;
                         font-family:'DM Mono',monospace; font-size:11px; }
   .cd-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit; }
-  .cd-table tbody tr:hover { background:#F8F9FA; }
-  .cd-table tbody td.profit-pos { color:#067D62; font-weight:600; }
-  .cd-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .cd-table tbody tr:hover { background:var(--bg4); }
+  .cd-table tbody td.profit-pos { color:var(--green); font-weight:600; }
+  .cd-table tbody td.profit-neg { color:var(--red); font-weight:600; }
   .cd-table tbody td.contrib-cell {
     background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
     text-align:left; padding-left:8px;
   }
 
-  .cd-empty { background:#FFFFFF; border:1px dashed #D5D9D9; border-radius:8px;
-              padding:24px; text-align:center; color:#555; font-size:12px; }
+  .cd-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+              padding:24px; text-align:center; color:var(--text2); font-size:12px; }
 </style>
 {% endblock %}
 
@@ -160,7 +160,7 @@
 </div>
 
 <div class="cd-tab-pane active" id="pane-skus">
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
     <table class="cd-table" id="skusTable">
       <thead><tr>
@@ -177,14 +177,14 @@
         <th data-sort="fees">Fees</th>
         <th class="text-left" data-sort="contribution_pct">Contribution %</th>
       </tr></thead>
-      <tbody id="skusBody"><tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+      <tbody id="skusBody"><tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
     </table>
   </div>
-  <div id="skusFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+  <div id="skusFootnote" style="margin-top:6px;font-size:11px;color:var(--text3)"></div>
 </div>
 
 <div class="cd-tab-pane" id="pane-daily">
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
     <table class="cd-table" id="dailyTable">
       <thead><tr>
@@ -196,13 +196,13 @@
         <th>ACoS</th><th>ROAS</th>
         <th>Attr Cov.</th><th>SKUs</th>
       </tr></thead>
-      <tbody id="dailyBody"><tr><td colspan="16" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+      <tbody id="dailyBody"><tr><td colspan="16" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
 
 <div class="cd-tab-pane" id="pane-search_terms">
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
     <table class="cd-table" id="stTermsTable">
       <thead><tr>
@@ -212,14 +212,14 @@
         <th>Orders</th><th>Clicks</th><th>CTR</th><th>CVR</th>
         <th>Impr.</th><th class="text-left">Tags</th>
       </tr></thead>
-      <tbody id="stTermsBody"><tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+      <tbody id="stTermsBody"><tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
     </table>
   </div>
-  <div id="stTermsFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+  <div id="stTermsFootnote" style="margin-top:6px;font-size:11px;color:var(--text3)"></div>
 </div>
 
 <div class="cd-tab-pane" id="pane-targeting">
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
     <table class="cd-table" id="tgtTable">
       <thead><tr>
@@ -233,21 +233,21 @@
         <th>CTR</th><th>CVR</th><th>CPC</th>
         <th>Impr.</th>
       </tr></thead>
-      <tbody id="tgtBody"><tr><td colspan="14" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+      <tbody id="tgtBody"><tr><td colspan="14" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
     </table>
   </div>
-  <div id="tgtFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+  <div id="tgtFootnote" style="margin-top:6px;font-size:11px;color:var(--text3)"></div>
 </div>
 
 <div class="cd-tab-pane" id="pane-placements">
-  <div id="plcVizSection" style="background:#FFFFFF;border:1px solid #D5D9D9;
+  <div id="plcVizSection" style="background:var(--bg2);border:1px solid var(--border);
               border-radius:10px;padding:14px 18px;margin-bottom:10px">
-    <div style="font-size:12px;font-weight:700;color:#0F1111;margin-bottom:8px">
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">
       Spend share vs Sales share vs Profit share
     </div>
-    <div id="plcVizRows"><div style="color:#8A8A8A;font-size:12px">Loading…</div></div>
+    <div id="plcVizRows"><div style="color:var(--text3);font-size:12px">Loading…</div></div>
   </div>
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:8px;overflow:auto">
     <table class="cd-table" id="plcTable">
       <thead><tr>
@@ -258,10 +258,10 @@
         <th>Orders</th><th>ACoS</th><th>ROAS</th>
         <th>Est. Profit</th>
       </tr></thead>
-      <tbody id="plcBody"><tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr></tbody>
+      <tbody id="plcBody"><tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
     </table>
   </div>
-  <div id="plcFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+  <div id="plcFootnote" style="margin-top:6px;font-size:11px;color:var(--text3)"></div>
 </div>
 
 <!-- ── Hourly Performance Tab ──────────────────────────────────────── -->
@@ -273,19 +273,19 @@
   <!-- Controls strip -->
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;
               margin-bottom:10px">
-    <span style="font-size:11px;color:#8A8A8A">Metric:</span>
+    <span style="font-size:11px;color:var(--text3)">Metric:</span>
     <select id="hrMetric" onchange="renderHourly()"
             style="padding:4px 10px;font-size:11px;border-radius:4px;
                    border:1px solid #067D62"></select>
-    <span style="font-size:11px;color:#8A8A8A;margin-left:8px">Period:</span>
+    <span style="font-size:11px;color:var(--text3);margin-left:8px">Period:</span>
     <button class="cd-tab" data-hr-period="7d"  onclick="setHourlyPeriod('7d',  this)"
-            style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid #D5D9D9;background:#FFF;cursor:pointer">7D</button>
+            style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--border);background:var(--bg2);cursor:pointer">7D</button>
     <button class="cd-tab" data-hr-period="30d" onclick="setHourlyPeriod('30d', this)"
-            style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid #D5D9D9;background:#FFF;cursor:pointer">30D</button>
+            style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--border);background:var(--bg2);cursor:pointer">30D</button>
     <span style="flex:1"></span>
     <button onclick="openHourlyUpload()"
             style="padding:5px 12px;font-size:11px;font-weight:600;border-radius:4px;
-                   border:1px solid #067D62;background:#FFF;color:#067D62;cursor:pointer">
+                   border:1px solid #067D62;background:var(--bg2);color:var(--green);cursor:pointer">
       ⬆ Upload hourly CSV
     </button>
   </div>
@@ -295,7 +295,7 @@
               background:rgba(0,0,0,.4);z-index:9000"
        onclick="if(event.target===this)closeHourlyUpload()">
     <div style="position:absolute;top:8%;left:50%;transform:translateX(-50%);
-                width:520px;max-width:92%;background:#FFF;border-radius:8px;
+                width:520px;max-width:92%;background:var(--bg2);border-radius:8px;
                 padding:18px 22px;box-shadow:0 8px 28px rgba(0,0,0,.2)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <h3 style="margin:0;font-size:16px">Upload hourly CSV</h3>
@@ -328,7 +328,7 @@
       <hr style="margin:14px 0">
       <div style="font-size:11px;color:#666;margin-bottom:6px;font-weight:600">Recent uploads (account-wide)</div>
       <div id="hrUpHistory" style="max-height:200px;overflow:auto;font-size:11px;font-family:'DM Mono',monospace">
-        <div style="color:#8A8A8A">Loading…</div>
+        <div style="color:var(--text3)">Loading…</div>
       </div>
     </div>
   </div>
@@ -346,40 +346,40 @@
   </div>
 
   <!-- Days × Hours heatmap -->
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:10px 12px;margin-bottom:12px;overflow-x:auto">
-    <div style="font-size:13px;font-weight:700;color:#0F1111;margin-bottom:6px"
+    <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px"
          id="hrHeatTitle">Days × Hours heatmap</div>
     <table class="hp-heat-table" id="hrHeat"><tbody></tbody></table>
   </div>
 
   <!-- Day-of-week × Hours heatmap -->
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:10px 12px;overflow-x:auto">
-    <div style="font-size:13px;font-weight:700;color:#0F1111;margin-bottom:6px">
-      Day-of-week × hour pattern <span style="color:#777;font-weight:400;font-size:11px">— averaged across days</span>
+    <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">
+      Day-of-week × hour pattern <span style="color:var(--text3);font-weight:400;font-size:11px">— averaged across days</span>
     </div>
     <table class="hp-heat-table" id="hrDow"><tbody></tbody></table>
   </div>
-  <div id="hrFootnote" style="margin-top:6px;font-size:11px;color:#777"></div>
+  <div id="hrFootnote" style="margin-top:6px;font-size:11px;color:var(--text3)"></div>
 </div>
 
 <style>
   /* Reuse the Hourly Patterns heatmap styles inline so this tab is self-contained */
   .hp-heat-table { border-collapse:separate; border-spacing:2px; font-size:10px; }
-  .hp-heat-table th { padding:3px 5px; color:#555; font-weight:600; text-align:center;
-                       background:#F3F4F5; border-radius:3px; font-size:10px; }
+  .hp-heat-table th { padding:3px 5px; color:var(--text2); font-weight:600; text-align:center;
+                       background:var(--bg); border-radius:3px; font-size:10px; }
   .hp-heat-table th.row-head { text-align:right; min-width:78px; padding-right:8px;
                                 background:transparent; font-family:inherit; font-size:11px; }
   .hp-heat-table th.total-head { background:#EEF3F8; border-left:2px solid #232F3E; }
   .hp-heat-table td { width:30px; height:24px; text-align:center;
                        font-family:'DM Mono',monospace; border-radius:3px;
-                       color:#0F1111; font-size:10px; font-weight:600; cursor:default; }
-  .hp-heat-table td.empty { background:#F8F9FA; color:#C0C5CA; font-size:9px; }
+                       color:var(--text); font-size:10px; font-weight:600; cursor:default; }
+  .hp-heat-table td.empty { background:var(--bg4); color:#C0C5CA; font-size:9px; }
   .hp-heat-table td.empty::before { content:'—'; }
-  .hp-heat-table td.total-cell { background:#EEF3F8; color:#0F1111; font-weight:700;
+  .hp-heat-table td.total-cell { background:#EEF3F8; color:var(--text); font-weight:700;
                                    border-left:2px solid #232F3E; }
-  .hp-heat-table tr.total-row td { background:#EEF3F8; color:#0F1111; font-weight:700;
+  .hp-heat-table tr.total-row td { background:#EEF3F8; color:var(--text); font-weight:700;
                                     border-top:2px solid #232F3E; }
   .hp-heat-table tr.total-row td.total-cell { background:#DDE6EE; }
   .hp-heat-table td:hover { outline:2px solid #232F3E; }
@@ -505,7 +505,7 @@ function renderSkus(d) {
     return;
   }
   if (!d.rows || d.rows.length === 0) {
-    body.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:24px">No SKU attribution found for this window. Check AdsAdvertisedProductDailySnapshot ingestion.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--text3);padding:24px">No SKU attribution found for this window. Check AdsAdvertisedProductDailySnapshot ingestion.</td></tr>`;
     fn.textContent = '';
     return;
   }
@@ -527,8 +527,8 @@ function renderSkus(d) {
     const barWidth = maxContrib > 0 ? (r.contribution_pct / maxContrib * 100) : 0;
     return `<tr>
       <td class="text-left" title="${r.product_name}">${r.product_name || '—'}</td>
-      <td class="text-left" style="color:#555">${r.sku || '—'}</td>
-      <td class="text-left" style="color:#555">${r.asin || '—'}</td>
+      <td class="text-left" style="color:var(--text2)">${r.sku || '—'}</td>
+      <td class="text-left" style="color:var(--text2)">${r.asin || '—'}</td>
       <td class="${profitClass}">${fmtCurrency(r.profit)}</td>
       <td>${fmtPct(r.margin_pct)}</td>
       <td>${fmtCurrency(r.revenue)}</td>
@@ -555,7 +555,7 @@ function renderSkus(d) {
 function renderDaily(d) {
   const body = document.getElementById('dailyBody');
   if (!d.rows || d.rows.length === 0) {
-    body.innerHTML = `<tr><td colspan="16" style="text-align:center;color:#8A8A8A;padding:24px">No daily data for this window.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="16" style="text-align:center;color:var(--text3);padding:24px">No daily data for this window.</td></tr>`;
     return;
   }
   const html = d.rows.map(r => {
@@ -609,17 +609,17 @@ async function loadAll() {
   // Reset every tab's cache so period/mp changes always refetch.
   detailData = skusData = dailyData = stTermsData = tgtData = plcData = null;
   document.getElementById('skusBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   document.getElementById('dailyBody').innerHTML =
-    '<tr><td colspan="16" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+    '<tr><td colspan="16" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   document.getElementById('stTermsBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Switch to tab to load</td></tr>';
+    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Switch to tab to load</td></tr>';
   document.getElementById('tgtBody').innerHTML =
-    '<tr><td colspan="14" style="text-align:center;color:#8A8A8A">Switch to tab to load</td></tr>';
+    '<tr><td colspan="14" style="text-align:center;color:var(--text3)">Switch to tab to load</td></tr>';
   document.getElementById('plcBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Switch to tab to load</td></tr>';
+    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Switch to tab to load</td></tr>';
   document.getElementById('plcVizRows').innerHTML =
-    '<div style="color:#8A8A8A;font-size:12px">Switch to Placements tab to load</div>';
+    '<div style="color:var(--text3);font-size:12px">Switch to Placements tab to load</div>';
 
   try {
     const dResp = await fetch(`/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/?mp=${currentMP}&period=${currentPeriod}`);
@@ -655,7 +655,7 @@ async function loadDaily() {
 // ── Search Terms tab — reuses /api/search-terms/ with campaign_id filter ────
 async function loadCampaignSearchTerms() {
   document.getElementById('stTermsBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   try {
     const params = new URLSearchParams({
       mp: currentMP, period: currentPeriod,
@@ -671,7 +671,7 @@ function renderCampaignSearchTerms(d) {
   const body = document.getElementById('stTermsBody');
   const fn   = document.getElementById('stTermsFootnote');
   if (!d.rows || d.rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:24px">No search terms recorded for this campaign in the window.</td></tr>';
+    body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text3);padding:24px">No search terms recorded for this campaign in the window.</td></tr>';
     fn.textContent = '';
     return;
   }
@@ -679,7 +679,7 @@ function renderCampaignSearchTerms(d) {
     const profClass = r.estimated_profit > 0 ? 'profit-pos' :
                       (r.estimated_profit < 0 ? 'profit-neg' : '');
     const tags = (r.tags || []).map(t =>
-      `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;margin-right:2px;background:#F3F4F5;color:#555">${t.replace(/_/g,' ')}</span>`
+      `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;margin-right:2px;background:var(--bg);color:var(--text2)">${t.replace(/_/g,' ')}</span>`
     ).join('');
     return `<tr>
       <td class="text-left" title="${r.search_term}">${r.search_term || '—'}</td>
@@ -703,7 +703,7 @@ function renderCampaignSearchTerms(d) {
 // ── Targeting tab — keywords + product/category targets + audiences ─────────
 async function loadCampaignTargeting() {
   document.getElementById('tgtBody').innerHTML =
-    '<tr><td colspan="14" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+    '<tr><td colspan="14" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   try {
     const r = await fetch(`/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/targeting/?mp=${currentMP}&period=${currentPeriod}`);
     tgtData = await r.json();
@@ -715,7 +715,7 @@ function renderCampaignTargeting(d) {
   const body = document.getElementById('tgtBody');
   const fn   = document.getElementById('tgtFootnote');
   if (!d.rows || d.rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#8A8A8A;padding:24px">No targeting rows for this window.</td></tr>';
+    body.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--text3);padding:24px">No targeting rows for this window.</td></tr>';
     fn.textContent = '';
     return;
   }
@@ -752,9 +752,9 @@ function renderCampaignTargeting(d) {
 // ── Placements tab — reuses /api/placements/ with campaign_id filter ────────
 async function loadCampaignPlacements() {
   document.getElementById('plcBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:#8A8A8A">Loading…</td></tr>';
+    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   document.getElementById('plcVizRows').innerHTML =
-    '<div style="color:#8A8A8A;font-size:12px">Loading…</div>';
+    '<div style="color:var(--text3);font-size:12px">Loading…</div>';
   try {
     const r = await fetch(`/dashboard/api/placements/?mp=${currentMP}&period=${currentPeriod}&campaign_id=${encodeURIComponent(CAMPAIGN_ID)}`);
     plcData = await r.json();
@@ -768,8 +768,8 @@ function renderCampaignPlacements(d) {
   const fn   = document.getElementById('plcFootnote');
 
   if (!d.placements || d.placements.length === 0) {
-    viz.innerHTML = '<div style="color:#8A8A8A;font-size:12px">No placement data for this campaign yet — placement ingest may still be in flight.</div>';
-    body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#8A8A8A;padding:24px">No placement rows.</td></tr>';
+    viz.innerHTML = '<div style="color:var(--text3);font-size:12px">No placement data for this campaign yet — placement ingest may still be in flight.</div>';
+    body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text3);padding:24px">No placement rows.</td></tr>';
     fn.textContent = '';
     return;
   }
@@ -777,8 +777,8 @@ function renderCampaignPlacements(d) {
   // Inline mini-viz (3 bars per placement, same shape as the dedicated page)
   viz.innerHTML = d.placements.map(p => `
     <div style="display:grid;grid-template-columns:130px 1fr;align-items:center;gap:12px;margin-bottom:10px">
-      <div style="font-weight:700;font-size:12px;color:#0F1111">${p.label}
-        <div style="font-size:10px;color:#777;font-weight:400">${fmtInt(p.impressions)} impr · ${fmtInt(p.clicks)} clicks</div>
+      <div style="font-weight:700;font-size:12px;color:var(--text)">${p.label}
+        <div style="font-size:10px;color:var(--text3);font-weight:400">${fmtInt(p.impressions)} impr · ${fmtInt(p.clicks)} clicks</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
         ${['spend','sales','profit'].map(metric => {
@@ -786,10 +786,10 @@ function renderCampaignPlacements(d) {
           const pct = metric === 'spend' ? p.spend_pct : (metric === 'sales' ? p.sales_pct : p.profit_pct);
           const amt = metric === 'spend' ? p.spend : (metric === 'sales' ? p.sales : p.estimated_profit);
           const colour = metric === 'spend' ? '#1B4A75' : (metric === 'sales' ? '#067D62' : '#7A5400');
-          return `<div style="background:#F8F9FA;border-radius:6px;padding:6px 10px">
-            <div style="font-size:10px;color:#777;text-transform:uppercase;letter-spacing:0.3px">${label}</div>
-            <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;color:#0F1111">${fmtPct(pct)}</div>
-            <div style="font-size:10px;color:#777">${fmtCurrency(amt)}</div>
+          return `<div style="background:var(--bg4);border-radius:6px;padding:6px 10px">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px">${label}</div>
+            <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;color:var(--text)">${fmtPct(pct)}</div>
+            <div style="font-size:10px;color:var(--text3)">${fmtCurrency(amt)}</div>
             <div style="height:5px;background:#E5E7E8;border-radius:3px;margin-top:5px;overflow:hidden">
               <div style="height:100%;background:${colour};width:${Math.min(pct, 100)}%;transition:width 200ms"></div>
             </div>
@@ -912,7 +912,7 @@ function _hrFmt(v, fmt) {
 
 function _hrCellColour(v, max, min, higherBetter) {
   if (v == null) return '';
-  if (max === min) return 'background:#E0F2EC;color:#067D62';
+  if (max === min) return 'background:#E0F2EC;color:var(--green)';
   const norm = (v - min) / (max - min);
   const intensity = Math.max(0, Math.min(1, higherBetter ? norm : (1 - norm)));
   // Green scale: #FFFFFF (low) → #067D62 (high)
@@ -1031,12 +1031,12 @@ function closeHourlyUpload() {
 }
 async function refreshHourlyUploadHistory() {
   const el = document.getElementById('hrUpHistory');
-  el.innerHTML = '<div style="color:#8A8A8A">Loading…</div>';
+  el.innerHTML = '<div style="color:var(--text3)">Loading…</div>';
   try {
     const r = await fetch(`/dashboard/api/hourly-patterns/uploads/?mp=${currentMP}`);
     const d = await r.json();
     if (!d.uploads || !d.uploads.length) {
-      el.innerHTML = '<div style="color:#8A8A8A">No uploads yet.</div>';
+      el.innerHTML = '<div style="color:var(--text3)">No uploads yet.</div>';
       return;
     }
     el.innerHTML = d.uploads.map(u => `
@@ -1047,11 +1047,11 @@ async function refreshHourlyUploadHistory() {
           ${u.date_range_start || '?'}→${u.date_range_end || '?'}
           <span style="color:#888">(${u.days_covered}d, ${u.rows_imported}/${u.rows_in_file} rows)</span>
         </div>
-        <div style="color:#8A8A8A">${(u.filename || '').slice(0,40)}</div>
+        <div style="color:var(--text3)">${(u.filename || '').slice(0,40)}</div>
       </div>
-      ${u.error_message ? `<div style="color:#C40000;padding:2px 0 6px 18px">${u.error_message}</div>` : ''}
+      ${u.error_message ? `<div style="color:var(--red);padding:2px 0 6px 18px">${u.error_message}</div>` : ''}
     `).join('');
-  } catch { el.innerHTML = '<div style="color:#C40000">Failed to load history.</div>'; }
+  } catch { el.innerHTML = '<div style="color:var(--red)">Failed to load history.</div>'; }
 }
 async function submitHourlyUpload(e) {
   e.preventDefault();
@@ -1069,7 +1069,7 @@ async function submitHourlyUpload(e) {
     });
     const d = await r.json();
     if (d.status === 'ok') {
-      res.innerHTML = `<div style="background:#E0F2EC;color:#067D62;padding:8px 10px;border-radius:4px;font-weight:600">
+      res.innerHTML = `<div style="background:#E0F2EC;color:var(--green);padding:8px 10px;border-radius:4px;font-weight:600">
         ✓ Imported ${d.rows_imported} rows over ${d.days_covered} day(s)
         (${d.date_range_start} → ${d.date_range_end}).
       </div>`;

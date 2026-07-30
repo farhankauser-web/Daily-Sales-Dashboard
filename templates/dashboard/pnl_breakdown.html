@@ -29,32 +29,32 @@
 
 {% block extra_head %}
 <style>
-  .pb-section { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:10px;
+  .pb-section { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
                  padding:14px 18px; margin-bottom:14px; }
-  .pb-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:#0F1111; }
-  .pb-section .subtitle { font-size:11px; color:#777; margin-bottom:10px; }
+  .pb-section h3 { margin:0 0 4px; font-size:14px; font-weight:700; color:var(--text); }
+  .pb-section .subtitle { font-size:11px; color:var(--text3); margin-bottom:10px; }
 
   .pb-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .pb-table thead th { background:#F3F4F5; padding:8px; text-align:right;
-                        font-size:11px; font-weight:600; color:#555; cursor:pointer;
+  .pb-table thead th { background:var(--bg); padding:8px; text-align:right;
+                        font-size:11px; font-weight:600; color:var(--text2); cursor:pointer;
                         user-select:none; }
   .pb-table thead th.text-left { text-align:left; }
-  .pb-table thead th.sorted { color:#0F1111; }
+  .pb-table thead th.sorted { color:var(--text); }
   .pb-table tbody td { padding:7px 8px; text-align:right;
                         border-bottom:1px solid #EAEDED;
                         font-family:'DM Mono',monospace; font-size:11px; }
   .pb-table tbody td.text-left { text-align:left; font-weight:600; font-family:inherit; }
-  .pb-table tbody tr:hover { background:#F8F9FA; }
-  .pb-table tbody td.profit-pos { color:#067D62; font-weight:600; }
-  .pb-table tbody td.profit-neg { color:#C40000; font-weight:600; }
+  .pb-table tbody tr:hover { background:var(--bg4); }
+  .pb-table tbody td.profit-pos { color:var(--green); font-weight:600; }
+  .pb-table tbody td.profit-neg { color:var(--red); font-weight:600; }
   .pb-table tbody td.contrib-cell {
     background:linear-gradient(to right, #E0F2EC var(--bar, 0%), transparent var(--bar, 0%));
     text-align:left; padding-left:8px;
   }
-  .pb-table tbody tr.totals td { background:#F8F9FA; border-top:2px solid #232F3E;
+  .pb-table tbody tr.totals td { background:var(--bg4); border-top:2px solid #232F3E;
                                   font-weight:700; }
 
-  .pb-empty { padding:24px; text-align:center; color:#8A8A8A; font-size:12px; }
+  .pb-empty { padding:24px; text-align:center; color:var(--text3); font-size:12px; }
 </style>
 {% endblock %}
 

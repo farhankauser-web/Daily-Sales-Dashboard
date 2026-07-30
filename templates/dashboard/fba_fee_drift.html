@@ -28,29 +28,29 @@
 <style>
   .fd-kpi-strip { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;
                    margin-bottom:14px; }
-  .fd-kpi { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .fd-kpi { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
             padding:11px 14px; }
-  .fd-kpi .lbl { font-size:11px; color:#8A8A8A; text-transform:uppercase;
+  .fd-kpi .lbl { font-size:11px; color:var(--text3); text-transform:uppercase;
                   letter-spacing:0.3px; }
-  .fd-kpi .val { font-size:22px; font-weight:700; color:#0F1111; margin-top:2px; }
-  .fd-kpi .sub { font-size:11px; color:#8A8A8A; margin-top:2px; }
+  .fd-kpi .val { font-size:22px; font-weight:700; color:var(--text); margin-top:2px; }
+  .fd-kpi .sub { font-size:11px; color:var(--text3); margin-top:2px; }
   .fd-kpi.danger  { border-top:3px solid #B12704; }
   .fd-kpi.warn    { border-top:3px solid #D17B00; }
   .fd-kpi.success { border-top:3px solid #067D62; }
 
-  .fd-filters { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .fd-filters { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
                  padding:10px 14px; margin-bottom:14px;
                  display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .fd-filters label { font-size:11px; color:#555; }
+  .fd-filters label { font-size:11px; color:var(--text2); }
   .fd-filters select, .fd-filters input { padding:5px 8px; font-size:12px;
-                                            border:1px solid #D5D9D9;
+                                            border:1px solid var(--border);
                                             border-radius:5px; }
 
-  .fd-table { background:#FFFFFF; border:1px solid #D5D9D9; border-radius:8px;
+  .fd-table { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
               overflow:hidden; }
   .fd-table table { width:100%; border-collapse:collapse; font-size:12px; }
   .fd-table th { background:#F4F6F8; padding:8px 10px; text-align:left;
-                  font-weight:600; color:#0F1111; border-bottom:1px solid #D5D9D9;
+                  font-weight:600; color:var(--text); border-bottom:1px solid var(--border);
                   cursor:pointer; user-select:none; white-space:nowrap; }
   .fd-table th:hover { background:#EAEEF1; }
   .fd-table th.num, .fd-table td.num { text-align:right; }
@@ -60,25 +60,25 @@
   .fd-status { display:inline-block; padding:2px 8px; border-radius:10px;
                font-size:10px; font-weight:700; text-transform:uppercase;
                letter-spacing:0.4px; }
-  .fd-status.ok        { background:#E0F2EC; color:#067D62; }
+  .fd-status.ok        { background:#E0F2EC; color:var(--green); }
   .fd-status.warn      { background:#FFF4DC; color:#9D6500; }
   .fd-status.critical  { background:#FBE2E0; color:#B12704; }
   .fd-status.no_upload { background:#EEF1F4; color:#5A6470; }
 
   .fd-delta.pos { color:#B12704; font-weight:600; }   /* actual > uploaded — over-spending */
-  .fd-delta.neg { color:#067D62; font-weight:600; }   /* actual < uploaded — under-spending */
+  .fd-delta.neg { color:var(--green); font-weight:600; }   /* actual < uploaded — under-spending */
 
-  .fd-meta { font-size:11px; color:#8A8A8A; margin-top:8px; }
-  .fd-empty { padding:60px 20px; text-align:center; color:#8A8A8A; }
+  .fd-meta { font-size:11px; color:var(--text3); margin-top:8px; }
+  .fd-empty { padding:60px 20px; text-align:center; color:var(--text3); }
 
-  .fd-drill { display:none; background:#F9FAFB; border-top:1px solid #D5D9D9; }
+  .fd-drill { display:none; background:#F9FAFB; border-top:1px solid var(--border); }
   .fd-drill.show { display:table-row; }
   .fd-drill td { padding:12px 16px; }
   .fd-drill-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:18px;
                     font-size:12px; color:#333; }
-  .fd-drill-grid .k { color:#8A8A8A; font-size:10px; text-transform:uppercase;
+  .fd-drill-grid .k { color:var(--text3); font-size:10px; text-transform:uppercase;
                        letter-spacing:0.3px; }
-  .fd-drill-grid .v { font-size:14px; font-weight:600; color:#0F1111; margin-top:2px; }
+  .fd-drill-grid .v { font-size:14px; font-weight:600; color:var(--text); margin-top:2px; }
 </style>
 {% endblock %}
 
@@ -127,7 +127,7 @@
   <input type="number" id="fMinImpact" value="0" min="0" step="10" style="width:80px"
          onchange="reloadTable()" onkeydown="if(event.key==='Enter')reloadTable()"/>
 
-  <span style="margin-left:auto;font-size:11px;color:#8A8A8A">
+  <span style="margin-left:auto;font-size:11px;color:var(--text3)">
     <span id="fRowCount">—</span> rows · window: last
     <span id="fWindow">14</span> days
   </span>
@@ -274,9 +274,9 @@ function renderTable() {
     const deltaCls = r.delta > 0 ? 'pos' : (r.delta < 0 ? 'neg' : '');
     return `
       <tr onclick="toggleDrill('${r.sku}')">
-        <td><strong>${r.sku}</strong>${r.asin ? `<br><span style="font-size:10px;color:#8A8A8A">${r.asin}</span>` : ''}</td>
+        <td><strong>${r.sku}</strong>${r.asin ? `<br><span style="font-size:10px;color:var(--text3)">${r.asin}</span>` : ''}</td>
         <td style="max-width:280px">${r.product_name || '—'}</td>
-        <td style="font-size:11px;color:#555">${r.brand || '—'}</td>
+        <td style="font-size:11px;color:var(--text2)">${r.brand || '—'}</td>
         <td class="num">${r.uploaded_fee ? '$' + r.uploaded_fee.toFixed(2) : '—'}</td>
         <td class="num">${r.actual_fee_avg ? '$' + r.actual_fee_avg.toFixed(2) : '—'}</td>
         <td class="num">${r.actual_fee_latest ? '$' + r.actual_fee_latest.toFixed(2) : '—'}</td>
@@ -300,7 +300,7 @@ function renderTable() {
             </div>
             <div>
               <div class="k">14-day weighted actual</div>
-              <div class="v">$${r.actual_fee_avg.toFixed(4)} <span style="font-size:11px;color:#8A8A8A">across ${r.actual_units} units</span></div>
+              <div class="v">$${r.actual_fee_avg.toFixed(4)} <span style="font-size:11px;color:var(--text3)">across ${r.actual_units} units</span></div>
             </div>
             <div>
               <div class="k">Latest settlement (${r.actual_latest_date || '—'})</div>
@@ -308,7 +308,7 @@ function renderTable() {
             </div>
             <div>
               <div class="k">Suggested COGS update</div>
-              <div class="v" style="color:#067D62">$${r.actual_fee_avg.toFixed(2)}</div>
+              <div class="v" style="color:var(--green)">$${r.actual_fee_avg.toFixed(2)}</div>
             </div>
             <div>
               <div class="k">Monthly $ exposure</div>

@@ -19,16 +19,16 @@
 {% block extra_head %}
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
-  .kpi-card  { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:20px; font-weight:700; }
   .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.urgent .v { color:#B42318; }
   .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
-  .bar-row select, .bar-row input { padding:5px 8px; border:1px solid #D5D9D9; border-radius:5px; font-size:12px; }
-  .panel { background:#fff; border:1px solid #D5D9D9; border-radius:8px; }
+  .bar-row select, .bar-row input { padding:5px 8px; border:1px solid var(--border); border-radius:5px; font-size:12px; }
+  .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
   table.t th { background:#F4F6F8; text-align:right; padding:7px 9px; font-size:11px;
-               border-bottom:1px solid #D5D9D9; white-space:nowrap; cursor:pointer; position:sticky; top:0; z-index:1; }
+               border-bottom:1px solid var(--border); white-space:nowrap; cursor:pointer; position:sticky; top:0; z-index:1; }
   table.t th.l, table.t td.l { text-align:left; }
   table.t td { padding:6px 9px; text-align:right; border-bottom:1px solid #EDEFF1;
                white-space:nowrap; font-variant-numeric:tabular-nums; }
@@ -43,7 +43,7 @@
   .c-over { background:#FEF0C7; color:#8A5A00; }
   .c-po { background:#E6F4EA; color:#1E6B34; }
   .basis { font-size:10px; color:#8A94A0; }
-  .wrap { max-height:70vh; overflow:auto; border:1px solid #D5D9D9; border-radius:8px; background:#fff; }
+  .wrap { max-height:70vh; overflow:auto; border:1px solid var(--border); border-radius:8px; background:var(--bg2); }
 </style>
 {% endblock %}
 

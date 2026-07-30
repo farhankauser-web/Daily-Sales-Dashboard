@@ -11,14 +11,14 @@
 {% block extra_head %}
 <style>
   .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:12px; }
-  .bar-row input { padding:6px 9px; border:1px solid #D5D9D9; border-radius:5px; font-size:13px; width:280px; }
-  .cat { background:#fff; border:1px solid #D5D9D9; border-radius:8px; margin-bottom:10px; overflow:hidden; }
+  .bar-row input { padding:6px 9px; border:1px solid var(--border); border-radius:5px; font-size:13px; width:280px; }
+  .cat { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:10px; overflow:hidden; }
   .cat-h { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; font-size:13px; font-weight:600; }
   .cat-h:hover { background:#F7FAFC; }
   .cat-h .tw { margin-left:auto; font-weight:400; font-size:11px; color:#5A6470; }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
   table.t th { background:#F4F6F8; text-align:right; padding:6px 10px; font-size:11px;
-               border-top:1px solid #D5D9D9; border-bottom:1px solid #D5D9D9; white-space:nowrap; }
+               border-top:1px solid var(--border); border-bottom:1px solid var(--border); white-space:nowrap; }
   table.t th.l, table.t td.l { text-align:left; }
   table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
                white-space:nowrap; font-variant-numeric:tabular-nums; }

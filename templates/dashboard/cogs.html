@@ -299,11 +299,11 @@
     </form>
 
     {% if fba_result %}
-    <div style="margin-top:12px;padding:10px 12px;background:#F3F4F5;border-left:3px solid #232F3E;font-size:12px">
+    <div style="margin-top:12px;padding:10px 12px;background:var(--bg);border-left:3px solid #232F3E;font-size:12px">
       <b>{{ fba_result.created }}</b> created · <b>{{ fba_result.updated }}</b> updated
-      {% if fba_result.errors %}· <b style="color:#C40000">{{ fba_result.errors|length }} errors</b>{% endif %}
+      {% if fba_result.errors %}· <b style="color:var(--red)">{{ fba_result.errors|length }} errors</b>{% endif %}
       {% if fba_result.errors %}
-        <ul style="margin:6px 0 0 18px;color:#C40000">
+        <ul style="margin:6px 0 0 18px;color:var(--red)">
           {% for e in fba_result.errors|slice:":10" %}<li>{{ e }}</li>{% endfor %}
         </ul>
       {% endif %}

@@ -35,7 +35,7 @@
     <div class="card-body" style="padding:10px 12px">
       {% for pack in group.packs %}
       <div style="margin-bottom:10px">
-        <div style="font-size:13px;font-weight:700;color:#007185;margin-bottom:6px">{{ pack.pack }}</div>
+        <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px">{{ pack.pack }}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           {% for item in pack.items %}
           <a href="{% url 'dashboard:product_edit' item.pk %}"
@@ -43,7 +43,7 @@
              data-search="{{ item.sku|lower }} {{ item.asin|lower }} {{ item.variant|lower }} {{ pack.pack|lower }} {{ group.product_type|lower }}"
              style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#EDF6F8;border:1px solid #B0D9E3;border-radius:999px;padding:4px 8px;color:#005B6A;font-family:'DM Mono',monospace;font-size:10px;font-weight:600">
             <span>{{ item.sku }}</span>
-            <span style="font-family:inherit;color:#0F1111">{{ item.variant }}</span>
+            <span style="font-family:inherit;color:var(--text)">{{ item.variant }}</span>
           </a>
           {% endfor %}
         </div>

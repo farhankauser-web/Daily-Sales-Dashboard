@@ -16,19 +16,19 @@
 {% block extra_head %}
 <style>
   .fun-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
-  .fun-card { background:#fff; border:1px solid #D5D9D9; border-radius:8px; padding:10px 12px; }
+  .fun-card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .fun-card .v { font-size:20px; font-weight:700; }
   .fun-card .s { font-size:11px; color:#5A6470; }
   .fun-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
-  table.atl { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
-              border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.atl { width:100%; border-collapse:collapse; font-size:12px; background:var(--bg2);
+              border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   table.atl th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
-                 text-transform:uppercase; color:#5A6470; border-bottom:1px solid #D5D9D9; }
+                 text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border); }
   table.atl td { padding:7px 10px; border-bottom:1px solid #EDEFF1; }
   .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
   .st.draft { background:#EDF2FB; color:#2456A6; }
   .st.sent  { background:#FFF4DC; color:#9D6500; }
-  .st.won   { background:#E0F2EC; color:#067D62; }
+  .st.won   { background:#E0F2EC; color:var(--green); }
   .st.lost  { background:#FDE8E6; color:#C0392B; }
   .shortage { color:#C0392B; font-weight:700; }
 </style>
@@ -39,7 +39,7 @@
   <div class="fun-card"><div class="l">Sent (incl. decided)</div>
     <div class="v">{{ funnel.sent_total }}</div></div>
   <div class="fun-card"><div class="l">Won</div>
-    <div class="v" style="color:#067D62">{{ funnel.won.count }}</div>
+    <div class="v" style="color:var(--green)">{{ funnel.won.count }}</div>
     <div class="s">{{ company.currency }} {{ funnel.won.value|floatformat:0 }}</div></div>
   <div class="fun-card"><div class="l">Lost</div>
     <div class="v" style="color:#C0392B">{{ funnel.lost.count }}</div>
@@ -101,7 +101,7 @@
       <td style="max-width:220px">{{ r.q.remarks|truncatechars:60 }}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="10" style="text-align:center;color:#8A8A8A;padding:30px">
+    <tr><td colspan="10" style="text-align:center;color:var(--text3);padding:30px">
       No quotations yet — click “＋ New Quotation”.</td></tr>
   {% endfor %}
   </tbody>

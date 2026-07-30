@@ -45,24 +45,24 @@
     <div class="section-title">{{ year }} Annual Budget —
       {% for mp, label, flag in marketplace_list %}{% if mp == active_mp %}{{ flag }} {{ label }}{% endif %}{% endfor %}
     </div>
-    <div style="font-size:12px;color:#8A8A8A;margin-top:3px">
+    <div style="font-size:12px;color:var(--text3);margin-top:3px">
       Product-wise revenue targets for each product and month (Jan to Dec).
     </div>
   </div>
 </div>
 
 <div style="display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:12px">
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;padding:10px 12px">
-    <div style="font-size:11px;color:#8A8A8A">{{ tracking.this_month|date:"M Y" }} Target</div>
-    <div style="font-size:18px;font-weight:700;color:#0F1111">${{ tracking.this_month_total|floatformat:0 }}</div>
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:var(--text3)">{{ tracking.this_month|date:"M Y" }} Target</div>
+    <div style="font-size:18px;font-weight:700;color:var(--text)">${{ tracking.this_month_total|floatformat:0 }}</div>
   </div>
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;padding:10px 12px">
-    <div style="font-size:11px;color:#8A8A8A">{{ tracking.next_month|date:"M Y" }} Target</div>
-    <div style="font-size:18px;font-weight:700;color:#0F1111">${{ tracking.next_month_total|floatformat:0 }}</div>
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:var(--text3)">{{ tracking.next_month|date:"M Y" }} Target</div>
+    <div style="font-size:18px;font-weight:700;color:var(--text)">${{ tracking.next_month_total|floatformat:0 }}</div>
   </div>
-  <div style="background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px;padding:10px 12px">
-    <div style="font-size:11px;color:#8A8A8A">Next vs Current</div>
-    <div style="font-size:18px;font-weight:700;{% if tracking.delta_to_next >= 0 %}color:#067D62{% else %}color:#C40000{% endif %}">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:var(--text3)">Next vs Current</div>
+    <div style="font-size:18px;font-weight:700;{% if tracking.delta_to_next >= 0 %}color:var(--green){% else %}color:var(--red){% endif %}">
       ${{ tracking.delta_to_next|floatformat:0 }}
     </div>
   </div>
@@ -88,7 +88,7 @@
     <input type="hidden" name="action" value="upload_targets_xlsx">
     <input type="hidden" name="bulk_marketplace" value="{{ active_mp }}">
     <input type="file" name="targets_xlsx" accept=".xlsx" required
-           style="font-size:11px;border:1px solid #D5D9D9;border-radius:4px;padding:3px;background:#fff">
+           style="font-size:11px;border:1px solid var(--border);border-radius:4px;padding:3px;background:var(--bg2)">
     <button type="submit" class="btn btn-primary btn-sm">↑ Upload</button>
   </form>
 </div>
@@ -114,8 +114,8 @@
       <tbody>
         {% for row in product_rows %}
         <tr>
-          <td style="text-align:left;font-weight:700;color:#0F1111">{{ row.product_type }}</td>
-          <td style="text-align:left;color:#555">{{ row.pack_size }}</td>
+          <td style="text-align:left;font-weight:700;color:var(--text)">{{ row.product_type }}</td>
+          <td style="text-align:left;color:var(--text2)">{{ row.pack_size }}</td>
           {% for month_date in annual_months %}
           {% with key=month_date|date:"Y-m" %}
           {% with existing=row.targets_by_month|get_item:key %}
@@ -141,7 +141,7 @@
       <tfoot>
         <tr style="background:#FFFBF2;border-top:2px solid #FCDBA0">
           <td style="text-align:left;font-weight:700">All Products</td>
-          <td style="text-align:left;color:#8A8A8A">Total</td>
+          <td style="text-align:left;color:var(--text3)">Total</td>
           {% for month_date in annual_months %}
           {% with key=month_date|date:"Y-m" %}
           <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:700">
@@ -186,7 +186,7 @@
 
   <!-- ── SET / EDIT FORM ─────────────────────────────────────────────────── -->
   <div class="card" style="position:sticky;top:70px">
-    <div class="card-header" style="background:#F3F4F5">
+    <div class="card-header" style="background:var(--bg)">
       <div class="card-title" id="formCardTitle">🎯 Set Monthly Target</div>
     </div>
     <div class="card-body">
@@ -207,7 +207,7 @@
           <label class="form-label">Marketplace *</label>
           {{ form.marketplace }}
           {% if form.marketplace.errors %}
-          <div style="color:#C40000;font-size:11px;margin-top:3px">{{ form.marketplace.errors.0 }}</div>
+          <div style="color:var(--red);font-size:11px;margin-top:3px">{{ form.marketplace.errors.0 }}</div>
           {% endif %}
         </div>
 
@@ -216,12 +216,12 @@
           <label class="form-label">Month *</label>
           {{ form.month }}
           {% if form.month.errors %}
-          <div style="color:#C40000;font-size:11px;margin-top:3px">{{ form.month.errors.0 }}</div>
+          <div style="color:var(--red);font-size:11px;margin-top:3px">{{ form.month.errors.0 }}</div>
           {% endif %}
         </div>
 
         <div style="height:1px;background:#D5D9D9;margin:14px 0 14px"></div>
-        <div style="font-size:11px;font-weight:600;color:#8A8A8A;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Revenue &amp; Volume</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Revenue &amp; Volume</div>
 
         <div class="grid-2">
           <div class="form-group">
@@ -235,7 +235,7 @@
         </div>
 
         <div style="height:1px;background:#D5D9D9;margin:14px 0 14px"></div>
-        <div style="font-size:11px;font-weight:600;color:#8A8A8A;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Efficiency Targets</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Efficiency Targets</div>
 
         <div class="grid-2">
           <div class="form-group">
@@ -266,9 +266,9 @@
       </form>
 
       <!-- Quick link to annual view -->
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #D5D9D9;text-align:center;font-size:12px;color:#8A8A8A">
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--text3)">
         Need to set all 12 months at once?
-        <a href="?view=annual&mp={{ active_mp }}" style="color:#007185;font-weight:600">
+        <a href="?view=annual&mp={{ active_mp }}" style="color:var(--accent);font-weight:600">
           Open Annual Budget Grid →
         </a>
       </div>
@@ -283,13 +283,13 @@
 
         <!-- Month heading + coverage pills -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div style="font-size:14px;font-weight:700;color:#0F1111">
+          <div style="font-size:14px;font-weight:700;color:var(--text)">
             📅 {{ month_key }}
             {% if month_key == today|date:"Y-m" %}
             <span style="background:#FF9900;color:#FFFFFF;font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;margin-left:6px">CURRENT</span>
             {% endif %}
           </div>
-          <div style="font-size:11px;color:#8A8A8A">
+          <div style="font-size:11px;color:var(--text3)">
             {{ month_targets|length }}/6 regions set
           </div>
         </div>
@@ -299,7 +299,7 @@
           {% for mp_code, mp_label, mp_flag in marketplace_list %}
           {% with covered=False %}
           <span class="coverage-pill" data-month="{{ month_key }}" data-mp="{{ mp_code }}"
-                style="padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500;background:#F3F4F5;color:#8A8A8A;border:1px solid #D5D9D9">
+                style="padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500;background:var(--bg);color:var(--text3);border:1px solid var(--border)">
             {{ mp_flag }} {{ mp_label }}
           </span>
           {% endwith %}
@@ -336,12 +336,12 @@
                     </span>
                     <div>
                       <div style="font-weight:600;font-size:12.5px">{{ t.get_marketplace_display }}</div>
-                      <div style="font-size:10px;color:#8A8A8A">{{ t.marketplace|upper }}</div>
+                      <div style="font-size:10px;color:var(--text3)">{{ t.marketplace|upper }}</div>
                     </div>
                   </div>
                 </td>
-                <td style="font-weight:700;color:#0F1111">${{ t.revenue_target|floatformat:0 }}</td>
-                <td style="font-size:11px;color:#8A8A8A;font-family:'DM Mono',monospace">
+                <td style="font-weight:700;color:var(--text)">${{ t.revenue_target|floatformat:0 }}</td>
+                <td style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">
                   ${{ t.daily_revenue_target|floatformat:0 }}/day
                 </td>
                 <td>{{ t.units_target|default:"—" }}</td>
@@ -351,7 +351,7 @@
                   </span>
                 </td>
                 <td>
-                  <span style="background:#EBF5F0;color:#067D62;border:1px solid #C3E6D8;padding:2px 7px;border-radius:3px;font-size:11px;font-weight:600">
+                  <span style="background:#EBF5F0;color:var(--green);border:1px solid #C3E6D8;padding:2px 7px;border-radius:3px;font-size:11px;font-weight:600">
                     {{ t.gm_target }}%
                   </span>
                 </td>
@@ -378,17 +378,17 @@
 
         <!-- Annual budget link for this month -->
         <div style="text-align:right;margin-top:6px">
-          <a href="?view=annual&mp=usa" style="font-size:11px;color:#007185">
+          <a href="?view=annual&mp=usa" style="font-size:11px;color:var(--accent)">
             Set annual budget for all regions →
           </a>
         </div>
       </div>
       {% endfor %}
     {% else %}
-    <div style="text-align:center;padding:56px 32px;background:#FFFFFF;border:1px solid #D5D9D9;border-radius:8px">
+    <div style="text-align:center;padding:56px 32px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
       <div style="font-size:40px;margin-bottom:12px">🎯</div>
-      <div style="font-size:16px;font-weight:700;color:#0F1111;margin-bottom:8px">No targets set yet</div>
-      <div style="font-size:13px;color:#555555;margin-bottom:24px;max-width:360px;margin-left:auto;margin-right:auto">
+      <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">No targets set yet</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:24px;max-width:360px;margin-left:auto;margin-right:auto">
         Use the form on the left to set monthly targets one at a time, or use the Annual Budget Grid to plan all 12 months at once.
       </div>
       <div style="display:flex;gap:10px;justify-content:center">
@@ -430,7 +430,7 @@
     const month = pill.dataset.month;
     const mp    = pill.dataset.mp;
     if (covered[month] && covered[month].has(mp)) {
-      pill.style.cssText += 'background:#EBF5F0;color:#067D62;border:1px solid #C3E6D8;';
+      pill.style.cssText += 'background:#EBF5F0;color:var(--green);border:1px solid #C3E6D8;';
       pill.textContent += ' ✓';
     }
   });

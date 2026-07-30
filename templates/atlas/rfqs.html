@@ -15,16 +15,16 @@
 
 {% block extra_head %}
 <style>
-  table.atl { width:100%; border-collapse:collapse; font-size:12px; background:#fff;
-              border:1px solid #D5D9D9; border-radius:8px; overflow:hidden; }
+  table.atl { width:100%; border-collapse:collapse; font-size:12px; background:var(--bg2);
+              border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   table.atl th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
                  text-transform:uppercase; color:#5A6470; }
   table.atl td { padding:7px 10px; border-bottom:1px solid #EDEFF1; vertical-align:top; }
   .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-  .st.open { background:#FFF4DC; color:#9D6500; } .st.responded { background:#E0F2EC; color:#067D62; }
-  .st.revalidation { background:#EDF2FB; color:#2456A6; } .st.closed { background:#EAEDED; color:#555; }
+  .st.open { background:#FFF4DC; color:#9D6500; } .st.responded { background:#E0F2EC; color:var(--green); }
+  .st.revalidation { background:#EDF2FB; color:#2456A6; } .st.closed { background:var(--bg3); color:var(--text2); }
   .ovd { color:#C0392B; font-weight:700; }
-  details.resp { margin-top:4px; } details.resp summary { cursor:pointer; color:#007185; font-size:11px; }
+  details.resp { margin-top:4px; } details.resp summary { cursor:pointer; color:var(--accent); font-size:11px; }
 </style>
 {% endblock %}
 
@@ -55,7 +55,7 @@
             {% if resp %}
               #{{ resp.number }} · {{ resp.get_kind_display }} ·
               FOB {{ resp.fob_rate|default:"—" }} / CNF {{ resp.cnf_rate|default:"—" }} / DDP {{ resp.ddp_rate|default:"—" }}
-              {% if resp.applied_to_cost %}<span style="color:#067D62">✓ cost applied ({{ resp.applied_rate|upper }})</span>
+              {% if resp.applied_to_cost %}<span style="color:var(--green)">✓ cost applied ({{ resp.applied_rate|upper }})</span>
               {% elif r.product %}
               <form method="post" style="display:inline">{% csrf_token %}
                 <input type="hidden" name="co" value="{{ company.code }}"/>
@@ -85,7 +85,7 @@
             </form>
             {% endif %}
             {% if r.status == 'open' or r.status == 'revalidation' %}
-            <details><summary style="cursor:pointer;color:#007185;font-size:11px">Respond…</summary>
+            <details><summary style="cursor:pointer;color:var(--accent);font-size:11px">Respond…</summary>
               <form method="post" style="display:grid;gap:4px;margin-top:6px;font-size:11px">
                 {% csrf_token %}
                 <input type="hidden" name="co" value="{{ company.code }}"/>
@@ -108,7 +108,7 @@
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" style="text-align:center;color:#8A8A8A;padding:24px">No RFQs yet.</td></tr>
+        <tr><td colspan="8" style="text-align:center;color:var(--text3);padding:24px">No RFQs yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>

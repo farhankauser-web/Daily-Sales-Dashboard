@@ -43,13 +43,13 @@
       <a href="/api-config/">Configure API →</a>
     </div>
   {% elif not has_data %}
-    <div style="flex:1;font-size:12px;color:#555555;background:#F3F4F5;border:1px solid #D5D9D9;border-radius:6px;padding:8px 12px">
+    <div style="flex:1;font-size:12px;color:var(--text2);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px">
       No daily snapshots yet for <strong>{{ start|date:"M j" }} – {{ end|date:"M j, Y" }}</strong>.
       Click <b>⬇ Backfill {{ period|upper }}</b> to pull the full report once
       (Amazon takes 1–3 minutes to build it; if the first click times out, click again).
     </div>
   {% else %}
-    <div style="font-size:11px;color:#8A8A8A;flex:1">
+    <div style="font-size:11px;color:var(--text3);flex:1">
       📦 Period: <b>{{ start|date:"M j" }} – {{ end|date:"M j, Y" }}</b>
       · Yesterday synced:
       {% if last_sync_yest %}<b>{{ last_sync_yest|date:"M j, H:i" }}</b>{% else %}<b>never</b>{% endif %}
@@ -116,9 +116,9 @@
     </div>
   </div>
   {% else %}
-  <div class="kpi-card" style="border-top:3px solid #D5D9D9">
+  <div class="kpi-card" style="border-top:3px solid var(--border)">
     <div class="kpi-label">Target</div>
-    <div class="kpi-val" style="font-size:14px;color:#8A8A8A">Not set</div>
+    <div class="kpi-val" style="font-size:14px;color:var(--text3)">Not set</div>
     <div class="kpi-sub"><a href="{% url 'dashboard:targets' %}">Set target →</a></div>
   </div>
   {% endif %}
@@ -132,9 +132,9 @@
     <div class="card-header">
       <div class="card-title">Revenue &amp; PPC Spend</div>
       <div style="display:flex;gap:6px">
-        <button id="btnRev" class="btn btn-sm" style="background:#EDF6F8;color:#007185;border:1px solid #B0D9E3;font-size:11px"
+        <button id="btnRev" class="btn btn-sm" style="background:#EDF6F8;color:var(--accent);border:1px solid #B0D9E3;font-size:11px"
                 onclick="toggleDataset(revChart,0,'btnRev')">● Revenue</button>
-        <button id="btnPpc" class="btn btn-sm" style="background:#F3F4F5;color:#8A8A8A;border:1px solid #D5D9D9;font-size:11px"
+        <button id="btnPpc" class="btn btn-sm" style="background:var(--bg);color:var(--text3);border:1px solid var(--border);font-size:11px"
                 onclick="toggleDataset(revChart,1,'btnPpc')">● PPC</button>
       </div>
     </div>
@@ -192,13 +192,13 @@
      ═══════════════════════════════════════════════════════════════════════ -->
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:4px">
   <div class="section-title">Product Line Analysis
-    <span style="font-size:11px;font-weight:400;color:#8A8A8A;margin-left:8px">{{ start|date:"M j" }} – {{ end|date:"M j, Y" }} cumulative</span>
+    <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:8px">{{ start|date:"M j" }} – {{ end|date:"M j, Y" }} cumulative</span>
   </div>
   <button id="loadPLBtn" class="btn btn-primary btn-sm" onclick="loadProductLines()">
     ⬇ Load Product Analysis
   </button>
 </div>
-<div id="plStatus" style="font-size:11px;color:#8A8A8A;margin-bottom:8px;display:none">
+<div id="plStatus" style="font-size:11px;color:var(--text3);margin-bottom:8px;display:none">
   ⏳ Fetching order report from Amazon… (takes 1-3 min)
 </div>
 
@@ -235,13 +235,13 @@
      ═══════════════════════════════════════════════════════════════════════ -->
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
   <div class="section-title">Daily Breakdown</div>
-  <div style="font-size:12px;color:#8A8A8A">{{ start|date:"M j, Y" }} — {{ end|date:"M j, Y" }}</div>
+  <div style="font-size:12px;color:var(--text3)">{{ start|date:"M j, Y" }} — {{ end|date:"M j, Y" }}</div>
 </div>
 
 <div class="table-wrap" style="overflow-x:auto">
   <table style="font-size:11.5px;min-width:1400px">
     <thead>
-      <tr style="background:#F3F4F5">
+      <tr style="background:var(--bg)">
         <th style="text-align:left">Date</th>
         <th>QTY</th>
         <th>Revenue</th>
@@ -265,7 +265,7 @@
       {% if has_data %}
         {% for m in metrics|dictsortreversed:"date" %}
         <tr>
-          <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px;color:#0F1111">
+          <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px;color:var(--text)">
             {{ m.date|date:"D, M j Y" }}
           </td>
           <td>{{ m.units }}</td>
@@ -280,20 +280,20 @@
           <td>${{ m.ppc_spend|floatformat:0 }}</td>
           <td>${{ m.gm|floatformat:0 }}</td>
           <td>
-            <span style="{% if m.gm_pct > 15 %}color:#067D62;font-weight:600{% elif m.gm_pct < 0 %}color:#C40000;font-weight:600{% endif %}">
+            <span style="{% if m.gm_pct > 15 %}color:var(--green);font-weight:600{% elif m.gm_pct < 0 %}color:var(--red);font-weight:600{% endif %}">
               {{ m.gm_pct|floatformat:2 }}%
             </span>
           </td>
           <td>${{ m.cpa|floatformat:2 }}</td>
           <td>
-            <span style="{% if m.tacos > 0 and m.tacos < 15 %}color:#067D62;font-weight:600{% elif m.tacos > 20 %}color:#C40000;font-weight:600{% endif %}">
+            <span style="{% if m.tacos > 0 and m.tacos < 15 %}color:var(--green);font-weight:600{% elif m.tacos > 20 %}color:var(--red);font-weight:600{% endif %}">
               {{ m.tacos|floatformat:2 }}%
             </span>
           </td>
           <td>{% if m.tar_gm_day %}${{ m.tar_gm_day|floatformat:0 }}{% else %}—{% endif %}</td>
           <td>
             {% if m.tar_gm_day %}
-              <span style="{% if m.gm_minus_tar >= 0 %}color:#067D62;font-weight:600{% else %}color:#C40000;font-weight:600{% endif %}">
+              <span style="{% if m.gm_minus_tar >= 0 %}color:var(--green);font-weight:600{% else %}color:var(--red);font-weight:600{% endif %}">
                 ${{ m.gm_minus_tar|floatformat:0 }}
               </span>
             {% else %}—{% endif %}
@@ -301,7 +301,7 @@
         </tr>
         {% endfor %}
         <!-- TOTAL row -->
-        <tr style="background:#F3F4F5;font-weight:700;border-top:2px solid #232F3E">
+        <tr style="background:var(--bg);font-weight:700;border-top:2px solid #232F3E">
           <td style="text-align:left">TOTAL</td>
           <td>{{ totals.total_units }}</td>
           <td>${{ totals.total_revenue|floatformat:0 }}</td>
@@ -320,7 +320,7 @@
           <td>{% if totals.total_tar %}${{ totals.total_tar|floatformat:0 }}{% else %}—{% endif %}</td>
           <td>
             {% if totals.total_tar %}
-              <span style="{% if totals.gm_minus_tar >= 0 %}color:#067D62{% else %}color:#C40000{% endif %}">
+              <span style="{% if totals.gm_minus_tar >= 0 %}color:var(--green){% else %}color:var(--red){% endif %}">
                 ${{ totals.gm_minus_tar|floatformat:0 }}
               </span>
             {% else %}—{% endif %}
@@ -328,7 +328,7 @@
         </tr>
       {% else %}
       <tr>
-        <td colspan="16" style="text-align:center;padding:24px;color:#8A8A8A;font-size:12px">
+        <td colspan="16" style="text-align:center;padding:24px;color:var(--text3);font-size:12px">
           No daily snapshots for this period yet.
           {% if has_config %}Click <b>⬇ Backfill</b> above to pull historical data.{% endif %}
         </td>
@@ -532,7 +532,7 @@ function loadProductLines() {
 function renderPLTable(groups) {
   const tbody = document.getElementById('plBody');
   if (!groups || !groups.length) {
-    tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;padding:20px;color:#8A8A8A">No data</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;padding:20px;color:var(--text3)">No data</td></tr>';
     return;
   }
 
@@ -543,14 +543,14 @@ function renderPLTable(groups) {
     totFba += g.fulfill; totCm += g.cm; totPpc += g.ppcSpend; totGm += g.grossMargin;
     totTar += g.tarGmDay;
 
-    const gmCol   = g.gmPct > 15 ? 'color:#067D62;font-weight:600'
-                  : g.gmPct < 0  ? 'color:#C40000;font-weight:600' : '';
-    const tarCol  = !g.tarGmDay ? 'color:#8A8A8A' : '';
-    const diffCol = g.gmMinusTar >= 0 ? 'color:#067D62;font-weight:600' : 'color:#C40000;font-weight:600';
+    const gmCol   = g.gmPct > 15 ? 'color:var(--green);font-weight:600'
+                  : g.gmPct < 0  ? 'color:var(--red);font-weight:600' : '';
+    const tarCol  = !g.tarGmDay ? 'color:var(--text3)' : '';
+    const diffCol = g.gmMinusTar >= 0 ? 'color:var(--green);font-weight:600' : 'color:var(--red);font-weight:600';
 
     rows += `<tr style="border-bottom:1px solid #EAEDED">
       <td style="text-align:left;padding:6px 10px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;color:#232F3E;white-space:nowrap">${g.group}</td>
-      <td style="text-align:left;padding:6px 8px;font-size:11px;color:#555">${g.groupName}</td>
+      <td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--text2)">${g.groupName}</td>
       <td style="padding:6px;text-align:right">${num(g.qty)}</td>
       <td style="padding:6px;text-align:right;font-weight:600">${fmt(g.revenue)}</td>
       <td style="padding:6px;text-align:right">${fmt(g.cgs)}</td>
@@ -566,7 +566,7 @@ function renderPLTable(groups) {
       <td style="padding:6px;text-align:right">${fmtD(g.cpa)}</td>
       <td style="padding:6px;text-align:right">${pct(g.tacos)}</td>
       <td style="padding:6px;text-align:right;background:#F0FFF4;${tarCol}">${g.tarGmDay ? fmt(g.tarGmDay) : '—'}</td>
-      <td style="padding:6px;text-align:right;background:#F0FFF4;${g.tarGmDay ? diffCol : 'color:#8A8A8A'}">${g.tarGmDay ? fmt(g.gmMinusTar) : '—'}</td>
+      <td style="padding:6px;text-align:right;background:#F0FFF4;${g.tarGmDay ? diffCol : 'color:var(--text3)'}">${g.tarGmDay ? fmt(g.gmMinusTar) : '—'}</td>
     </tr>`;
   }
 
@@ -574,9 +574,9 @@ function renderPLTable(groups) {
   const totGmPct  = totRev ? (totGm / totRev * 100) : 0;
   const totTacos  = totRev ? (totPpc / totRev * 100) : 0;
   const totDiff   = totTar ? totGm - totTar : 0;
-  const totDiffCl = totDiff >= 0 ? 'color:#067D62' : 'color:#C40000';
+  const totDiffCl = totDiff >= 0 ? 'color:var(--green)' : 'color:var(--red)';
 
-  rows += `<tr style="background:#F3F4F5;font-weight:700;border-top:2px solid #232F3E">
+  rows += `<tr style="background:var(--bg);font-weight:700;border-top:2px solid #232F3E">
     <td style="text-align:left;padding:7px 10px" colspan="2">TOTAL</td>
     <td style="text-align:right;padding:7px 6px">${num(totQty)}</td>
     <td style="text-align:right;padding:7px 6px">${fmt(totRev)}</td>
