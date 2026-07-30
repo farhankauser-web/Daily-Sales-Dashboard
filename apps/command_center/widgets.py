@@ -64,18 +64,26 @@ WIDGET_CATALOG = {
         'desc': 'Which syncs are current', 'w': 4, 'h': 3, 'minW': 3, 'minH': 2},
 }
 
-# Sensible default for a brand-new user (x,y in 12-col grid).
+# Default = ALL widgets, arranged into a sensible full board (12-col grid).
 DEFAULT_LAYOUT = [
     {'key': 'kpi', 'x': 0, 'y': 0, 'w': 3, 'h': 2, 'config': {'metric': 'revenue'}},
     {'key': 'kpi', 'x': 3, 'y': 0, 'w': 3, 'h': 2, 'config': {'metric': 'gross_margin'}},
     {'key': 'kpi', 'x': 6, 'y': 0, 'w': 3, 'h': 2, 'config': {'metric': 'tacos'}},
     {'key': 'kpi', 'x': 9, 'y': 0, 'w': 3, 'h': 2, 'config': {'metric': 'units'}},
-    {'key': 'revenue_trend', 'x': 0, 'y': 2, 'w': 8, 'h': 3},
+    {'key': 'revenue_trend',     'x': 0, 'y': 2, 'w': 8, 'h': 3},
     {'key': 'marketplace_split', 'x': 8, 'y': 2, 'w': 4, 'h': 3},
-    {'key': 'profit_alerts', 'x': 0, 'y': 5, 'w': 4, 'h': 4},
-    {'key': 'scorecard', 'x': 4, 'y': 5, 'w': 8, 'h': 3},
-    {'key': 'walmart_mcf', 'x': 4, 'y': 8, 'w': 4, 'h': 2},
-    {'key': 'data_freshness', 'x': 8, 'y': 8, 'w': 4, 'h': 2},
+    {'key': 'scorecard',         'x': 0, 'y': 5, 'w': 8, 'h': 3},
+    {'key': 'profit_alerts',     'x': 8, 'y': 5, 'w': 4, 'h': 4},
+    {'key': 'ppc_vs_sales',      'x': 0, 'y': 8, 'w': 4, 'h': 3},
+    {'key': 'top_skus',          'x': 4, 'y': 8, 'w': 4, 'h': 3},
+    {'key': 'hourly_heatmap',    'x': 0, 'y': 11, 'w': 8, 'h': 3},
+    {'key': 'ai_recs',           'x': 8, 'y': 9, 'w': 4, 'h': 3},
+    {'key': 'inventory_risk',    'x': 8, 'y': 12, 'w': 4, 'h': 3},
+    {'key': 'cash_runway',       'x': 0, 'y': 14, 'w': 4, 'h': 3},
+    {'key': 'ba_share',          'x': 4, 'y': 14, 'w': 4, 'h': 3},
+    {'key': 'container_timeline', 'x': 0, 'y': 17, 'w': 8, 'h': 3},
+    {'key': 'walmart_mcf',       'x': 8, 'y': 15, 'w': 4, 'h': 2},
+    {'key': 'data_freshness',    'x': 8, 'y': 17, 'w': 4, 'h': 2},
 ]
 
 
@@ -206,6 +214,64 @@ def w_data_freshness(user, cfg):
     return {'sources': out}
 
 
+def w_hourly_heatmap(user, cfg):
+    from apps.dashboard.models import HourlyMetricSnapshot as H
+    field = 'cm' if any(getattr(f, 'name', '') == 'cm' for f in H._meta.get_fields()) else 'revenue'
+    qs = H.objects.all()
+    mp = (cfg or {}).get('marketplace')
+    qs = qs.filter(marketplace=mp) if mp and mp != 'all' else qs
+    d = qs.aggregate(m=Max('date'))['m']
+    if not d:
+        return {'hours': [0] * 24, 'metric': field, 'date': None}
+    qs = qs.filter(date=d)
+    per = {r['hour']: float(r['s'] or 0)
+           for r in qs.values('hour').annotate(s=Sum(field))}
+    return {'hours': [round(per.get(h, 0), 2) for h in range(24)],
+            'metric': ('Contribution margin' if field == 'cm' else 'Revenue'),
+            'date': d.isoformat()}
+
+
+def w_top_skus(user, cfg):
+    from apps.dashboard.models import DailySkuSnapshot as S
+    end = _latest_date(); start = end.replace(day=1)      # month-to-date
+    qs = _mp_filter(S.objects.filter(date__range=(start, end)), cfg)
+    rows = (qs.values('sku').annotate(cm=Sum('cm'), rev=Sum('revenue'))
+            .order_by('-cm')[:6])
+    out = [{'sku': r['sku'], 'cm': float(r['cm'] or 0), 'rev': float(r['rev'] or 0)}
+           for r in rows if (r['cm'] or 0) > 0]
+    top = out[0]['cm'] if out else 1
+    for r in out:
+        r['pct'] = (r['cm'] / top * 100) if top else 0
+    return {'rows': out}
+
+
+def w_ppc_vs_sales(user, cfg):
+    DM = _DM(); end = _latest_date(); start = end - timedelta(days=6)
+    rows = (_mp_filter(DM.objects.filter(date__range=(start, end)), cfg)
+            .values('date').annotate(rev=Sum('revenue'), ppc=Sum('ppc_spend')).order_by('date'))
+    labels = [r['date'].strftime('%a') for r in rows]
+    sales = [float(r['rev'] or 0) for r in rows]
+    ppc = [float(r['ppc'] or 0) for r in rows]
+    tacos = [round(p / s * 100, 1) if s else 0 for p, s in zip(ppc, sales)]
+    return {'labels': labels, 'sales': sales, 'ppc': ppc, 'tacos': tacos}
+
+
+def w_ai_recs(user, cfg):
+    try:
+        from apps.dashboard.models import AIRecommendation as R
+    except Exception:
+        return {'recs': []}
+    out = []
+    for r in R.objects.all().order_by('-id')[:6]:
+        sev = str(getattr(r, 'severity', '') or 'info').lower()
+        tag = 'good' if ('opp' in sev or 'info' in sev or 'low' in sev) else \
+              ('crit' if 'crit' in sev or 'high' in sev else 'warn')
+        out.append({'tag': tag,
+                    'text': (getattr(r, 'title', None) or getattr(r, 'recommendation', None)
+                             or getattr(r, 'text', 'Recommendation'))[:120]})
+    return {'recs': out}
+
+
 def _placeholder(user, cfg):
     return {'placeholder': True,
             'note': 'Wiring to live data in the next build phase.'}
@@ -215,6 +281,8 @@ _PRODUCERS = {
     'kpi': w_kpi, 'revenue_trend': w_revenue_trend, 'marketplace_split': w_marketplace_split,
     'scorecard': w_scorecard, 'profit_alerts': w_profit_alerts,
     'walmart_mcf': w_walmart_mcf, 'data_freshness': w_data_freshness,
+    'hourly_heatmap': w_hourly_heatmap, 'top_skus': w_top_skus,
+    'ppc_vs_sales': w_ppc_vs_sales, 'ai_recs': w_ai_recs,
 }
 
 

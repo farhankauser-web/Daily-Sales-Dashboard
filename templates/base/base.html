@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}Infinitee Xclusives{% endblock %} — Operations</title>
+<script>try{var _t=localStorage.getItem('ix_theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -62,6 +63,34 @@
   --shadow:    0 2px 8px rgba(0,0,0,.1);
   --shadow-md: 0 4px 16px rgba(0,0,0,.1);
 }
+
+/* ═══ DARK THEME — global. Toggled via the 🌙/☀️ button; the head script sets
+   data-theme before paint so there's no flash. Components read the variables
+   below, so the whole app follows. ═══════════════════════════════════════════ */
+:root[data-theme="dark"] {
+  --bg:#0F1420; --bg2:#171D2B; --bg3:#1E2536; --bg4:#1B2130;
+  --border:#2A3446; --border2:#3A465D;
+  --navy:#131926; --navy2:#0C1019;
+  --text:#E7EAF0; --text2:#A7B0C0; --text3:#6E7890;
+  --green:#2FCB7E; --green2:#22B06B; --red:#F1667C; --red2:#E24E66;
+  --orange:#FFB454; --orange2:#E89A3C;
+  --teal:#3AAFC0; --teal2:#2F98A8; --accent:#3AAFC0; --accent2:#2F98A8;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.35); --shadow:0 2px 10px rgba(0,0,0,.4);
+  --shadow-md:0 6px 22px rgba(0,0,0,.45);
+}
+:root[data-theme="dark"] body { background:var(--bg); color:var(--text); }
+:root[data-theme="dark"] tbody tr:hover { background:#1E2536; }
+:root[data-theme="dark"] .alert-success{background:#12281F;border-color:#1E4531;color:#2FCB7E;}
+:root[data-theme="dark"] .alert-error  {background:#2C1720;border-color:#4A2530;color:#F1667C;}
+:root[data-theme="dark"] .alert-warning{background:#2A2213;border-color:#4A3D1E;color:#DCA144;}
+:root[data-theme="dark"] .alert-info   {background:#132630;border-color:#1E4553;color:#3AAFC0;}
+:root[data-theme="dark"] .badge-green{background:#12281F;color:#2FCB7E;border-color:#1E4531;}
+:root[data-theme="dark"] .badge-red  {background:#2C1720;color:#F1667C;border-color:#4A2530;}
+:root[data-theme="dark"] .badge-gold {background:#2A2213;color:#DCA144;border-color:#4A3D1E;}
+:root[data-theme="dark"] .badge-blue {background:#132630;color:#3AAFC0;border-color:#1E4553;}
+:root[data-theme="dark"] .ai-panel{background:#1C2233;border-color:#33405A;}
+:root[data-theme="dark"] .ai-panel, :root[data-theme="dark"] .ai-content{color:var(--text);}
+:root[data-theme="dark"] input, :root[data-theme="dark"] select, :root[data-theme="dark"] textarea{color-scheme:dark;}
 
 *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
@@ -724,6 +753,7 @@ tfoot td:first-child { text-align: left; }
       {% block topbar_controls %}{% endblock %}
     </div>
     <div class="topbar-right">
+      <button class="btn btn-secondary btn-sm" id="ixTheme" title="Toggle dark / light" style="padding:5px 9px">🌙</button>
       <span id="mpClock" style="font-size:11px;color:var(--text3)"></span>
       {% block topbar_actions %}{% endblock %}
     </div>
@@ -795,6 +825,38 @@ document.querySelectorAll('.nav-section').forEach(sec => {
     if(badge){ if(d.count>0){badge.textContent=d.count;badge.style.display='';}else{badge.style.display='none';} }
   }catch(e){}
   setTimeout(pollAlerts, 60000);
+})();
+
+// ── Global marketplace stickiness — one region across every page ──
+// Every page's selector uses .mp-btn[data-mp]; remember the last pick and
+// re-apply it on load so switching pages keeps the region until you change it.
+(function(){
+  const KEY='ix_region';
+  document.addEventListener('click', function(e){
+    const b = e.target.closest && e.target.closest('.mp-btn[data-mp]');
+    if(b) localStorage.setItem(KEY, b.getAttribute('data-mp'));
+  }, true);
+  const saved = localStorage.getItem(KEY);
+  if(saved){
+    setTimeout(function(){                       // after the page's own init runs
+      const active = document.querySelector('.mp-btn.active[data-mp]');
+      if(active && active.getAttribute('data-mp') === saved) return;   // already on it
+      const btns = document.querySelectorAll('.mp-btn[data-mp]');
+      for(const b of btns){ if(b.getAttribute('data-mp')===saved){ b.click(); break; } }
+    }, 0);
+  }
+})();
+
+// ── Global dark / light toggle (applies to the whole app) ──
+(function(){
+  const btn=document.getElementById('ixTheme'); if(!btn) return;
+  function icon(){ btn.textContent = document.documentElement.getAttribute('data-theme')==='dark'?'☀️':'🌙'; }
+  icon();
+  btn.onclick=function(){
+    const cur = document.documentElement.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', cur);
+    localStorage.setItem('ix_theme', cur); icon();
+  };
 })();
 </script>
 {% block extra_js %}{% endblock %}

@@ -3,10 +3,44 @@
 {% block page_title %}Command Center{% endblock %}
 {% block nav_command_center %}active{% endblock %}
 
+{% block topbar_controls %}
+<div class="mp-selector" id="ccRegion">
+  <button class="mp-btn active" data-mp="all">All</button>
+  <button class="mp-btn" data-mp="usa">🇺🇸 USA</button>
+  <button class="mp-btn" data-mp="uk">🇬🇧 UK</button>
+  <button class="mp-btn" data-mp="ae">🇦🇪 UAE</button>
+  <button class="mp-btn" data-mp="sa">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
 {% block extra_head %}
 <link href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css" rel="stylesheet">
 <style>
   :root{ --cc-crit:#C40000; --cc-warn:#B4740A; --cc-good:#067D62; }
+  /* ── Dark theme — overrides the base CSS variables when the toggle sets
+        data-theme="dark" on <html>. Scoped to this page's stylesheet, so the
+        toggle only restyles the Command Center for now. ── */
+  :root[data-theme="dark"]{
+    --bg:#0F1420; --bg2:#171D2B; --bg3:#1E2536; --bg4:#1B2130;
+    --border:#2A3446; --border2:#3A465D;
+    --text:#E7EAF0; --text2:#A7B0C0; --text3:#6E7890;
+    --cc-crit:#F06A7E; --cc-warn:#D9A441; --cc-good:#35C97F;
+  }
+  :root[data-theme="dark"] body{background:var(--bg);color:var(--text)}
+  :root[data-theme="dark"] .topbar{background:var(--bg2);border-color:var(--border)}
+  :root[data-theme="dark"] .chip-good{background:#12281F}
+  :root[data-theme="dark"] .chip-crit{background:#2C1720}
+  :root[data-theme="dark"] .chip-warn{background:#2A2213}
+  :root[data-theme="dark"] .cc-wopt:hover{background:#20283A;border-color:var(--orange)}
+  :root[data-theme="dark"] tbody tr:hover{background:#1E2536}
+
+  /* heatmap */
+  .cc-heat{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-top:6px}
+  .cc-hcell{aspect-ratio:1;border-radius:2px;background:var(--teal);min-height:12px}
+  .cc-hx{display:flex;justify-content:space-between;color:var(--text3);font-size:9px;margin-top:5px}
+  .cc-bar-row{display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;margin:7px 0}
+  .cc-track{height:8px;background:var(--bg3);border-radius:5px;overflow:hidden}
+  .cc-fill{height:100%;background:linear-gradient(90deg,var(--teal),#00A3BF);border-radius:5px}
   .cc-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
   .cc-hint{color:var(--text3);font-size:12px}
   .grid-stack{background:transparent;margin:0 -6px}
@@ -116,22 +150,36 @@ const CATALOG = {{ catalog_json|safe }};
 const LAYOUT  = {{ layout_json|safe }};
 const charts = {};   // domId -> Chart instance
 let uid = 0;
+// Region is app-wide sticky: shared localStorage key, persists across pages.
+let REGION = localStorage.getItem('ix_region') || 'all';
 
 const grid = GridStack.init({
   column: 12, cellHeight: 74, margin: 0, float: true,
   handle: '.cc-drag', staticGrid: true,          // start in view mode
 }, document.getElementById('grid'));
 
-function money(n){ n=+n||0; const a=Math.abs(n);
-  if(a>=1000) return '$'+(n/1000).toFixed(a>=100000?0:1)+'k'; return '$'+n.toFixed(0); }
+// Per-region currency; the unified "All" view stays in USD.
+const CUR={usa:'$',ca:'$',uk:'£',ae:'AED ',sa:'SAR ',de:'€'};
+function curSym(mp){ return CUR[mp] || '$'; }
+function money(n,mp){ n=+n||0;
+  const sym = curSym(mp || (REGION!=='all'?REGION:null));
+  const a=Math.abs(n);
+  if(a>=1000) return sym+(n/1000).toFixed(a>=100000?0:1)+'k'; return sym+n.toFixed(0); }
 function fmt(v,f){ if(f==='currency')return money(v); if(f==='pct')return (+v).toFixed(2)+'%';
   if(f==='int')return (+v||0).toLocaleString(); return v; }
+// KPI cards take their metric's name as the card title (not "KPI tile").
+const METRIC_TITLE={revenue:'Revenue · last day',gross_margin:'Gross Margin · last day',
+  tacos:'TACoS · last day',units:'Units · last day',ppc:'PPC Spend · last day'};
+function widgetTitle(key,cfg){
+  if(key==='kpi') return METRIC_TITLE[(cfg||{}).metric] || 'KPI';
+  return (CATALOG[key]||{}).title || key;
+}
 
-function cardShell(key){
-  const spec = CATALOG[key] || {title:key,icon:'▦'};
+function cardShell(w){
+  const spec = CATALOG[w.key] || {icon:'▦'};
   return `<div class="cc-card">
     <div class="cc-head">
-      <span class="cc-title"><span>${spec.icon||''}</span>${spec.title||key}</span>
+      <span class="cc-title"><span>${spec.icon||''}</span>${widgetTitle(w.key, w.config)}</span>
       <span class="cc-tools"><span class="cc-drag" title="Drag">⠿</span>
         <button class="cc-remove" title="Remove">✕</button></span>
     </div>
@@ -143,7 +191,7 @@ function addItem(w){
   const id = 'cc'+(uid++);
   const el = grid.addWidget({x:w.x,y:w.y,w:w.w,h:w.h,
     minW:(CATALOG[w.key]||{}).minW,minH:(CATALOG[w.key]||{}).minH,
-    content: cardShell(w.key), id});
+    content: cardShell(w), id});
   el.dataset.key = w.key;
   el.dataset.cfg = JSON.stringify(w.config||{});
   el.querySelector('.cc-remove').onclick = () => { removeItem(el); };
@@ -157,14 +205,18 @@ function removeItem(el){
 }
 
 async function loadWidget(el){
-  const key = el.dataset.key, cfg = el.dataset.cfg;
+  const key = el.dataset.key;
+  const cfg = Object.assign({}, JSON.parse(el.dataset.cfg||'{}'));
+  if (REGION && REGION !== 'all') cfg.marketplace = REGION;   // merge global region
   const body = el.querySelector('.cc-body');
+  body.classList.remove('pad0'); body.innerHTML = '<div class="cc-loading">Loading…</div>';
   try{
-    const r = await fetch(`/command-center/api/widget/?key=${encodeURIComponent(key)}&config=${encodeURIComponent(cfg)}`);
+    const r = await fetch(`/command-center/api/widget/?key=${encodeURIComponent(key)}&config=${encodeURIComponent(JSON.stringify(cfg))}`);
     const d = await r.json();
     (RENDER[key]||RENDER._default)(body, d, el);
   }catch(e){ body.innerHTML = `<div class="cc-loading">Couldn’t load.</div>`; }
 }
+function reloadAll(){ grid.getGridItems().forEach(loadWidget); }
 
 /* ── renderers ── */
 const RENDER = {
@@ -206,9 +258,9 @@ const RENDER = {
     body.classList.add('pad0');
     body.innerHTML = `<table><thead><tr><th>Market</th><th>Revenue</th><th>Units</th><th>PPC</th><th>TACoS</th><th>GM%</th><th>Net</th></tr></thead>
       <tbody>${(d.rows||[]).map(r=>`<tr><td>${names[r.mp]||r.mp}</td>
-        <td>${money(r.revenue)}</td><td>${r.units.toLocaleString()}</td><td>${money(r.ppc)}</td>
+        <td>${money(r.revenue,r.mp)}</td><td>${r.units.toLocaleString()}</td><td>${money(r.ppc,r.mp)}</td>
         <td>${r.tacos.toFixed(1)}%</td><td>${r.gm_pct.toFixed(1)}%</td>
-        <td class="cc-pos">${money(r.net)}</td></tr>`).join('')||'<tr><td colspan=7 style="color:var(--text3)">No data yet</td></tr>'}</tbody></table>`;
+        <td class="cc-pos">${money(r.net,r.mp)}</td></tr>`).join('')||'<tr><td colspan=7 style="color:var(--text3)">No data yet</td></tr>'}</tbody></table>`;
   },
   profit_alerts(body,d){
     if(d.error) return RENDER._default(body,d);
@@ -232,6 +284,42 @@ const RENDER = {
       <span class="cc-chip ${s.ok?'chip-good':'chip-crit'}">${s.latest?('T-'+s.lag):'—'}</span></div>`).join('')
       || '<div class="cc-loading">No sync log</div>';
   },
+  hourly_heatmap(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const hrs=d.hours||[]; const mx=Math.max(1,...hrs);
+    body.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:2px">${d.metric||'Revenue'} by hour · ${d.date||'—'}</div>
+      <div class="cc-heat">${hrs.map(v=>`<div class="cc-hcell" title="${v}" style="opacity:${(0.12+(v/mx)*0.88).toFixed(2)}"></div>`).join('')}</div>
+      <div class="cc-hx"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>`;
+  },
+  top_skus(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const rows=d.rows||[];
+    body.innerHTML = rows.length ? rows.map(r=>`<div class="cc-bar-row">
+      <div><div style="font-size:12px;font-weight:600">${r.sku}</div>
+      <div class="cc-track"><div class="cc-fill" style="width:${Math.max(4,r.pct).toFixed(0)}%"></div></div></div>
+      <b style="text-align:right;font-size:12px">${money(r.cm)}</b></div>`).join('')
+      : '<div class="cc-loading">No SKU data</div>';
+  },
+  ppc_vs_sales(body,d,el){
+    if(d.error) return RENDER._default(body,d);
+    body.classList.add('pad0'); body.innerHTML='<canvas></canvas>';
+    const id=el.getAttribute('gs-id'); charts[id]&&charts[id].destroy();
+    charts[id]=new Chart(body.querySelector('canvas'),{data:{labels:d.labels,datasets:[
+      {type:'bar',label:'Sales',data:d.sales,backgroundColor:'rgba(0,113,133,.85)',borderRadius:3,order:2},
+      {type:'bar',label:'PPC',data:d.ppc,backgroundColor:'rgba(255,153,0,.9)',borderRadius:3,order:2},
+      {type:'line',label:'TACoS',data:d.tacos,borderColor:'#C40000',borderWidth:2,pointRadius:0,yAxisID:'y1',order:1,tension:.3}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:10,font:{size:10}}}},
+        scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#8A8A8A'}},
+          y:{grid:{color:'rgba(128,128,128,.15)'},ticks:{font:{size:9},color:'#8A8A8A',callback:v=>curSym(REGION!=='all'?REGION:null)+(v/1000)+'k'}},
+          y1:{position:'right',grid:{display:false},ticks:{font:{size:9},color:'#8A8A8A',callback:v=>v+'%'}}}}});
+  },
+  ai_recs(body,d){
+    if(d.error) return RENDER._default(body,d);
+    const r=d.recs||[];
+    body.innerHTML = r.length ? r.map(x=>`<div class="cc-row"><span>${x.text}</span>
+      <span class="cc-chip chip-${x.tag}"> </span></div>`).join('')
+      : '<div class="cc-loading">No recommendations yet</div>';
+  },
 };
 
 /* ── chart helpers (reuse app's Chart.js) ── */
@@ -251,7 +339,7 @@ function lineChart(cv,el,labels,data){
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6,font:{size:10},color:'#8A8A8A'}},
               y:{grid:{color:'#EAEDED'},ticks:{font:{size:10},color:'#8A8A8A',
-                 callback:v=>'$'+(v/1000)+'k'}}}}});
+                 callback:v=>curSym(REGION!=='all'?REGION:null)+(v/1000)+'k'}}}}});
 }
 function donut(cv,el,vals){
   const id=el.getAttribute('gs-id'); charts[id]&&charts[id].destroy();
@@ -307,6 +395,17 @@ document.getElementById('ccReset').onclick=async function(){
   grid.removeAll(); Object.values(charts).forEach(c=>c.destroy());
   (d.layout||[]).forEach(addItem);
 };
+
+// ── Region selector (app-wide sticky via shared localStorage key) ──
+(function(){
+  const box=document.getElementById('ccRegion');
+  box.querySelectorAll('.mp-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.mp===REGION);
+    b.onclick=()=>{ REGION=b.dataset.mp; localStorage.setItem('ix_region',REGION);
+      box.querySelectorAll('.mp-btn').forEach(x=>x.classList.toggle('active',x===b));
+      reloadAll(); };
+  });
+})();
 
 // initial render
 LAYOUT.forEach(addItem);
