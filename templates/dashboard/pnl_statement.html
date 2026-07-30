@@ -376,7 +376,7 @@ function render(){
         // raw head sign: <0 is a cost (Debit), >0 is a credit (Credit)
         const hDeb = val<0 ? money(val) : '';
         const hCre = val>0 ? money(val) : '';
-        html += `<tr class="head-row" style="background:#FCFDFE">
+        html += `<tr class="head-row" style="background:var(--surface2)">
           <td class="lbl indent-2" style="color:var(--text2);font-size:11px">↳ ${label}</td>
           <td style="color:var(--text2)">${hDeb}</td>
           <td style="color:var(--text2)">${hCre}</td>

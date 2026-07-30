@@ -75,16 +75,17 @@
    data-theme before paint so there's no flash. Components read the variables
    below, so the whole app follows. ═══════════════════════════════════════════ */
 :root[data-theme="dark"] {
-  --bg:#0F1420; --bg2:#171D2B; --bg3:#1E2536; --bg4:#1B2130;
-  --border:#2A3446; --border2:#3A465D;
-  --navy:#131926; --navy2:#0C1019;
-  --text:#E7EAF0; --text2:#A7B0C0; --text3:#6E7890;
+  /* softer "slate dimmed" — not near-black, not stark white */
+  --bg:#171A21; --bg2:#1E222B; --bg3:#262B35; --bg4:#22262F;
+  --border:#2F3641; --border2:#3C4450;
+  --navy:#1B1F27; --navy2:#14171D;
+  --text:#D7DCE4; --text2:#98A2B2; --text3:#6C7480;
   --green:#2FCB7E; --green2:#22B06B; --red:#F1667C; --red2:#E24E66;
   --orange:#FFB454; --orange2:#E89A3C;
   --teal:#3AAFC0; --teal2:#2F98A8; --accent:#3AAFC0; --accent2:#2F98A8;
   --shadow-sm:0 1px 3px rgba(0,0,0,.35); --shadow:0 2px 10px rgba(0,0,0,.4);
   --shadow-md:0 6px 22px rgba(0,0,0,.45);
-  --surface2:#1B2130;
+  --surface2:#262B35;
   --good-weak:#12281F; --good-ink:#2FCB7E;
   --crit-weak:#2C1720; --crit-ink:#F1667C;
   --warn-weak:#2A2213; --warn-ink:#DCA144;
@@ -99,7 +100,7 @@
 :root[data-theme="dark"] .btn-secondary{background:var(--bg3);color:var(--text);border-color:var(--border2);}
 :root[data-theme="dark"] .btn-secondary:hover{background:var(--bg4);}
 :root[data-theme="dark"] body { background:var(--bg); color:var(--text); }
-:root[data-theme="dark"] tbody tr:hover { background:#1E2536; }
+:root[data-theme="dark"] tbody tr:hover { background:var(--bg3); }
 :root[data-theme="dark"] .alert-success{background:#12281F;border-color:#1E4531;color:#2FCB7E;}
 :root[data-theme="dark"] .alert-error  {background:#2C1720;border-color:#4A2530;color:#F1667C;}
 :root[data-theme="dark"] .alert-warning{background:#2A2213;border-color:#4A3D1E;color:#DCA144;}
