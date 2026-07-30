@@ -5,10 +5,10 @@
 
 {% block topbar_controls %}
 <div class="mp-selector" id="regionSel">
-  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
-  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
-  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
-  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+  <button data-mp="{{ mp }}" class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
 </div>
 {% endblock %}
 
@@ -21,18 +21,18 @@
   .kpi-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
   .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:20px; font-weight:700; }
-  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card .l { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.urgent .v { color:#B42318; }
   .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
   .bar-row select, .bar-row input { padding:5px 8px; border:1px solid var(--border); border-radius:5px; font-size:12px; }
   .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
-  table.t th { background:#F4F6F8; text-align:right; padding:7px 9px; font-size:11px;
+  table.t th { background:var(--surface2); text-align:right; padding:7px 9px; font-size:11px;
                border-bottom:1px solid var(--border); white-space:nowrap; cursor:pointer; position:sticky; top:0; z-index:1; }
   table.t th.l, table.t td.l { text-align:left; }
   table.t td { padding:6px 9px; text-align:right; border-bottom:1px solid #EDEFF1;
                white-space:nowrap; font-variant-numeric:tabular-nums; }
-  table.t tbody tr:hover { background:#F7FAFC; }
+  table.t tbody tr:hover { background:var(--surface2); }
   .load { font-weight:700; font-size:13px; }
   .muted { color:#8A94A0; }
   .zero { color:#B0B8C0; }
@@ -41,7 +41,7 @@
   .chip { display:inline-block; padding:1px 6px; border-radius:9px; font-size:10px; font-weight:600; }
   .c-pnr { background:#FEE4E2; color:#B42318; }
   .c-over { background:#FEF0C7; color:#8A5A00; }
-  .c-po { background:#E6F4EA; color:#1E6B34; }
+  .c-po { background:var(--good-weak); color:#1E6B34; }
   .basis { font-size:10px; color:#8A94A0; }
   .wrap { max-height:70vh; overflow:auto; border:1px solid var(--border); border-radius:8px; background:var(--bg2); }
 </style>
@@ -57,13 +57,13 @@
 </div>
 
 <div class="bar-row">
-  <label style="font-size:11px;color:#5A6470">Category
+  <label style="font-size:11px;color:var(--text2)">Category
     <select id="fCat" onchange="load()"><option value="">All</option></select></label>
-  <label style="font-size:11px;color:#5A6470">Tier
+  <label style="font-size:11px;color:var(--text2)">Tier
     <select id="fTier" onchange="load()">
       <option value="">All</option><option>Alpha</option><option>Beta</option><option>Ceta</option>
     </select></label>
-  <label style="font-size:11px;color:#5A6470">Target cover
+  <label style="font-size:11px;color:var(--text2)">Target cover
     <select id="fCover" onchange="load()">
       <option value="">Tier default (ship-lead + tier)</option>
       <option value="90">90 days</option><option value="100">100 days</option>

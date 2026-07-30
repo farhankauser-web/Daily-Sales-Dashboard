@@ -31,7 +31,7 @@
 
 {% block extra_head %}
 <style>
-  .pl-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+  .pl-banner { background:var(--warn-weak); border:1px solid #EAD499; color:#5A4500;
                 padding:8px 12px; border-radius:6px; margin-bottom:10px;
                 font-size:12px; }
 
@@ -60,7 +60,7 @@
   .pl-viz .bar-cell .pct { font-family:'DM Mono',monospace; font-weight:700;
                             font-size:14px; color:var(--text); }
   .pl-viz .bar-cell .raw { font-size:10px; color:var(--text3); margin-top:1px; }
-  .pl-viz .bar { height:6px; background:#E5E7E8; border-radius:3px; margin-top:6px;
+  .pl-viz .bar { height:6px; background:var(--border); border-radius:3px; margin-top:6px;
                   overflow:hidden; position:relative; }
   .pl-viz .bar > div { height:100%; background:#067D62; transition:width 250ms ease; }
   .pl-viz .bar-cell.spend > .bar > div  { background:#1B4A75; }
@@ -83,7 +83,7 @@
   .pl-mix-cell { padding:0 !important; height:32px; min-width:90px;
                   position:relative; font-size:10px; }
   .pl-mix-bar { position:absolute; top:6px; bottom:6px; left:0;
-                 background:#E5E7E8; border-radius:3px; width:calc(100% - 8px);
+                 background:var(--border); border-radius:3px; width:calc(100% - 8px);
                  margin:0 4px; }
   .pl-mix-bar > div { height:100%; background:#067D62; border-radius:3px;
                        transition:width 200ms ease; }
@@ -91,7 +91,7 @@
                        display:flex; justify-content:space-between;
                        font-family:'DM Mono',monospace; }
   .pl-mix-cell .num .pct { font-weight:600; color:var(--text); }
-  .pl-mix-cell .num .amt { color:#666; }
+  .pl-mix-cell .num .amt { color:var(--text2); }
 
   .pl-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
                 padding:32px; text-align:center; color:var(--text2); }

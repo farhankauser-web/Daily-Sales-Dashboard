@@ -5,10 +5,10 @@
 
 {% block topbar_controls %}
 <div class="mp-selector" id="regionSel">
-  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
-  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
-  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
-  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+  <button data-mp="{{ mp }}" class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
 </div>
 {% endblock %}
 
@@ -26,13 +26,13 @@
   .kpi-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; max-width:600px; }
   .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:20px; font-weight:700; }
-  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card .l { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
   /* matrix — single sticky header row; freeze left (Type/Name/SKU) + top */
   .mwrap { overflow:auto; max-height:76vh; border:1px solid var(--border); border-radius:8px; background:var(--bg2); }
   table.mx { border-collapse:separate; border-spacing:0; font-size:12px; white-space:nowrap; table-layout:fixed; }
   table.mx th, table.mx td { border-bottom:1px solid #EDEFF1; border-right:1px solid #EDEFF1;
                              padding:5px 9px; box-sizing:border-box; overflow:hidden; }
-  table.mx thead th { position:sticky; top:0; z-index:3; background:#F4F6F8; vertical-align:bottom; cursor:pointer; }
+  table.mx thead th { position:sticky; top:0; z-index:3; background:var(--surface2); vertical-align:bottom; cursor:pointer; }
   /* frozen left columns (both header + body) */
   .c-type, .c-name, .c-sku { position:sticky; background:var(--bg2); z-index:2; text-align:left; }
   .c-type { left:0; width:64px; min-width:64px; max-width:64px; }
@@ -42,20 +42,20 @@
   /* container header column — stacked details + Units */
   th.cont { text-align:right; width:118px; min-width:118px; max-width:118px; }
   th.cont .cno  { font-weight:700; font-family:'DM Mono',monospace; font-size:11px; white-space:normal; }
-  th.cont .meta { font-size:10px; color:#5A6470; font-weight:400; white-space:normal; line-height:1.35; }
-  th.cont .uh   { font-weight:700; color:#232F3E; margin-top:4px; border-top:1px solid var(--border); padding-top:3px; }
+  th.cont .meta { font-size:10px; color:var(--text2); font-weight:400; white-space:normal; line-height:1.35; }
+  th.cont .uh   { font-weight:700; color:var(--text); margin-top:4px; border-top:1px solid var(--border); padding-top:3px; }
   th.cont.at_port { background:#FFF7E8; } th.cont.customs { background:#FFF1F0; }
   td.num  { text-align:right; font-variant-numeric:tabular-nums; }
   td.zero { color:#C9CDD1; text-align:right; }
-  .c-total { position:sticky; right:0; background:#EAF1EE; color:var(--text); font-weight:700;
+  .c-total { position:sticky; right:0; background:var(--good-weak); color:var(--text); font-weight:700;
              text-align:right; z-index:2; width:78px; min-width:78px; max-width:78px; }
   thead .c-total { background:#D6E4DD; color:var(--text); z-index:6; }
   tr.srow:hover td, tr.srow:hover .c-type, tr.srow:hover .c-name, tr.srow:hover .c-sku { background:#F8FAFB; }
-  .sortarr { color:#232F3E; }
+  .sortarr { color:var(--text); }
   .st { display:inline-block; padding:1px 6px; border-radius:9px; font-size:9px; font-weight:700; }
-  .st.departed { background:#E0F2EC; color:var(--green); }
-  .st.at_port  { background:#FFF4DC; color:#9D6500; }
-  .st.pending  { background:#EDF2FB; color:#2456A6; }
+  .st.departed { background:var(--good-weak); color:var(--green); }
+  .st.at_port  { background:var(--warn-weak); color:var(--warn-ink); }
+  .st.pending  { background:var(--info-weak); color:#2456A6; }
   .st.received,.st.cancelled { background:var(--bg3); color:var(--text3); }
   .mono { font-family:'DM Mono',monospace; }
   .pdsedit { color:#2456A6; cursor:pointer; text-decoration:underline dotted; }
@@ -82,8 +82,8 @@
     <option value="">All categories</option></select>
   <select id="fType" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="render()">
     <option value="">All tiers</option></select>
-  <span style="font-size:11px;color:#5A6470">Click a header to sort · click a container header ✎ to edit.</span>
-  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+  <span style="font-size:11px;color:var(--text2)">Click a header to sort · click a container header ✎ to edit.</span>
+  <span id="countLbl" style="font-size:11px;color:var(--text2);margin-left:auto"></span>
 </div>
 <div class="mwrap">
   <table class="mx" id="mx"><thead id="mhead"></thead><tbody id="tbody">
@@ -134,7 +134,7 @@
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
       <button class="btn btn-ghost btn-sm" id="contDelBtn" style="display:none" onclick="deleteContainer()">Delete</button>
       <div style="display:flex;gap:8px;margin-left:auto">
-        <button class="btn btn-secondary btn-sm" id="contRecvBtn" style="display:none;background:#E0F2EC;color:var(--green);border-color:var(--green)" onclick="openReceive()">✓ Mark Received</button>
+        <button class="btn btn-secondary btn-sm" id="contRecvBtn" style="display:none;background:var(--good-weak);color:var(--green);border-color:var(--green)" onclick="openReceive()">✓ Mark Received</button>
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('contModal').classList.remove('show')">Cancel</button>
         <button class="btn btn-primary btn-sm" onclick="saveContainer()">Save</button>
       </div>
@@ -146,7 +146,7 @@
 <div class="modal-bg" id="recvModal" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="modal-card">
     <h3>Receive Container <span id="recvCont" class="mono"></span></h3>
-    <p style="font-size:11px;color:#5A6470">Confirm the quantity received at the destination warehouse. This adds the stock to that warehouse, archives the container to Container History, and records the receipt. Edit a cell if the count differs (discrepancy is logged).</p>
+    <p style="font-size:11px;color:var(--text2)">Confirm the quantity received at the destination warehouse. This adds the stock to that warehouse, archives the container to Container History, and records the receipt. Edit a cell if the count differs (discrepancy is logged).</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div><label style="font-size:11px;color:var(--text2)">Receiving warehouse</label>
         <select id="recvWh" class="form-control"></select></div>
@@ -154,7 +154,7 @@
         <input id="recvDate" type="date" class="form-control"/></div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:#F4F6F8">
+      <thead><tr style="background:var(--surface2)">
         <th style="text-align:left;padding:5px 8px">SKU</th>
         <th style="text-align:right;padding:5px 8px">Shipped</th>
         <th style="text-align:right;padding:5px 8px">Received</th></tr></thead>
@@ -170,13 +170,13 @@
 <!-- pickup modal -->
 <div class="modal-bg" id="pickModal" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="modal-card" style="width:420px">
-    <h3>🚚 Mark picked up <span id="pickCno" style="font-weight:400;color:#5A6470"></span></h3>
-    <p style="font-size:11px;color:#5A6470">Freight forwarder collected it — sets the container to <b>In Transit</b>. ETA→FC auto-fills 10 days after ETA port if left blank.</p>
+    <h3>🚚 Mark picked up <span id="pickCno" style="font-weight:400;color:var(--text2)"></span></h3>
+    <p style="font-size:11px;color:var(--text2)">Freight forwarder collected it — sets the container to <b>In Transit</b>. ETA→FC auto-fills 10 days after ETA port if left blank.</p>
     <input type="hidden" id="pickId">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <label style="font-size:11px;color:#5A6470">Departure date
+      <label style="font-size:11px;color:var(--text2)">Departure date
         <input type="date" id="pickDep" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px"></label>
-      <label style="font-size:11px;color:#5A6470">ETA port
+      <label style="font-size:11px;color:var(--text2)">ETA port
         <input type="date" id="pickEta" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px"></label>
     </div>
     <div id="pickMsg" style="font-size:11px;margin-top:8px"></div>
@@ -191,7 +191,7 @@
 <div class="modal-bg" id="upModal" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="modal-card" style="width:460px">
     <h3>Upload Container File</h3>
-    <p style="font-size:11px;color:#5A6470">One row per SKU-in-container. Columns: Container No · Vendor · Destination · Departure Date · ETA Port · Status · SKU · Units. Each container is upserted by its number.</p>
+    <p style="font-size:11px;color:var(--text2)">One row per SKU-in-container. Columns: Container No · Vendor · Destination · Departure Date · ETA Port · Status · SKU · Units. Each container is upserted by its number.</p>
     <input type="file" id="upFile" accept=".xlsx"/>
     <div id="upMsg" style="font-size:11px;margin-top:8px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -278,7 +278,7 @@ function render(){
 
   document.getElementById('tbody').innerHTML = skus.length ? skus.map(r=>`
     <tr class="srow">
-      <td class="c-type" style="font-size:11px;color:#5A6470">${esc(r.type)}</td>
+      <td class="c-type" style="font-size:11px;color:var(--text2)">${esc(r.type)}</td>
       <td class="c-name" title="${esc(r.name)}">${esc(r.name)||'—'}</td>
       <td class="c-sku mono">${esc(r.sku)}</td>
       ${conts.map(c=>{ const u=r.per[c.id];

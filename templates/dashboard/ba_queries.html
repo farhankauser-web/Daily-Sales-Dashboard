@@ -28,7 +28,7 @@
 
 {% block extra_head %}
 <style>
-  .ba-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+  .ba-banner { background:var(--warn-weak); border:1px solid #EAD499; color:#5A4500;
                 padding:10px 14px; border-radius:6px; margin-bottom:12px;
                 font-size:13px; }
 
@@ -91,10 +91,10 @@
 
   .ba-row-tag { display:inline-block; padding:1px 6px; border-radius:3px;
                  font-size:9px; font-weight:600; margin-right:2px; }
-  .ba-row-tag.dominant     { background:#E0F2EC; color:var(--green); }
-  .ba-row-tag.weak         { background:#FFF1ED; color:#9C5331; }
-  .ba-row-tag.losing_pdp   { background:#FBE2E0; color:#9C3431; }
-  .ba-row-tag.scaling_opp  { background:#E1EFFA; color:#1B4A75; }
+  .ba-row-tag.dominant     { background:var(--good-weak); color:var(--green); }
+  .ba-row-tag.weak         { background:var(--warn-weak); color:var(--warn-ink); }
+  .ba-row-tag.losing_pdp   { background:var(--crit-weak); color:var(--crit-ink); }
+  .ba-row-tag.scaling_opp  { background:var(--info-weak); color:var(--info-ink); }
 
   .ba-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
                 padding:32px; text-align:center; color:var(--text2); }
@@ -104,7 +104,7 @@
 {% block content %}
 <div id="banner" class="ba-banner" style="display:none"></div>
 
-<div id="deltaBanner" style="display:none;background:#FFF8E5;border:1px solid #EAD499;
+<div id="deltaBanner" style="display:none;background:var(--warn-weak);border:1px solid #EAD499;
             color:#5A4500;padding:8px 12px;border-radius:6px;margin-bottom:10px;
             font-size:12px;line-height:1.5"></div>
 

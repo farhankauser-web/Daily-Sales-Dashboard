@@ -15,7 +15,7 @@
       </div></div>
       <div class="card-body" style="padding:0">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="background:#F4F6F8">
+          <thead><tr style="background:var(--surface2)">
             <th style="padding:6px 10px;text-align:left">SKU</th>
             <th style="padding:6px 10px;text-align:left">Description</th>
             <th style="padding:6px 10px">Qty</th><th style="padding:6px 10px">Kg rate</th>
@@ -70,7 +70,7 @@
         Net: <b>{{ totals.net|floatformat:2 }}</b><br/>
         VAT ({{ company.vat_rate }}): {{ totals.vat|floatformat:2 }}<br/>
         Total: <b>{{ totals.total|floatformat:2 }} {{ company.currency }}</b><br/>
-        <span style="color:#5A6470">Margin (internal): {{ totals.margin|floatformat:2 }}
+        <span style="color:var(--text2)">Margin (internal): {{ totals.margin|floatformat:2 }}
           ({{ totals.margin_pct|floatformat:1 }}%)</span>
       </div>
     </div>

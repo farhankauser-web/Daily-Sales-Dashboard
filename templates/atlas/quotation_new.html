@@ -11,8 +11,8 @@
   .wiz { max-width:1000px; }
   .wiz .card { margin-bottom:14px; }
   table.pick { width:100%; border-collapse:collapse; font-size:12px; }
-  table.pick th { background:#F4F6F8; text-align:left; padding:6px 8px; font-size:10px;
-                  text-transform:uppercase; color:#5A6470; }
+  table.pick th { background:var(--surface2); text-align:left; padding:6px 8px; font-size:10px;
+                  text-transform:uppercase; color:var(--text2); }
   table.pick td { padding:6px 8px; border-bottom:1px solid #EDEFF1; }
   .low { color:#C0392B; font-weight:600; }
   #cartTable td input { width:70px; padding:3px 5px; font-size:12px; }
@@ -65,7 +65,7 @@
           <option value="">All qualities</option>
           {% for ql in qualities %}<option value="{{ ql }}">{{ ql }}</option>{% endfor %}
         </select>
-        <span id="pickHint" style="font-size:11px;color:#5A6470;align-self:center">
+        <span id="pickHint" style="font-size:11px;color:var(--text2);align-self:center">
           Select a customer to see live prices.</span>
       </div>
       <div style="max-height:280px;overflow:auto">

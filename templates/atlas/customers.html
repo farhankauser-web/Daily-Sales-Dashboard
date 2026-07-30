@@ -16,7 +16,7 @@
   <div class="card"><div class="card-header"><div class="card-title">Customers</div></div>
     <div class="card-body" style="padding:0">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="background:#F4F6F8">
+        <thead><tr style="background:var(--surface2)">
           <th style="padding:6px 10px;text-align:left">Name</th>
           <th style="padding:6px 10px">Kg rate (Local)</th>
           <th style="padding:6px 10px">Kg rate (Container)</th>
@@ -27,7 +27,7 @@
         {% for c in rows %}
           <tr {% if not c.is_active %}style="opacity:.5"{% endif %}>
             <td style="padding:6px 10px">{{ c.name }}
-              {% if c.contact_person %}<div style="font-size:10px;color:#5A6470">{{ c.contact_person }} · {{ c.email }}</div>{% endif %}</td>
+              {% if c.contact_person %}<div style="font-size:10px;color:var(--text2)">{{ c.contact_person }} · {{ c.email }}</div>{% endif %}</td>
             <td style="padding:6px 10px;text-align:center">{{ c.kg_rate_local|default:"—" }}</td>
             <td style="padding:6px 10px;text-align:center">{{ c.kg_rate_container|default:"—" }}</td>
             <td style="padding:6px 10px">{{ c.default_payment_term|default:"—" }}</td>
@@ -83,7 +83,7 @@
         <label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:10px">
           <input type="checkbox" name="is_active" {% if not edit or edit.is_active %}checked{% endif %}/> Active</label>
         <button class="btn btn-primary">{% if edit %}Save changes{% else %}Create customer{% endif %}</button>
-        <div style="font-size:11px;color:#5A6470;margin-top:8px">
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
           Per-article kg-rate overrides (Option 2) are managed in
           <a href="/admin/atlas/customerkgrate/">Admin → Customer kg rates</a>.
         </div>

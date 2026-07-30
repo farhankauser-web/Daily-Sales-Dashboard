@@ -9,7 +9,7 @@
   <a href="{% url 'atlas:purchase_orders' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
   {% endfor %}
 </div>
-{% if breaches %}<span style="margin-left:10px;background:#FDE8E6;color:#C0392B;font-weight:700;
+{% if breaches %}<span style="margin-left:10px;background:var(--crit-weak);color:#C0392B;font-weight:700;
   padding:4px 10px;border-radius:10px;font-size:11px">⏰ {{ breaches }} stage TAT breach(es)</span>{% endif %}
 {% endblock %}
 
@@ -18,9 +18,9 @@
   .po-card { background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;padding:12px 14px; }
   .stages { display:flex;gap:4px;flex-wrap:wrap;margin:8px 0; }
   .stg { padding:3px 9px;border-radius:10px;font-size:10px;font-weight:600;background:var(--bg3);color:var(--text2); }
-  .stg.done { background:#E0F2EC;color:var(--green); }
-  .stg.cur  { background:#FFF4DC;color:#9D6500; }
-  .stg.late { background:#FDE8E6;color:#C0392B; }
+  .stg.done { background:var(--good-weak);color:var(--green); }
+  .stg.cur  { background:var(--warn-weak);color:var(--warn-ink); }
+  .stg.late { background:var(--crit-weak);color:#C0392B; }
   table.lines { border-collapse:collapse;font-size:11px;width:100%; }
   table.lines td, table.lines th { padding:4px 8px;border-bottom:1px solid #EDEFF1;text-align:left; }
 </style>
@@ -81,7 +81,7 @@
         <input type="hidden" name="action" value="receive"/>
         <input type="hidden" name="po_id" value="{{ po.pk }}"/>
       </form>
-      {% if po.notes %}<div style="font-size:11px;color:#5A6470;margin-top:6px">{{ po.notes }}</div>{% endif %}
+      {% if po.notes %}<div style="font-size:11px;color:var(--text2);margin-top:6px">{{ po.notes }}</div>{% endif %}
     </div>
     {% empty %}
     <div style="text-align:center;color:var(--text3);padding:40px">No purchase orders yet.</div>
@@ -127,7 +127,7 @@
           <input id="poRate" type="number" step="0.0001" placeholder="rate" class="form-control" style="width:90px"/>
           <button type="button" class="btn btn-secondary btn-sm" onclick="poAdd()">Add</button>
         </div>
-        <div id="poCart" style="font-size:12px;color:#333"></div>
+        <div id="poCart" style="font-size:12px;color:var(--text)"></div>
         <textarea name="notes" class="form-control" rows="2" placeholder="Notes"></textarea>
         <button class="btn btn-primary">Create PO (stages auto-seeded)</button>
       </form>

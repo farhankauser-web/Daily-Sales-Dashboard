@@ -39,7 +39,7 @@
   .cd-meta .sub { color:var(--text2); }
   .cd-meta .badge { display:inline-block; padding:2px 8px; border-radius:4px;
                     font-size:10px; font-weight:600; }
-  .cd-meta .badge.sp { background:#E1EFFA; color:#1B4A75; }
+  .cd-meta .badge.sp { background:var(--info-weak); color:var(--info-ink); }
   .cd-meta .badge.sb { background:#EDE3F7; color:#4A2080; }
   .cd-meta .badge.sd { background:#FDF1DC; color:#7A5400; }
 
@@ -54,7 +54,7 @@
   .cd-kpi.profit  { border-left:4px solid #067D62; }
   .cd-kpi.loss    { border-left:4px solid #C40000; }
 
-  .cd-banner { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500;
+  .cd-banner { background:var(--warn-weak); border:1px solid #EAD499; color:#5A4500;
                 padding:8px 12px; border-radius:6px; margin-bottom:12px;
                 font-size:12px; }
 
@@ -266,7 +266,7 @@
 
 <!-- ── Hourly Performance Tab ──────────────────────────────────────── -->
 <div class="cd-tab-pane" id="pane-hourly">
-  <div id="hrBanner" style="background:#FFF8E5;border:1px solid #EAD499;
+  <div id="hrBanner" style="background:var(--warn-weak);border:1px solid #EAD499;
               color:#5A4500;padding:8px 12px;border-radius:6px;margin-bottom:10px;
               font-size:12px;display:none"></div>
 
@@ -301,7 +301,7 @@
         <h3 style="margin:0;font-size:16px">Upload hourly CSV</h3>
         <button class="btn btn-secondary btn-sm" onclick="closeHourlyUpload()">✕</button>
       </div>
-      <div style="font-size:12px;color:#666;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
         Use this to backfill days <strong>before AMS started</strong> or to fill gaps.
         Export from Seller Central → Advertising → Reports → set
         <em>Time unit: Hourly</em>, Group by <em>Campaign</em>, max 14 days per file.
@@ -326,7 +326,7 @@
       </form>
       <div id="hrUpResult" style="margin-top:14px;font-size:12px"></div>
       <hr style="margin:14px 0">
-      <div style="font-size:11px;color:#666;margin-bottom:6px;font-weight:600">Recent uploads (account-wide)</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">Recent uploads (account-wide)</div>
       <div id="hrUpHistory" style="max-height:200px;overflow:auto;font-size:11px;font-family:'DM Mono',monospace">
         <div style="color:var(--text3)">Loading…</div>
       </div>
@@ -371,15 +371,15 @@
                        background:var(--bg); border-radius:3px; font-size:10px; }
   .hp-heat-table th.row-head { text-align:right; min-width:78px; padding-right:8px;
                                 background:transparent; font-family:inherit; font-size:11px; }
-  .hp-heat-table th.total-head { background:#EEF3F8; border-left:2px solid #232F3E; }
+  .hp-heat-table th.total-head { background:var(--info-weak); border-left:2px solid #232F3E; }
   .hp-heat-table td { width:30px; height:24px; text-align:center;
                        font-family:'DM Mono',monospace; border-radius:3px;
                        color:var(--text); font-size:10px; font-weight:600; cursor:default; }
   .hp-heat-table td.empty { background:var(--bg4); color:#C0C5CA; font-size:9px; }
   .hp-heat-table td.empty::before { content:'—'; }
-  .hp-heat-table td.total-cell { background:#EEF3F8; color:var(--text); font-weight:700;
+  .hp-heat-table td.total-cell { background:var(--info-weak); color:var(--text); font-weight:700;
                                    border-left:2px solid #232F3E; }
-  .hp-heat-table tr.total-row td { background:#EEF3F8; color:var(--text); font-weight:700;
+  .hp-heat-table tr.total-row td { background:var(--info-weak); color:var(--text); font-weight:700;
                                     border-top:2px solid #232F3E; }
   .hp-heat-table tr.total-row td.total-cell { background:#DDE6EE; }
   .hp-heat-table td:hover { outline:2px solid #232F3E; }
@@ -790,7 +790,7 @@ function renderCampaignPlacements(d) {
             <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.3px">${label}</div>
             <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;color:var(--text)">${fmtPct(pct)}</div>
             <div style="font-size:10px;color:var(--text3)">${fmtCurrency(amt)}</div>
-            <div style="height:5px;background:#E5E7E8;border-radius:3px;margin-top:5px;overflow:hidden">
+            <div style="height:5px;background:var(--border);border-radius:3px;margin-top:5px;overflow:hidden">
               <div style="height:100%;background:${colour};width:${Math.min(pct, 100)}%;transition:width 200ms"></div>
             </div>
           </div>`;
@@ -912,7 +912,7 @@ function _hrFmt(v, fmt) {
 
 function _hrCellColour(v, max, min, higherBetter) {
   if (v == null) return '';
-  if (max === min) return 'background:#E0F2EC;color:var(--green)';
+  if (max === min) return 'background:var(--good-weak);color:var(--green)';
   const norm = (v - min) / (max - min);
   const intensity = Math.max(0, Math.min(1, higherBetter ? norm : (1 - norm)));
   // Green scale: #FFFFFF (low) → #067D62 (high)
@@ -1069,7 +1069,7 @@ async function submitHourlyUpload(e) {
     });
     const d = await r.json();
     if (d.status === 'ok') {
-      res.innerHTML = `<div style="background:#E0F2EC;color:var(--green);padding:8px 10px;border-radius:4px;font-weight:600">
+      res.innerHTML = `<div style="background:var(--good-weak);color:var(--green);padding:8px 10px;border-radius:4px;font-weight:600">
         ✓ Imported ${d.rows_imported} rows over ${d.days_covered} day(s)
         (${d.date_range_start} → ${d.date_range_end}).
       </div>`;
@@ -1077,11 +1077,11 @@ async function submitHourlyUpload(e) {
       hrData = null;
       setTimeout(loadCampaignHourly, 400);
     } else {
-      res.innerHTML = `<div style="background:#FBE2E0;color:#9C3431;padding:8px 10px;border-radius:4px">
+      res.innerHTML = `<div style="background:var(--crit-weak);color:var(--crit-ink);padding:8px 10px;border-radius:4px">
         ✗ ${d.message || 'Failed'}</div>`;
     }
   } catch {
-    res.innerHTML = '<div style="background:#FBE2E0;color:#9C3431;padding:8px 10px;border-radius:4px">Network error.</div>';
+    res.innerHTML = '<div style="background:var(--crit-weak);color:var(--crit-ink);padding:8px 10px;border-radius:4px">Network error.</div>';
   } finally {
     btn.disabled = false; btn.textContent = 'Upload';
     refreshHourlyUploadHistory();

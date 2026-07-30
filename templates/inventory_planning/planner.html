@@ -5,10 +5,10 @@
 
 {% block topbar_controls %}
 <div class="mp-selector" id="regionSel">
-  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
-  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
-  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
-  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+  <button data-mp="{{ mp }}" class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
 </div>
 {% endblock %}
 
@@ -29,14 +29,14 @@
   .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
   .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; cursor:pointer; }
   .kpi-card .v { font-size:20px; font-weight:700; }
-  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card .l { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.crit .v { color:#C0392B; }
-  .kpi-card.warn .v { color:#9D6500; }
+  .kpi-card.warn .v { color:var(--warn-ink); }
   .kpi-card.exc  .v { color:#2456A6; }
   .ipwrap { overflow:auto; max-height:74vh; border:1px solid var(--border); border-radius:8px; background:var(--bg2); }
   table.ip { border-collapse:separate; border-spacing:0; font-size:12px; background:var(--bg2); }
   table.ip th { background:#EDEFF3; text-align:right; padding:6px 8px; font-size:10px;
-                text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border);
+                text-transform:uppercase; color:var(--text2); border-bottom:1px solid var(--border);
                 border-right:1px solid #EDEFF1; white-space:nowrap; cursor:pointer; }
   table.ip thead th { position:sticky; top:0; z-index:3; }
   table.ip th.lbl { text-align:left; }
@@ -52,10 +52,10 @@
   tr.iprow { cursor:pointer; }
   tr.iprow:hover td { background:#F8FAFB; }
   .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-  .st.critical { background:#FDE8E6; color:#C0392B; }
-  .st.warning  { background:#FFF4DC; color:#9D6500; }
-  .st.ok       { background:#E0F2EC; color:var(--green); }
-  .st.excess   { background:#EDF2FB; color:#2456A6; }
+  .st.critical { background:var(--crit-weak); color:#C0392B; }
+  .st.warning  { background:var(--warn-weak); color:var(--warn-ink); }
+  .st.ok       { background:var(--good-weak); color:var(--green); }
+  .st.excess   { background:var(--info-weak); color:#2456A6; }
   .st.dormant  { background:var(--bg3); color:var(--text3); }
   .mono { font-family:'DM Mono',monospace; }
   .muted { color:var(--text3); }
@@ -66,9 +66,9 @@
   .modal-card h3 { margin:0 0 10px; font-size:15px; }
   .pdsedit { color:#2456A6; cursor:pointer; text-decoration:underline dotted; }
   .data-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-              background:#F4F6F8; border:1px solid var(--border); border-radius:8px;
+              background:var(--surface2); border:1px solid var(--border); border-radius:8px;
               padding:8px 12px; margin-bottom:14px; }
-  .data-bar .db-label { font-weight:700; font-size:12px; color:#232F3E; }
+  .data-bar .db-label { font-weight:700; font-size:12px; color:var(--text); }
   .data-bar .db-sep { width:1px; height:22px; background:#D5D9D9; }
   .data-bar .db-hint { font-size:11px; color:var(--text3); margin-left:auto; }
 </style>
@@ -113,8 +113,8 @@
   </select>
   <input id="fQ" class="form-control" style="width:220px;padding:5px 8px;font-size:12px"
          placeholder="Search SKU / name…" oninput="renderGrid()"/>
-  <label style="font-size:11px;color:#5A6470"><input type="checkbox" id="fNoPds" onchange="renderGrid()"/> missing PDS only</label>
-  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+  <label style="font-size:11px;color:var(--text2)"><input type="checkbox" id="fNoPds" onchange="renderGrid()"/> missing PDS only</label>
+  <span id="countLbl" style="font-size:11px;color:var(--text2);margin-left:auto"></span>
   <button class="btn btn-ghost btn-sm" onclick="toggleTransit()">🚢 Containers <span id="shipCount"></span></button>
 </div>
 
@@ -162,7 +162,7 @@
 <div class="modal-bg" id="drillModal" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="modal-card">
     <h3 id="drillTitle">—</h3>
-    <div id="drillMeta" style="font-size:12px;color:#5A6470;margin-bottom:8px"></div>
+    <div id="drillMeta" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
     <canvas id="drillChart" height="110"></canvas>
   </div>
 </div>
@@ -171,7 +171,7 @@
 <div class="modal-bg" id="pdsModal" onclick="if(event.target===this)closePds()">
   <div class="modal-card" style="width:400px">
     <h3 style="margin:0 0 4px">Set Potential Daily Sale</h3>
-    <div id="pdsSub" style="font-size:12px;color:#5A6470;margin-bottom:14px"></div>
+    <div id="pdsSub" style="font-size:12px;color:var(--text2);margin-bottom:14px"></div>
     <label style="font-size:11px;color:var(--text2)">PDS — potential units sold per day</label>
     <input id="pdsInput" type="number" min="0" step="0.1" class="form-control"
            style="font-size:16px;padding:8px" onkeydown="if(event.key==='Enter')savePdsModal()"/>
@@ -228,7 +228,7 @@
 <div class="modal-bg" id="upModal" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="modal-card" style="width:460px">
     <h3 id="upTitle">Upload</h3>
-    <p id="upHint" style="font-size:11px;color:#5A6470"></p>
+    <p id="upHint" style="font-size:11px;color:var(--text2)"></p>
     <input type="file" id="upFile" accept=".xlsx"/>
     <div id="upMsg" style="font-size:11px;margin-top:8px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">

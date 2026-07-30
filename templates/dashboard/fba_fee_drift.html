@@ -49,21 +49,21 @@
   .fd-table { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
               overflow:hidden; }
   .fd-table table { width:100%; border-collapse:collapse; font-size:12px; }
-  .fd-table th { background:#F4F6F8; padding:8px 10px; text-align:left;
+  .fd-table th { background:var(--surface2); padding:8px 10px; text-align:left;
                   font-weight:600; color:var(--text); border-bottom:1px solid var(--border);
                   cursor:pointer; user-select:none; white-space:nowrap; }
   .fd-table th:hover { background:#EAEEF1; }
   .fd-table th.num, .fd-table td.num { text-align:right; }
   .fd-table td { padding:7px 10px; border-bottom:1px solid #F0F2F4; }
-  .fd-table tr:hover td { background:#FAFBFC; }
+  .fd-table tr:hover td { background:var(--surface2); }
 
   .fd-status { display:inline-block; padding:2px 8px; border-radius:10px;
                font-size:10px; font-weight:700; text-transform:uppercase;
                letter-spacing:0.4px; }
-  .fd-status.ok        { background:#E0F2EC; color:var(--green); }
-  .fd-status.warn      { background:#FFF4DC; color:#9D6500; }
-  .fd-status.critical  { background:#FBE2E0; color:#B12704; }
-  .fd-status.no_upload { background:#EEF1F4; color:#5A6470; }
+  .fd-status.ok        { background:var(--good-weak); color:var(--green); }
+  .fd-status.warn      { background:var(--warn-weak); color:var(--warn-ink); }
+  .fd-status.critical  { background:var(--crit-weak); color:#B12704; }
+  .fd-status.no_upload { background:#EEF1F4; color:var(--text2); }
 
   .fd-delta.pos { color:#B12704; font-weight:600; }   /* actual > uploaded — over-spending */
   .fd-delta.neg { color:var(--green); font-weight:600; }   /* actual < uploaded — under-spending */
@@ -71,11 +71,11 @@
   .fd-meta { font-size:11px; color:var(--text3); margin-top:8px; }
   .fd-empty { padding:60px 20px; text-align:center; color:var(--text3); }
 
-  .fd-drill { display:none; background:#F9FAFB; border-top:1px solid var(--border); }
+  .fd-drill { display:none; background:var(--surface2); border-top:1px solid var(--border); }
   .fd-drill.show { display:table-row; }
   .fd-drill td { padding:12px 16px; }
   .fd-drill-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:18px;
-                    font-size:12px; color:#333; }
+                    font-size:12px; color:var(--text); }
   .fd-drill-grid .k { color:var(--text3); font-size:10px; text-transform:uppercase;
                        letter-spacing:0.3px; }
   .fd-drill-grid .v { font-size:14px; font-weight:600; color:var(--text); margin-top:2px; }

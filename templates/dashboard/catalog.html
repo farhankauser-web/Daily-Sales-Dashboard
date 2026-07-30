@@ -5,9 +5,9 @@
 
 {% block topbar_controls %}
 <div class="mp-selector">
-  <button class="mp-btn {% if mp == 'all' %}active{% endif %}" onclick="location.href='?mp=all'">All</button>
+  <button data-mp="{{ mp }}" class="mp-btn {% if mp == 'all' %}active{% endif %}" onclick="location.href='?mp=all'">All</button>
   {% for m in allowed_marketplaces %}
-  <button class="mp-btn {% if mp == m %}active{% endif %}" onclick="location.href='?mp={{ m }}'">
+  <button data-mp="{{ mp }}" class="mp-btn {% if mp == m %}active{% endif %}" onclick="location.href='?mp={{ m }}'">
     {% if m == 'usa' %}🇺🇸{% elif m == 'ca' %}🇨🇦{% elif m == 'uk' %}🇬🇧{% elif m == 'de' %}🇩🇪{% elif m == 'ae' %}🇦🇪{% elif m == 'sa' %}🇸🇦{% endif %}
     {{ m|upper }}
   </button>
@@ -41,7 +41,7 @@
           <a href="{% url 'dashboard:product_edit' item.pk %}"
              class="catalog-chip"
              data-search="{{ item.sku|lower }} {{ item.asin|lower }} {{ item.variant|lower }} {{ pack.pack|lower }} {{ group.product_type|lower }}"
-             style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#EDF6F8;border:1px solid #B0D9E3;border-radius:999px;padding:4px 8px;color:#005B6A;font-family:'DM Mono',monospace;font-size:10px;font-weight:600">
+             style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:var(--info-weak);border:1px solid #B0D9E3;border-radius:999px;padding:4px 8px;color:#005B6A;font-family:'DM Mono',monospace;font-size:10px;font-weight:600">
             <span>{{ item.sku }}</span>
             <span style="font-family:inherit;color:var(--text)">{{ item.variant }}</span>
           </a>

@@ -15,16 +15,16 @@
 <style>
   .kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; max-width:760px; }
   .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
-  .kpi-card .v { font-size:20px; font-weight:700; } .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card .v { font-size:20px; font-weight:700; } .kpi-card .l { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
   .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
-  table.t th { background:#F4F6F8; text-align:right; padding:7px 9px; font-size:11px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.t th { background:var(--surface2); text-align:right; padding:7px 9px; font-size:11px; border-bottom:1px solid var(--border); white-space:nowrap; }
   table.t th.l,table.t td.l { text-align:left; }
   table.t td { padding:6px 9px; text-align:right; border-bottom:1px solid #EDEFF1; white-space:nowrap; font-variant-numeric:tabular-nums; }
-  table.t tbody tr:hover { background:#F7FAFC; }
+  table.t tbody tr:hover { background:var(--surface2); }
   .muted { color:#8A94A0; } .zero { color:#B0B8C0; }
   .warn { color:#B42318; font-weight:600; }
-  .reg { font-size:10px; color:#5A6470; }
+  .reg { font-size:10px; color:var(--text2); }
   .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
   .bar-row select { padding:5px 8px; border:1px solid var(--border); border-radius:5px; font-size:12px; }
 </style>
@@ -39,7 +39,7 @@
 </div>
 
 <div class="bar-row">
-  <label style="font-size:11px;color:#5A6470">Target cover
+  <label style="font-size:11px;color:var(--text2)">Target cover
     <select id="fCover" onchange="regen()">
       <option value="">Tier default (ship-lead + tier)</option>
       <option value="90">90 days</option><option value="100">100 days</option>

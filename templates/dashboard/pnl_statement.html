@@ -37,31 +37,31 @@
 {% block extra_head %}
 <style>
   .pl-wrap { background:var(--bg2); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-  .pl-meta { padding:8px 14px; font-size:11px; color:#5A6470; background:#F4F6F8;
+  .pl-meta { padding:8px 14px; font-size:11px; color:var(--text2); background:var(--surface2);
              border-bottom:1px solid var(--border); display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
   .pl-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-  .pl-badge.settled  { background:#E0F2EC; color:var(--green); }
-  .pl-badge.estimate { background:#FFF4DC; color:#9D6500; }
+  .pl-badge.settled  { background:var(--good-weak); color:var(--green); }
+  .pl-badge.estimate { background:var(--warn-weak); color:var(--warn-ink); }
 
   table.pl { width:100%; border-collapse:collapse; font-size:12px; }
-  table.pl th { background:#F4F6F8; padding:7px 10px; text-align:right; font-weight:600;
+  table.pl th { background:var(--surface2); padding:7px 10px; text-align:right; font-weight:600;
                 color:var(--text); border-bottom:2px solid #232F3E; white-space:nowrap; }
   table.pl th.lbl { text-align:left; }
   table.pl td { padding:5px 10px; text-align:right; border-bottom:1px solid #F2F4F6; white-space:nowrap; }
   table.pl td.lbl { text-align:left; }
 
-  tr.sec-header td { background:#EEF3F8; font-weight:700; color:#232F3E;
+  tr.sec-header td { background:var(--info-weak); font-weight:700; color:var(--text);
                      text-transform:uppercase; font-size:10px; letter-spacing:0.5px;
                      border-top:1px solid var(--border); }
-  tr.subtotal td { font-weight:700; background:#F7F9FB; border-top:1px solid var(--border); }
-  tr.grand td    { font-weight:800; background:#EAF1EE; border-top:2px solid #067D62;
+  tr.subtotal td { font-weight:700; background:var(--surface2); border-top:1px solid var(--border); }
+  tr.grand td    { font-weight:800; background:var(--good-weak); border-top:2px solid #067D62;
                    border-bottom:2px solid #067D62; font-size:13px; }
-  tr.metric td   { color:#5A6470; font-style:italic; }
+  tr.metric td   { color:var(--text2); font-style:italic; }
   .indent-1 { padding-left:22px !important; }
   .indent-2 { padding-left:36px !important; }
 
   td.editable { cursor:pointer; }
-  td.editable:hover { background:#FFF8E5; outline:1px dashed #EAD499; }
+  td.editable:hover { background:var(--warn-weak); outline:1px dashed #EAD499; }
   td.editable input { width:90px; text-align:right; font-size:12px; border:1px solid #232F3E;
                       border-radius:4px; padding:2px 4px; }
   .neg { color:#B12704; }
@@ -140,7 +140,7 @@
 <div class="modal-bg" id="fxModal" onclick="if(event.target===this)closeFx()">
   <div class="modal-card">
     <h3>FX rate → USD (this month)</h3>
-    <p style="font-size:11px;color:#5A6470">Multiply a native amount by this to get USD. Used only for the Global consolidated view.</p>
+    <p style="font-size:11px;color:var(--text2)">Multiply a native amount by this to get USD. Used only for the Global consolidated view.</p>
     <label>Currency</label>
     <select id="fxCurrency">
       <option>CAD</option><option>GBP</option><option>EUR</option>
@@ -159,7 +159,7 @@
 <div class="modal-bg" id="unifiedModal" onclick="if(event.target===this)closeUnified()">
   <div class="modal-card">
     <h3>Upload Unified Transaction report</h3>
-    <p style="font-size:11px;color:#5A6470">Seller Central → Reports → Payments → Date Range Reports → <b>Transaction</b> (monthly). This is the source for Sales, Returns, all Amazon fees & COGS — it ties to your books. Uploading replaces this month's figures.</p>
+    <p style="font-size:11px;color:var(--text2)">Seller Central → Reports → Payments → Date Range Reports → <b>Transaction</b> (monthly). This is the source for Sales, Returns, all Amazon fees & COGS — it ties to your books. Uploading replaces this month's figures.</p>
     <label>Month</label>
     <input type="month" id="unifiedMonth"/>
     <label>File (.csv)</label>
@@ -175,7 +175,7 @@
 <div class="modal-bg" id="importModal" onclick="if(event.target===this)closeImport()">
   <div class="modal-card">
     <h3>Import P&L Excel</h3>
-    <p style="font-size:11px;color:#5A6470">Matches your “P&L Summary” layout — column A labels + a value column. Imports the manual lines only (rent, HR, OpEx, tax…). Amazon lines stay auto.</p>
+    <p style="font-size:11px;color:var(--text2)">Matches your “P&L Summary” layout — column A labels + a value column. Imports the manual lines only (rent, HR, OpEx, tax…). Amazon lines stay auto.</p>
     <label>Channel</label>
     <select id="importChannel">
       <option value="amazon">Amazon column</option>
@@ -377,9 +377,9 @@ function render(){
         const hDeb = val<0 ? money(val) : '';
         const hCre = val>0 ? money(val) : '';
         html += `<tr class="head-row" style="background:#FCFDFE">
-          <td class="lbl indent-2" style="color:#5A6470;font-size:11px">↳ ${label}</td>
-          <td style="color:#5A6470">${hDeb}</td>
-          <td style="color:#5A6470">${hCre}</td>
+          <td class="lbl indent-2" style="color:var(--text2);font-size:11px">↳ ${label}</td>
+          <td style="color:var(--text2)">${hDeb}</td>
+          <td style="color:var(--text2)">${hCre}</td>
           <td></td><td></td><td></td></tr>`;
       });
     }

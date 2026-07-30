@@ -9,17 +9,17 @@
   <a href="{% url 'atlas:forecast' %}?co={{ c.code }}" class="mp-btn {% if c.code == company.code %}active{% endif %}">{{ c.name }}</a>
   {% endfor %}
 </div>
-{% if due_count %}<span style="margin-left:10px;background:#FFF4DC;color:#9D6500;font-weight:700;
+{% if due_count %}<span style="margin-left:10px;background:var(--warn-weak);color:var(--warn-ink);font-weight:700;
   padding:4px 10px;border-radius:10px;font-size:11px">📦 {{ due_count }} refill(s) due</span>{% endif %}
 {% endblock %}
 
 {% block content %}
-<div style="font-size:11px;color:#5A6470;margin-bottom:8px">
+<div style="font-size:11px;color:var(--text2);margin-bottom:8px">
   Refill formula (SOW): demand over lead time (sell-through × production+shipment days,
   ×multiplier when peak) minus stock on hand. Rows turn red when stock covers less than the lead time.
 </div>
 <table style="width:100%;border-collapse:collapse;font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
-  <thead><tr style="background:#F4F6F8">
+  <thead><tr style="background:var(--surface2)">
     <th style="padding:6px 10px;text-align:left">SKU</th>
     <th style="padding:6px 10px">Stock</th>
     <th style="padding:6px 10px">Sell-through /day</th>

@@ -16,7 +16,7 @@
   <div class="card"><div class="card-header"><div class="card-title">Products</div></div>
     <div class="card-body" style="padding:0;max-height:640px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="background:#F4F6F8">
+        <thead><tr style="background:var(--surface2)">
           <th style="padding:6px 10px;text-align:left">SKU</th>
           <th style="padding:6px 10px;text-align:left">Quality</th>
           <th style="padding:6px 10px">Size (cm)</th><th style="padding:6px 10px">GSM</th>
@@ -27,7 +27,7 @@
         {% for p in rows %}
           <tr {% if not p.is_active %}style="opacity:.5"{% endif %}>
             <td style="padding:6px 10px;font-family:'DM Mono',monospace">{{ p.sku }}
-              <div style="font-size:10px;color:#5A6470">{{ p.description|truncatechars:36 }}</div></td>
+              <div style="font-size:10px;color:var(--text2)">{{ p.description|truncatechars:36 }}</div></td>
             <td style="padding:6px 10px">{{ p.quality }}</td>
             <td style="padding:6px 10px;text-align:center">{{ p.length_cm }}×{{ p.width_cm }}</td>
             <td style="padding:6px 10px;text-align:center">{{ p.gsm }}</td>

@@ -25,30 +25,30 @@
   .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:14px; }
   .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:20px; font-weight:700; }
-  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card .l { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.err .v { color:#C0392B; }
   table.wm { width:100%; border-collapse:collapse; font-size:12px; background:var(--bg2);
              border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-  table.wm th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
-                text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border); }
+  table.wm th { background:var(--surface2); text-align:left; padding:7px 10px; font-size:10px;
+                text-transform:uppercase; color:var(--text2); border-bottom:1px solid var(--border); }
   table.wm td { padding:7px 10px; border-bottom:1px solid #EDEFF1; vertical-align:top; }
   tr.orow { cursor:pointer; }
   tr.orow:hover { background:#F8FAFB; }
-  tr.drow td { background:#FAFBFC; font-size:11px; }
+  tr.drow td { background:var(--surface2); font-size:11px; }
   .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-  .st.NEW,.st.VALIDATED,.st.PROCESSING { background:#EDF2FB; color:#2456A6; }
-  .st.HOLD { background:#FFF4DC; color:#9D6500; }
+  .st.NEW,.st.VALIDATED,.st.PROCESSING { background:var(--info-weak); color:#2456A6; }
+  .st.HOLD { background:var(--warn-weak); color:var(--warn-ink); }
   .st.MCF_CREATED { background:#E8ECFD; color:#4C3FD4; }
-  .st.SHIPPED { background:#E0F2EC; color:var(--green); }
+  .st.SHIPPED { background:var(--good-weak); color:var(--green); }
   .st.TRACKING_UPLOADED,.st.COMPLETED { background:#D9F0E5; color:#046A52; }
-  .st.ERROR,.st.CANCELLED { background:#FDE8E6; color:#C0392B; }
-  .warnbar { background:#FFF4DC; border:1px solid #EAC26B; color:#7A5200;
+  .st.ERROR,.st.CANCELLED { background:var(--crit-weak); color:#C0392B; }
+  .warnbar { background:var(--warn-weak); border:1px solid #EAC26B; color:#7A5200;
              border-radius:8px; padding:8px 12px; font-size:12px; margin-bottom:12px; }
   .vtab { padding:7px 16px; font-size:12px; font-weight:600; cursor:pointer;
-          border:1px solid var(--border); background:#F4F6F8; color:#5A6470; }
+          border:1px solid var(--border); background:var(--surface2); color:var(--text2); }
   .vtab:first-child { border-radius:8px 0 0 8px; }
   .vtab:last-child  { border-radius:0 8px 8px 0; border-left:none; }
-  .vtab.active { background:#232F3E; color:#fff; border-color:#232F3E; }
+  .vtab.active { background:#232F3E; color:#fff; border-color:var(--text); }
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
   .modal-bg.show { display:flex; align-items:center; justify-content:center; }
   .modal-card { background:var(--bg2); border-radius:12px; padding:22px 24px; width:420px; max-width:92vw;
@@ -81,7 +81,7 @@
   <input id="fQ" class="form-control" style="width:280px;padding:5px 8px;font-size:12px"
          placeholder="Search PO / SKU / MCF id / tracking…" onkeydown="if(event.key==='Enter')load()"/>
   <button class="btn btn-secondary btn-sm" onclick="load()">Search</button>
-  <span id="countLbl" style="font-size:11px;color:#5A6470"></span>
+  <span id="countLbl" style="font-size:11px;color:var(--text2)"></span>
 </div>
 
 <table class="wm">
@@ -232,10 +232,10 @@ function showResult(action, ok, result, errorMsg){
         const bad = BAD_KEYS.has(k) && Number(v)>0;
         const val = (v===true?'Yes':v===false?'No':Number(v).toLocaleString('en-US'));
         return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #F2F4F6">
-          <span style="color:#5A6470">${lbl}</span>
+          <span style="color:var(--text2)">${lbl}</span>
           <b style="color:${bad?'#C0392B':'#0F1111'}">${val}</b></div>`;
       }).join('');
-    html += rows || '<div style="color:#5A6470;font-size:12px">Nothing to process — everything is already up to date.</div>';
+    html += rows || '<div style="color:var(--text2);font-size:12px">Nothing to process — everything is already up to date.</div>';
   } else if (!ok){
     html += `<div style="background:#FDF3F2;border:1px solid #F3C6C0;border-radius:6px;padding:10px 12px;
       font-size:12px;color:#7A2018;white-space:pre-wrap;word-break:break-word">${esc(errorMsg||'Unknown error')}</div>`;
@@ -290,7 +290,7 @@ async function reprocess(id){
       document.getElementById('resBody').innerHTML =
         '<div style="display:flex;align-items:center;gap:10px"><div style="font-size:26px">✅</div>'
         + '<div><div style="font-weight:700;font-size:15px">Order re-queued</div>'
-        + '<div style="font-size:12px;color:#5A6470">It will be submitted on the next “Submit to MCF” run.</div></div></div>';
+        + '<div style="font-size:12px;color:var(--text2)">It will be submitted on the next “Submit to MCF” run.</div></div></div>';
       document.getElementById('resModal').classList.add('show');
     } else showResult('submit', false, null, j.error||'Reprocess failed');
   }catch(e){ showResult('submit', false, null, String(e)); }

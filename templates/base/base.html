@@ -49,6 +49,13 @@
   --gold:     #FF9900;
   --cyan:     #007185;
 
+  /* Weak tint backgrounds + readable "ink" text (theme-aware) */
+  --surface2:  #F4F6F8;
+  --good-weak: #E0F2EC; --good-ink: #067D62;
+  --crit-weak: #FDECEA; --crit-ink: #C40000;
+  --warn-weak: #FFF4DC; --warn-ink: #9D6500;
+  --info-weak: #E7F1FD; --info-ink: #1B4A75;
+
   /* Text */
   --text:     #0F1111;
   --text2:    #555555;
@@ -77,7 +84,20 @@
   --teal:#3AAFC0; --teal2:#2F98A8; --accent:#3AAFC0; --accent2:#2F98A8;
   --shadow-sm:0 1px 3px rgba(0,0,0,.35); --shadow:0 2px 10px rgba(0,0,0,.4);
   --shadow-md:0 6px 22px rgba(0,0,0,.45);
+  --surface2:#1B2130;
+  --good-weak:#12281F; --good-ink:#2FCB7E;
+  --crit-weak:#2C1720; --crit-ink:#F1667C;
+  --warn-weak:#2A2213; --warn-ink:#DCA144;
+  --info-weak:#132630; --info-ink:#3AAFC0;
 }
+/* region / date / secondary controls — visible on the dark topbar */
+:root[data-theme="dark"] .mp-selector, :root[data-theme="dark"] .date-bar{border-color:var(--border2);}
+:root[data-theme="dark"] .mp-btn, :root[data-theme="dark"] .date-btn{background:var(--bg3);color:var(--text2);border-color:var(--border2);}
+:root[data-theme="dark"] .mp-btn:hover, :root[data-theme="dark"] .date-btn:hover{background:var(--bg4);color:var(--text);}
+:root[data-theme="dark"] .mp-btn.active{background:var(--orange);color:#1A1206;}
+:root[data-theme="dark"] .date-btn.active{background:var(--orange);color:#1A1206;}
+:root[data-theme="dark"] .btn-secondary{background:var(--bg3);color:var(--text);border-color:var(--border2);}
+:root[data-theme="dark"] .btn-secondary:hover{background:var(--bg4);}
 :root[data-theme="dark"] body { background:var(--bg); color:var(--text); }
 :root[data-theme="dark"] tbody tr:hover { background:#1E2536; }
 :root[data-theme="dark"] .alert-success{background:#12281F;border-color:#1E4531;color:#2FCB7E;}

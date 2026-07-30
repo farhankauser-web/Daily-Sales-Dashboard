@@ -13,7 +13,7 @@
     {% csrf_token %}
 
     {% if form.non_field_errors %}
-    <div class="alert alert-error" style="margin-bottom:14px;background:#FBE2E0;
+    <div class="alert alert-error" style="margin-bottom:14px;background:var(--crit-weak);
                 border:1px solid #E5B5B0;color:#7A2B25;padding:10px 14px;
                 border-radius:6px;font-size:13px">
       {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}

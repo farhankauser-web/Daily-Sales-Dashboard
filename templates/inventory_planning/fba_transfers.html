@@ -5,10 +5,10 @@
 
 {% block topbar_controls %}
 <div class="mp-selector" id="regionSel">
-  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
-  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
-  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
-  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+  <button data-mp="{{ mp }}" class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
 </div>
 {% endblock %}
 
@@ -26,26 +26,26 @@
   .kpi-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; max-width:620px; }
   .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .kpi-card .v { font-size:20px; font-weight:700; }
-  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card .l { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
   .bar-row { display:flex; gap:10px; align-items:center; margin-bottom:12px; }
   .bar-row input, .bar-row select { padding:5px 8px; border:1px solid var(--border); border-radius:5px; font-size:12px; }
   .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; }
   table.t { width:100%; border-collapse:collapse; font-size:12px; }
-  table.t th { background:#F4F6F8; text-align:right; padding:7px 10px; font-size:11px;
+  table.t th { background:var(--surface2); text-align:right; padding:7px 10px; font-size:11px;
                border-bottom:1px solid var(--border); white-space:nowrap; }
   table.t th.l, table.t td.l { text-align:left; }
   table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
                white-space:nowrap; font-variant-numeric:tabular-nums; }
   table.t tbody tr.head { cursor:pointer; }
-  table.t tbody tr.head:hover { background:#F7FAFC; }
+  table.t tbody tr.head:hover { background:var(--surface2); }
   tr.detail td { background:#FbFcFd; padding:0; }
-  .lines { padding:6px 14px 10px 30px; font-size:11px; color:#5A6470; }
+  .lines { padding:6px 14px 10px 30px; font-size:11px; color:var(--text2); }
   .lines table { width:auto; border-collapse:collapse; }
   .lines td { padding:2px 14px 2px 0; border:0; text-align:left; }
   .pill { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; font-weight:600; }
-  .p-draft { background:#EDEFF1; color:#5A6470; }
-  .p-shipped { background:#E7F1FD; color:#0B4FA8; }
-  .p-received { background:#E6F4EA; color:#1E6B34; }
+  .p-draft { background:var(--surface2); color:var(--text2); }
+  .p-shipped { background:var(--info-weak); color:#0B4FA8; }
+  .p-received { background:var(--good-weak); color:#1E6B34; }
   .p-cancelled { background:#FEE4E2; color:#B42318; text-decoration:line-through; }
   .act { font-size:11px; color:#0F6FDE; cursor:pointer; margin-left:8px; }
   .act:hover { text-decoration:underline; }
@@ -55,7 +55,7 @@
   .modal-card { background:var(--bg2); border-radius:10px; padding:20px 24px; width:660px; max-width:94vw; max-height:90vh; overflow-y:auto; }
   .modal-card h3 { margin:0 0 12px; font-size:15px; }
   .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px; }
-  .f label { display:block; font-size:11px; color:#5A6470; margin-bottom:3px; }
+  .f label { display:block; font-size:11px; color:var(--text2); margin-bottom:3px; }
   .f input, .f select { width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:5px; font-size:13px; box-sizing:border-box; }
   .lrow { display:grid; grid-template-columns:1fr 110px 30px; gap:8px; margin-bottom:6px; align-items:center; }
   .hint { font-size:11px; color:#8A94A0; margin-top:8px; line-height:1.5; }
@@ -72,7 +72,7 @@
 
 <div class="bar-row">
   <input id="q" placeholder="Search shipment / SKU / ref…" style="width:260px" oninput="load()">
-  <label style="font-size:11px;color:#5A6470"><input type="checkbox" id="openOnly" onchange="load()"> open only</label>
+  <label style="font-size:11px;color:var(--text2)"><input type="checkbox" id="openOnly" onchange="load()"> open only</label>
   <span class="muted" id="meta" style="font-size:11px;margin-left:auto"></span>
 </div>
 

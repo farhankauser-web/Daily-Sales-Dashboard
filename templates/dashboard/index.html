@@ -60,10 +60,10 @@
 .sku-table tr.group-row td:last-child   { border-right:none; }
 
 /* Variant rows */
-.sku-table tr.variant-row { background:#FAFBFC; display:none; }
+.sku-table tr.variant-row { background:var(--surface2); display:none; }
 .sku-table tr.variant-row.open { display:table-row; }
 .sku-table tr.variant-row td { padding:7px 10px; border-bottom:1px solid #EAEDED; border-right:1px solid #EAEDED; text-align:right; font-size:11.5px; color:var(--text2); }
-.sku-table tr.variant-row td:first-child { text-align:left; padding-left:26px; position:sticky; left:0; background:#FAFBFC; z-index:1; font-family:'DM Mono',monospace; font-size:11px; color:var(--accent); }
+.sku-table tr.variant-row td:first-child { text-align:left; padding-left:26px; position:sticky; left:0; background:var(--surface2); z-index:1; font-family:'DM Mono',monospace; font-size:11px; color:var(--accent); }
 .sku-table tr.variant-row td:nth-child(2){ text-align:left; color:var(--text2); }
 .sku-table tr.variant-row td:last-child   { border-right:none; }
 
@@ -124,7 +124,7 @@
   </div>
   <div class="clock-badge" id="clockBadge">🌐 Loading…</div>
 </div>
-<div id="dataDebug" style="margin:6px 0 10px;padding:6px 10px;background:#FEF9EE;border:1px solid #FCDBA0;border-radius:4px;font-size:11px;color:#805500;display:none"></div>
+<div id="dataDebug" style="margin:6px 0 10px;padding:6px 10px;background:var(--warn-weak);border:1px solid #FCDBA0;border-radius:4px;font-size:11px;color:var(--warn-ink);display:none"></div>
 
 <!-- "As of" badge — populated server-side from latest HourlyMetricSnapshot.synced_at -->
 <div id="asOfBar" style="margin:0 0 10px;padding:6px 12px;background:var(--bg);border-left:3px solid #232F3E;border-radius:3px;font-size:11px;color:var(--text2)">
@@ -230,7 +230,7 @@
 <div class="card" style="margin-bottom:16px">
   <div class="card-header">
     <div class="card-title">PPC Breakdown</div>
-    <span id="tacosChip" style="background:#FEF9EE;color:#805500;border:1px solid #FCDBA0;padding:2px 10px;border-radius:3px;font-size:11px;font-weight:600">TACoS: –</span>
+    <span id="tacosChip" style="background:var(--warn-weak);color:var(--warn-ink);border:1px solid #FCDBA0;padding:2px 10px;border-radius:3px;font-size:11px;font-weight:600">TACoS: –</span>
   </div>
   <div class="card-body" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:10px 16px">
     <div style="display:flex;align-items:center;gap:7px">
@@ -733,15 +733,15 @@ function renderSKUTable(data, targets){
     // ── PPC source badge for the group row ─────────────────────────────────
     let _ppcBadge = '';
     if (grp.ppc_source === 'campaign_attributed') {
-      _ppcBadge = '<span title="PPC attributed at group level from campaign names; per-SKU Amazon report not published yet" style="margin-left:6px;display:inline-block;background:#FEF1F1;color:#805500;border:1px solid #FCDBA0;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">CAMP</span>';
+      _ppcBadge = '<span title="PPC attributed at group level from campaign names; per-SKU Amazon report not published yet" style="margin-left:6px;display:inline-block;background:#FEF1F1;color:var(--warn-ink);border:1px solid #FCDBA0;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">CAMP</span>';
     } else if (grp.ppc_source === 'mixed') {
-      _ppcBadge = '<span title="Range includes today (campaign-attributed) + past days (per-ASIN actual). Per-SKU SP shown on variants is past-days only." style="margin-left:6px;display:inline-block;background:#EDF6F8;color:#005A95;border:1px solid #B0D9E3;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">MIX</span>';
+      _ppcBadge = '<span title="Range includes today (campaign-attributed) + past days (per-ASIN actual). Per-SKU SP shown on variants is past-days only." style="margin-left:6px;display:inline-block;background:var(--info-weak);color:#005A95;border:1px solid #B0D9E3;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">MIX</span>';
     }
     // Unallocated row gets a distinct visual treatment
     if (grp.is_unallocated) {
-      html += `<tr class="group-row" style="background:#FFFBF2;border-top:2px dashed #FCDBA0">
-        <td><span class="sku-code" style="color:#805500">${grp.group}</span></td>
-        <td style="color:#805500">${grp.groupName}</td>
+      html += `<tr class="group-row" style="background:var(--warn-weak);border-top:2px dashed #FCDBA0">
+        <td><span class="sku-code" style="color:var(--warn-ink)">${grp.group}</span></td>
+        <td style="color:var(--warn-ink)">${grp.groupName}</td>
         <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
         <td class="sp-spend">${fmt(grp.spSpend)}</td>
         <td class="sd-spend">${fmt(grp.sdSpend)}</td>

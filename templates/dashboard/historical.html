@@ -7,7 +7,7 @@
 <!-- Marketplace tabs -->
 <div class="mp-selector">
   {% for mp in allowed_marketplaces %}
-  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+  <button data-mp="{{ mp }}" class="mp-btn {% if mp == marketplace %}active{% endif %}"
           onclick="location.href='?mp={{ mp }}&period={{ period }}'">
     {% if mp == 'usa' %}🇺🇸 USA
     {% elif mp == 'ca'  %}🇨🇦 CA
@@ -38,7 +38,7 @@
 <!-- Data status / backfill bar -->
 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
   {% if not has_config %}
-    <div style="flex:1;font-size:12px;color:#805500;background:#FFFBF2;border:1px solid #FCDBA0;border-radius:6px;padding:8px 12px">
+    <div style="flex:1;font-size:12px;color:var(--warn-ink);background:var(--warn-weak);border:1px solid #FCDBA0;border-radius:6px;padding:8px 12px">
       ⚠ SP-API not configured for <strong>{{ marketplace|upper }}</strong>.
       <a href="/api-config/">Configure API →</a>
     </div>
@@ -110,7 +110,7 @@
   {% if target %}
   <div class="kpi-card" style="border-top:3px solid #FF9900">
     <div class="kpi-label">This Month's Target</div>
-    <div class="kpi-val" style="color:#805500">${{ target.revenue_target|floatformat:0 }}</div>
+    <div class="kpi-val" style="color:var(--warn-ink)">${{ target.revenue_target|floatformat:0 }}</div>
     <div class="kpi-sub">
       Daily: ${{ target.daily_revenue_target|floatformat:0 }} · TACoS: {{ target.tacos_target }}%
     </div>
@@ -132,7 +132,7 @@
     <div class="card-header">
       <div class="card-title">Revenue &amp; PPC Spend</div>
       <div style="display:flex;gap:6px">
-        <button id="btnRev" class="btn btn-sm" style="background:#EDF6F8;color:var(--accent);border:1px solid #B0D9E3;font-size:11px"
+        <button id="btnRev" class="btn btn-sm" style="background:var(--info-weak);color:var(--accent);border:1px solid #B0D9E3;font-size:11px"
                 onclick="toggleDataset(revChart,0,'btnRev')">● Revenue</button>
         <button id="btnPpc" class="btn btn-sm" style="background:var(--bg);color:var(--text3);border:1px solid var(--border);font-size:11px"
                 onclick="toggleDataset(revChart,1,'btnPpc')">● PPC</button>
@@ -147,7 +147,7 @@
     <div class="card-header">
       <div class="card-title">TACoS Trend</div>
       {% if target %}
-      <span style="font-size:11px;background:#FEF9EE;color:#805500;border:1px solid #FCDBA0;padding:2px 8px;border-radius:3px">
+      <span style="font-size:11px;background:var(--warn-weak);color:var(--warn-ink);border:1px solid #FCDBA0;padding:2px 8px;border-radius:3px">
         Target: {{ target.tacos_target }}%
       </span>
       {% endif %}
@@ -222,8 +222,8 @@
         <th style="padding:8px 6px">GM%</th>
         <th style="padding:8px 6px">CPA</th>
         <th style="padding:8px 6px">T.CoS %</th>
-        <th style="padding:8px 6px;background:#F0FFF4;color:#276749">TAR GM</th>
-        <th style="padding:8px 6px;background:#F0FFF4;color:#276749">GM-TAR</th>
+        <th style="padding:8px 6px;background:var(--good-weak);color:#276749">TAR GM</th>
+        <th style="padding:8px 6px;background:var(--good-weak);color:#276749">GM-TAR</th>
       </tr>
     </thead>
     <tbody id="plBody"></tbody>
@@ -549,7 +549,7 @@ function renderPLTable(groups) {
     const diffCol = g.gmMinusTar >= 0 ? 'color:var(--green);font-weight:600' : 'color:var(--red);font-weight:600';
 
     rows += `<tr style="border-bottom:1px solid #EAEDED">
-      <td style="text-align:left;padding:6px 10px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;color:#232F3E;white-space:nowrap">${g.group}</td>
+      <td style="text-align:left;padding:6px 10px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;color:var(--text);white-space:nowrap">${g.group}</td>
       <td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--text2)">${g.groupName}</td>
       <td style="padding:6px;text-align:right">${num(g.qty)}</td>
       <td style="padding:6px;text-align:right;font-weight:600">${fmt(g.revenue)}</td>
@@ -559,14 +559,14 @@ function renderPLTable(groups) {
       <td style="padding:6px;text-align:right">${fmt(g.cm)}</td>
       <td style="padding:6px;text-align:right">${pct(g.cmPct)}</td>
       <td style="padding:6px;text-align:right">${fmtD(g.arpu)}</td>
-      <td style="padding:6px;text-align:right;background:#FFFBF2">${fmt(g.ppcSpend)}</td>
+      <td style="padding:6px;text-align:right;background:var(--warn-weak)">${fmt(g.ppcSpend)}</td>
       <td style="padding:6px;text-align:right;font-weight:600">${fmt(g.grossMargin)}</td>
       <td style="padding:6px;text-align:right">${fmtD(g.gmPerUnit)}</td>
       <td style="padding:6px;text-align:right;${gmCol}">${pct(g.gmPct)}</td>
       <td style="padding:6px;text-align:right">${fmtD(g.cpa)}</td>
       <td style="padding:6px;text-align:right">${pct(g.tacos)}</td>
-      <td style="padding:6px;text-align:right;background:#F0FFF4;${tarCol}">${g.tarGmDay ? fmt(g.tarGmDay) : '—'}</td>
-      <td style="padding:6px;text-align:right;background:#F0FFF4;${g.tarGmDay ? diffCol : 'color:var(--text3)'}">${g.tarGmDay ? fmt(g.gmMinusTar) : '—'}</td>
+      <td style="padding:6px;text-align:right;background:var(--good-weak);${tarCol}">${g.tarGmDay ? fmt(g.tarGmDay) : '—'}</td>
+      <td style="padding:6px;text-align:right;background:var(--good-weak);${g.tarGmDay ? diffCol : 'color:var(--text3)'}">${g.tarGmDay ? fmt(g.gmMinusTar) : '—'}</td>
     </tr>`;
   }
 
@@ -586,14 +586,14 @@ function renderPLTable(groups) {
     <td style="text-align:right;padding:7px 6px">${fmt(totCm)}</td>
     <td style="text-align:right;padding:7px 6px">${pct(totRev ? totCm/totRev*100 : 0)}</td>
     <td style="text-align:right;padding:7px 6px">${fmtD(totQty ? totRev/totQty : 0)}</td>
-    <td style="text-align:right;padding:7px 6px;background:#FFFBF2">${fmt(totPpc)}</td>
+    <td style="text-align:right;padding:7px 6px;background:var(--warn-weak)">${fmt(totPpc)}</td>
     <td style="text-align:right;padding:7px 6px">${fmt(totGm)}</td>
     <td style="text-align:right;padding:7px 6px">${fmtD(totQty ? totGm/totQty : 0)}</td>
     <td style="text-align:right;padding:7px 6px">${pct(totGmPct)}</td>
     <td style="text-align:right;padding:7px 6px">${fmtD(totQty ? totPpc/totQty : 0)}</td>
     <td style="text-align:right;padding:7px 6px">${pct(totTacos)}</td>
-    <td style="text-align:right;padding:7px 6px;background:#F0FFF4">${totTar ? fmt(totTar) : '—'}</td>
-    <td style="text-align:right;padding:7px 6px;background:#F0FFF4;${totTar ? totDiffCl : ''}">${totTar ? fmt(totDiff) : '—'}</td>
+    <td style="text-align:right;padding:7px 6px;background:var(--good-weak)">${totTar ? fmt(totTar) : '—'}</td>
+    <td style="text-align:right;padding:7px 6px;background:var(--good-weak);${totTar ? totDiffCl : ''}">${totTar ? fmt(totDiff) : '—'}</td>
   </tr>`;
 
   tbody.innerHTML = rows;

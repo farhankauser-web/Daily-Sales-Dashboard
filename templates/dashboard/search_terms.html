@@ -86,11 +86,11 @@
 
   .st-row-tag { display:inline-block; padding:1px 6px; border-radius:3px;
                  font-size:9px; font-weight:600; margin-right:2px; }
-  .st-row-tag.high_spend_no_sales  { background:#FBE2E0; color:#9C3431; }
-  .st-row-tag.high_ctr_low_cvr     { background:#FFF1ED; color:#9C5331; }
-  .st-row-tag.high_profit          { background:#E0F2EC; color:var(--green); }
-  .st-row-tag.scaling_opportunity  { background:#E1EFFA; color:#1B4A75; }
-  .st-row-tag.losing_money         { background:#FBE2E0; color:#9C3431; }
+  .st-row-tag.high_spend_no_sales  { background:var(--crit-weak); color:var(--crit-ink); }
+  .st-row-tag.high_ctr_low_cvr     { background:var(--warn-weak); color:var(--warn-ink); }
+  .st-row-tag.high_profit          { background:var(--good-weak); color:var(--green); }
+  .st-row-tag.scaling_opportunity  { background:var(--info-weak); color:var(--info-ink); }
+  .st-row-tag.losing_money         { background:var(--crit-weak); color:var(--crit-ink); }
 
   /* Drill modal */
   .st-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.4);
@@ -114,7 +114,7 @@
 {% endblock %}
 
 {% block content %}
-<div id="cmWarning" style="display:none;background:#FFF8E5;border:1px solid #EAD499;
+<div id="cmWarning" style="display:none;background:var(--warn-weak);border:1px solid #EAD499;
             color:#5A4500;padding:8px 12px;border-radius:6px;margin-bottom:10px;
             font-size:12px"></div>
 

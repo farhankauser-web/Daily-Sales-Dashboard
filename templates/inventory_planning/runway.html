@@ -5,10 +5,10 @@
 
 {% block topbar_controls %}
 <div class="mp-selector" id="regionSel">
-  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
-  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
-  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
-  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+  <button data-mp="{{ mp }}" class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
 </div>
 {% endblock %}
 
@@ -17,18 +17,18 @@
   .kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
   .kpi-card  { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; cursor:pointer; }
   .kpi-card .v { font-size:22px; font-weight:700; }
-  .kpi-card .l { font-size:10px; color:#5A6470; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi-card .l { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
   .kpi-card.gap .v { color:#C0392B; }
-  .kpi-card.tr  .v { color:#9D6500; }
+  .kpi-card.tr  .v { color:var(--warn-ink); }
   .kpi-card.safe .v { color:var(--green); }
 
-  .legend { font-size:11px; color:#5A6470; margin-bottom:10px; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+  .legend { font-size:11px; color:var(--text2); margin-bottom:10px; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
   .legend .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
 
   .rwtable { width:100%; border-collapse:collapse; font-size:12px; background:var(--bg2);
              border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-  .rwtable th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
-                text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border); }
+  .rwtable th { background:var(--surface2); text-align:left; padding:7px 10px; font-size:10px;
+                text-transform:uppercase; color:var(--text2); border-bottom:1px solid var(--border); }
   .rwtable td { padding:6px 10px; border-bottom:1px solid #EDEFF1; vertical-align:middle; }
   tr.rw:hover { background:#F8FAFB; }
   .mono { font-family:'DM Mono',monospace; }
@@ -38,13 +38,13 @@
   .track .cover { position:absolute; top:0; bottom:0; background:#4FB68A; }
   .track .short { position:absolute; top:0; bottom:0; background:repeating-linear-gradient(45deg,#F7C6C0,#F7C6C0 5px,#F3B0A8 5px,#F3B0A8 10px); }
   .track .arr { position:absolute; top:-3px; width:0;height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:8px solid #2456A6; transform:translateX(-5px); }
-  .track .arr.late { border-bottom-color:#9D6500; }
+  .track .arr.late { border-bottom-color:var(--warn-ink); }
   .track .tick { position:absolute; top:0; bottom:0; width:1px; background:#DFE3E6; }
   .track .stockout { position:absolute; top:-2px; bottom:-2px; width:2px; background:#C0392B; }
   .badge { display:inline-block; padding:2px 7px; border-radius:9px; font-size:10px; font-weight:700; }
-  .badge.gap { background:#FDE8E6; color:#C0392B; }
-  .badge.tr  { background:#FFF4DC; color:#9D6500; }
-  .badge.safe{ background:#E0F2EC; color:var(--green); }
+  .badge.gap { background:var(--crit-weak); color:#C0392B; }
+  .badge.tr  { background:var(--warn-weak); color:var(--warn-ink); }
+  .badge.safe{ background:var(--good-weak); color:var(--green); }
   .badge.nopds{ background:var(--bg3); color:var(--text3); }
   .sorth { cursor:pointer; user-select:none; white-space:nowrap; }
   .sorth:hover { background:#E9EDF1; }
@@ -73,7 +73,7 @@
   <span><span class="sw" style="background:#4FB68A"></span>Covered (stock on hand)</span>
   <span><span class="sw" style="background:#F3B0A8"></span>Shortfall (out of stock)</span>
   <span><span style="color:#2456A6">▲</span> Transit arrives (in time)</span>
-  <span><span style="color:#9D6500">▲</span> Transit arrives (after stockout)</span>
+  <span><span style="color:var(--warn-ink)">▲</span> Transit arrives (after stockout)</span>
   <span><span style="display:inline-block;width:2px;height:12px;background:#C0392B;vertical-align:-2px"></span> Stockout day</span>
   <span><span style="display:inline-block;width:2px;height:12px;background:#9D6500;vertical-align:-2px"></span> Ship-by (last day to ship & still arrive)</span>
   <span style="margin-left:auto">Timeline: today → +<span id="horiz">120</span> days · demand = PDS from Inventory Planner (or 7-day sales if no PDS)</span>
@@ -82,7 +82,7 @@
 <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
   <select id="fCat" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="render()"><option value="">All categories</option></select>
   <input id="fQ" class="form-control" style="width:220px;padding:5px 8px;font-size:12px" placeholder="Search SKU / name…" oninput="render()"/>
-  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+  <span id="countLbl" style="font-size:11px;color:var(--text2);margin-left:auto"></span>
 </div>
 
 <table class="rwtable">

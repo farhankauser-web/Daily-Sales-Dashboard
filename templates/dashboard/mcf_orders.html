@@ -29,20 +29,20 @@
     padding:5px 8px; font-size:12px; border:1px solid var(--border); border-radius:5px; }
   table.mcf { width:100%; border-collapse:collapse; font-size:12px;
               background:var(--bg2); border:1px solid var(--border); }
-  table.mcf th { background:#F4F6F8; padding:8px 10px; text-align:left;
+  table.mcf th { background:var(--surface2); padding:8px 10px; text-align:left;
                  border-bottom:2px solid #232F3E; white-space:nowrap; }
   table.mcf td { padding:6px 10px; border-bottom:1px solid #F2F4F6;
                  vertical-align:top; }
   .st { display:inline-block; padding:2px 8px; border-radius:10px;
         font-size:10px; font-weight:700; }
-  .st.Complete, .st.CompletePartialled { background:#E0F2EC; color:var(--green); }
-  .st.Cancelled, .st.Unfulfillable     { background:#FBE2E0; color:#7A2B25; }
+  .st.Complete, .st.CompletePartialled { background:var(--good-weak); color:var(--green); }
+  .st.Cancelled, .st.Unfulfillable     { background:var(--crit-weak); color:#7A2B25; }
   .st.Planning, .st.Processing, .st.New, .st.Received
-        { background:#FFF4DC; color:#9D6500; }
-  .trk { font-family:monospace; font-size:11px; background:#F4F6F8;
+        { background:var(--warn-weak); color:var(--warn-ink); }
+  .trk { font-family:monospace; font-size:11px; background:var(--surface2);
          padding:2px 6px; border-radius:4px; cursor:pointer; }
   .trk:hover { background:#EAD499; }
-  .sku { color:#5A6470; font-size:11px; }
+  .sku { color:var(--text2); font-size:11px; }
 </style>
 {% endblock %}
 
@@ -63,7 +63,7 @@
     <input type="text" id="fQ" placeholder="order id / recipient"
            onkeydown="if(event.key==='Enter')load()"/>
   </label>
-  <span id="countLbl" style="margin-left:auto;color:#5A6470"></span>
+  <span id="countLbl" style="margin-left:auto;color:var(--text2)"></span>
 </div>
 
 <table class="mcf">

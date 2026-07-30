@@ -24,8 +24,8 @@
 <style>
   .ai-banner { padding:10px 14px; border-radius:6px; margin-bottom:12px;
                 font-size:13px; line-height:1.5; }
-  .ai-banner.info { background:#FFF8E5; border:1px solid #EAD499; color:#5A4500; }
-  .ai-banner.err  { background:#FBE2E0; border:1px solid #E5B5B0; color:#7A2B25; }
+  .ai-banner.info { background:var(--warn-weak); border:1px solid #EAD499; color:#5A4500; }
+  .ai-banner.err  { background:var(--crit-weak); border:1px solid #E5B5B0; color:#7A2B25; }
   .ai-banner code { background:rgba(0,0,0,0.05); padding:1px 5px; border-radius:3px;
                      font-size:11px; }
 
@@ -68,10 +68,10 @@
   .ai-card .head .badges { display:flex; gap:6px; flex-wrap:wrap; }
   .ai-card .badge { display:inline-block; padding:2px 8px; border-radius:4px;
                     font-size:10px; font-weight:600; }
-  .ai-card .badge.severity_critical    { background:#FBE2E0; color:#9C3431; }
+  .ai-card .badge.severity_critical    { background:var(--crit-weak); color:var(--crit-ink); }
   .ai-card .badge.severity_warning     { background:#FFF1D5; color:#8A5500; }
-  .ai-card .badge.severity_opportunity { background:#E0F2EC; color:var(--green); }
-  .ai-card .badge.severity_info        { background:#E1EFFA; color:#1B4A75; }
+  .ai-card .badge.severity_opportunity { background:var(--good-weak); color:var(--green); }
+  .ai-card .badge.severity_info        { background:var(--info-weak); color:var(--info-ink); }
   .ai-card .badge.category { background:var(--bg); color:var(--text2); }
   .ai-card .badge.status   { background:var(--bg2); color:var(--text2); border:1px solid var(--border); }
   .ai-card .badge.confidence { background:var(--bg2); color:var(--text2); border:1px solid var(--border);

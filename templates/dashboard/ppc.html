@@ -6,7 +6,7 @@
 {% block topbar_controls %}
 <div class="mp-selector">
   {% for mp in allowed_marketplaces %}
-  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+  <button data-mp="{{ mp }}" class="mp-btn {% if mp == marketplace %}active{% endif %}"
           onclick="location.href='?mp={{ mp }}&period={{ period }}'">
     {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
     {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA

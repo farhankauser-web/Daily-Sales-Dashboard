@@ -5,10 +5,10 @@
 
 {% block topbar_controls %}
 <div class="mp-selector" id="regionSel">
-  <button class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
-  <button class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
-  <button class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
-  <button class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+  <button data-mp="{{ mp }}" class="mp-btn active" data-r="usa" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="uk" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="ae" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button data-mp="{{ mp }}" class="mp-btn" data-r="sa" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
 </div>
 {% endblock %}
 
@@ -16,11 +16,11 @@
 <style>
   table.ip { width:100%; border-collapse:collapse; font-size:12px; background:var(--bg2);
              border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-  table.ip th { background:#F4F6F8; text-align:left; padding:7px 10px; font-size:10px;
-                text-transform:uppercase; color:#5A6470; border-bottom:1px solid var(--border); }
+  table.ip th { background:var(--surface2); text-align:left; padding:7px 10px; font-size:10px;
+                text-transform:uppercase; color:var(--text2); border-bottom:1px solid var(--border); }
   table.ip td { padding:7px 10px; border-bottom:1px solid #EDEFF1; vertical-align:top; }
   tr.hrow { cursor:pointer; } tr.hrow:hover { background:#F8FAFB; }
-  tr.drow td { background:#FAFBFC; font-size:11px; }
+  tr.drow td { background:var(--surface2); font-size:11px; }
   .st { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
   .st.received { background:#D9F0E5; color:#046A52; }
   .st.cancelled { background:var(--bg3); color:var(--text3); }
@@ -38,12 +38,12 @@
     <option value="received">Received</option>
     <option value="cancelled">Cancelled</option>
   </select>
-  <label style="font-size:11px;color:#5A6470">Arrival from
+  <label style="font-size:11px;color:var(--text2)">Arrival from
     <input id="fFrom" type="date" class="form-control" style="width:auto;padding:4px 6px;font-size:12px" onchange="load()"/></label>
-  <label style="font-size:11px;color:#5A6470">to
+  <label style="font-size:11px;color:var(--text2)">to
     <input id="fTo" type="date" class="form-control" style="width:auto;padding:4px 6px;font-size:12px" onchange="load()"/></label>
   <button class="btn btn-secondary btn-sm" onclick="load()">Search</button>
-  <span id="countLbl" style="font-size:11px;color:#5A6470;margin-left:auto"></span>
+  <span id="countLbl" style="font-size:11px;color:var(--text2);margin-left:auto"></span>
 </div>
 
 <table class="ip">
