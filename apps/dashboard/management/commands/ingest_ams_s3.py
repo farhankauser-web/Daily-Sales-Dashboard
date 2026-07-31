@@ -130,6 +130,14 @@ class Command(BaseCommand):
         per_object_stats = []   # (key, size, records_parsed, records_used)
         total_parsed = total_used = total_skipped = 0
         budget_records = 0
+        # AMS metrics are ADJUSTMENT DELTAS, not restatements — Amazon keeps
+        # correcting an hour for ~2-3 days by streaming increments (which is
+        # why negative impressions/cost show up). They must be summed. The
+        # only thing we must not sum twice is the exact same record, and
+        # Amazon does very occasionally write one twice inside a single
+        # Firehose file (~0.04% observed), so drop repeats by idempotency_id.
+        seen_ids: set[str] = set()
+        dupe_records = 0
 
         for key, size in new_keys:
             obj = s3.get_object(Bucket=bucket, Key=key)
@@ -147,6 +155,12 @@ class Command(BaseCommand):
                 if not payload:
                     continue
                 n_parsed += 1
+                idem = payload.get('idempotency_id')
+                if idem:
+                    if idem in seen_ids:
+                        dupe_records += 1
+                        continue
+                    seen_ids.add(idem)
                 dataset = infer_dataset(payload, hint)
                 if dataset is None:
                     total_skipped += 1
@@ -163,7 +177,8 @@ class Command(BaseCommand):
 
         self.stdout.write(
             f'    parsed={total_parsed}  used={total_used}  '
-            f'skipped(unknown)={total_skipped}  budget-records={budget_records}'
+            f'skipped(unknown)={total_skipped}  dupes={dupe_records}  '
+            f'budget-records={budget_records}'
         )
 
         if dry_run:
