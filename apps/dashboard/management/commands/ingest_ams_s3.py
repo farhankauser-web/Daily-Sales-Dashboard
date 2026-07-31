@@ -25,8 +25,11 @@ Usage:
 """
 from __future__ import annotations
 
+import fcntl
 import gzip
 import logging
+import os
+import tempfile
 from collections import defaultdict
 from datetime import datetime, date as date_cls
 from io import BytesIO
@@ -61,6 +64,26 @@ class Command(BaseCommand):
 
     # ─────────────────────────────────────────────────────────────────────
     def handle(self, *args, **opts):
+        # Single-instance lock. Metrics are summed deltas, so two overlapping
+        # runs double-count: both LIST the same objects before either writes
+        # its AmsProcessedObject rows, and the ledger's ignore_conflicts hides
+        # it — no error, just inflated spend. This bites in normal operation
+        # too, whenever a run outlives the 5-minute cron interval.
+        lock_path = os.path.join(tempfile.gettempdir(), 'ix_ingest_ams_s3.lock')
+        lock_fh = open(lock_path, 'w')
+        try:
+            fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self.stdout.write(self.style.WARNING(
+                '⏭  another ingest_ams_s3 is already running — skipping this run.'))
+            return
+        try:
+            self._run(*args, **opts)
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+            lock_fh.close()
+
+    def _run(self, *args, **opts):
         try:
             import boto3
         except ImportError:
