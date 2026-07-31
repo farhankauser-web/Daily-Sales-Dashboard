@@ -264,11 +264,37 @@ class Command(BaseCommand):
         and which haven't been processed yet.
 
         Uses the AmsProcessedObject ledger for exactly-once semantics.
+
+        NOTE: S3 lists keys in lexicographic order, and AMS Firehose keys
+        ("m-1-YYYY-MM-DD-HH-MM-SS-<uuid>") sort chronologically — so we walk
+        OLDEST-first. An earlier version capped the candidate list before
+        deduping against the ledger, which deadlocked the ingest once the
+        --since window held more already-processed objects than the cap: every
+        run re-scanned the same oldest keys, found them all processed, and
+        reported "no new objects" forever. We therefore dedup *incrementally*
+        while paginating and stop only once we have `max_objects` genuinely
+        new keys.
         """
         from apps.dashboard.models import AmsProcessedObject
 
         paginator = s3.get_paginator('list_objects_v2')
-        candidates: list[tuple[str, int]] = []
+        new: list[tuple[str, int]] = []
+        batch: list[tuple[str, int]] = []
+        # How many keys to check against the ledger per query.
+        probe = max(max_objects * 4, 500)
+
+        def _drain(pending):
+            """Filter `pending` against the ledger, appending unseen keys to `new`."""
+            if not pending:
+                return
+            seen = set(
+                AmsProcessedObject.objects
+                .filter(s3_bucket=bucket, s3_key__in=[k for (k, _) in pending])
+                .values_list('s3_key', flat=True)
+            )
+            for k, sz in pending:
+                if k not in seen:
+                    new.append((k, sz))
 
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
             for obj in (page.get('Contents') or []):
@@ -277,22 +303,14 @@ class Command(BaseCommand):
                 # AMS Firehose writes gzipped content WITHOUT a .gz suffix;
                 # the file extension can't be relied upon. We detect gzip from
                 # the magic bytes during download instead.
-                candidates.append((obj['Key'], obj['Size']))
-                if len(candidates) >= max_objects * 4:
-                    break   # listing budget guard
-            if len(candidates) >= max_objects * 4:
-                break
+                batch.append((obj['Key'], obj['Size']))
+                if len(batch) >= probe:
+                    _drain(batch)
+                    batch = []
+                    if len(new) >= max_objects:
+                        return new[:max_objects]
+            if len(new) >= max_objects:
+                return new[:max_objects]
 
-        if not candidates:
-            return []
-
-        # Dedup against the ledger in one query
-        keys_only = [k for (k, _) in candidates]
-        seen = set(
-            AmsProcessedObject.objects
-            .filter(s3_bucket=bucket, s3_key__in=keys_only)
-            .values_list('s3_key', flat=True)
-        )
-        new = [(k, sz) for (k, sz) in candidates if k not in seen]
-        new.sort()
+        _drain(batch)
         return new[:max_objects]
