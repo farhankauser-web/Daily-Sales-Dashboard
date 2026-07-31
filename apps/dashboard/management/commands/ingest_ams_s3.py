@@ -34,7 +34,7 @@ from typing import Iterable
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.dashboard.ams_consumer import (
@@ -174,45 +174,31 @@ class Command(BaseCommand):
         # 4) Upsert buckets in two passes — traffic fields and conversion fields
         #    separately, so a hour that only saw traffic isn't blanked out by
         #    a later conversion-only update.
-        traffic_objs    = []
-        conversion_objs = []
+        #
+        #    The upsert ADDS to whatever is already stored (see
+        #    _additive_upsert). AMS re-delivers late revision events for hours
+        #    we have already written, and fold_into_bucket only sums the events
+        #    seen in *this* run — so replacing the stored value would clobber a
+        #    complete total with a partial one. The AmsProcessedObject ledger
+        #    gives us exactly-once consumption per S3 object, which is what
+        #    makes accumulating safe.
+        traffic_rows    = []
+        conversion_rows = []
+        now = timezone.now()
         for b in all_buckets.values():
-            common = dict(
-                marketplace   = b.marketplace,
-                date          = b.date,
-                hour          = b.hour,
-                campaign_id   = b.campaign_id,
-                campaign_name = b.campaign_name,
-                campaign_type = b.campaign_type,    # 'sp' | 'sb' | 'sd'
-            )
+            head = (b.marketplace, date_cls.fromisoformat(b.date), b.hour,
+                    b.campaign_id, b.campaign_name, b.campaign_type)
             if b.saw_traffic:
-                traffic_objs.append(PPCCampaignHourlySnapshot(
-                    spend=b.spend, impressions=b.impressions, clicks=b.clicks,
-                    **common,
-                ))
+                traffic_rows.append(head + (b.spend, b.impressions, b.clicks,
+                                            0, 0, 0, now))
             if b.saw_conversion:
-                conversion_objs.append(PPCCampaignHourlySnapshot(
-                    orders_7d=b.orders_7d, sales_7d=b.sales_7d, units_7d=b.units_7d,
-                    **common,
-                ))
+                conversion_rows.append(head + (0, 0, 0,
+                                               b.orders_7d, b.sales_7d,
+                                               b.units_7d, now))
 
         with transaction.atomic():
-            if traffic_objs:
-                PPCCampaignHourlySnapshot.objects.bulk_create(
-                    traffic_objs,
-                    update_conflicts=True,
-                    update_fields=['spend', 'impressions', 'clicks', 'campaign_name'],
-                    unique_fields=['marketplace', 'date', 'hour',
-                                   'campaign_id', 'campaign_type'],
-                )
-            if conversion_objs:
-                PPCCampaignHourlySnapshot.objects.bulk_create(
-                    conversion_objs,
-                    update_conflicts=True,
-                    update_fields=['orders_7d', 'sales_7d', 'units_7d', 'campaign_name'],
-                    unique_fields=['marketplace', 'date', 'hour',
-                                   'campaign_id', 'campaign_type'],
-                )
+            self._additive_upsert(traffic_rows,    'traffic')
+            self._additive_upsert(conversion_rows, 'conversion')
 
             # 5) Mark each S3 object processed (dedup ledger)
             AmsProcessedObject.objects.bulk_create([
@@ -258,6 +244,48 @@ class Command(BaseCommand):
         ))
 
     # ─────────────────────────────────────────────────────────────────────
+    def _additive_upsert(self, rows, kind):
+        """
+        INSERT … ON CONFLICT DO UPDATE, ADDING to the stored values instead of
+        replacing them.
+
+        AMS delivers an hour's metrics as a stream of events, and keeps sending
+        late revisions for hours we've already persisted. fold_into_bucket only
+        sums the events seen in the current run, so a replacing upsert would
+        overwrite a complete daily total with whatever few late events happened
+        to arrive — which is exactly how 2026-07-28 collapsed from $7,618 to
+        $289. Accumulating is safe because AmsProcessedObject guarantees each
+        S3 object is consumed exactly once.
+
+        Rows carrying source='manual' are left untouched: a Seller-Central
+        hourly upload supersedes the stream for that hour.
+        """
+        if not rows:
+            return
+
+        T = 'ix_ppc_campaign_hourly_snapshot'
+        add_cols = (('spend', 'impressions', 'clicks') if kind == 'traffic'
+                    else ('orders_7d', 'sales_7d', 'units_7d'))
+        set_clause = ', '.join(f'{c} = {T}.{c} + EXCLUDED.{c}' for c in add_cols)
+
+        sql = f"""
+            INSERT INTO {T}
+                (marketplace, date, hour, campaign_id, campaign_name,
+                 campaign_type, spend, impressions, clicks,
+                 orders_7d, sales_7d, units_7d, source, synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'ams', %s)
+            ON CONFLICT (marketplace, date, hour, campaign_id, campaign_type)
+            DO UPDATE SET
+                {set_clause},
+                campaign_name = CASE WHEN EXCLUDED.campaign_name <> ''
+                                     THEN EXCLUDED.campaign_name
+                                     ELSE {T}.campaign_name END,
+                synced_at = EXCLUDED.synced_at
+            WHERE {T}.source = 'ams'
+        """
+        with connection.cursor() as cur:
+            cur.executemany(sql, rows)
+
     def _list_new_objects(self, s3, bucket, prefix, since_dt, max_objects):
         """
         Returns [(key, size), ...] for objects whose LastModified ≥ since_dt
