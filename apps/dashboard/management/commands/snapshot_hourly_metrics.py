@@ -32,6 +32,15 @@ from apps.dashboard.completeness import log_sync
 def _map_sync_status(res: dict) -> str:
     s    = res.get('status', '')
     rows = int(res.get('rows', 0) or 0)
+    # finalize_day() — reached via the yesterday catch-up — reports success as
+    # 'finalized' (just locked it) or 'already_finalized' (someone else did).
+    # Both mean the day's order data is written and frozen; it reports genuine
+    # failure as 'sync_failed:<status>'. Neither success value carries a 'rows'
+    # count, so don't judge them on row count. Missing these here logged a
+    # perfectly good day as failed, and the Hourly Patterns completeness gate
+    # then hid it from aggregates as "core missing (Orders)".
+    if s in ('finalized', 'already_finalized'):
+        return 'ok'
     if s in ('OK', 'FRESH', 'CACHED'):
         return 'ok' if rows > 0 else 'empty_from_amazon'
     return 'failed'
