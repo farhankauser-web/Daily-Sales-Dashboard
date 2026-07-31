@@ -222,7 +222,7 @@ function showResult(action, ok, result, errorMsg){
   let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
     <div style="font-size:26px">${ok?'✅':'⛔'}</div>
     <div><div style="font-weight:700;font-size:15px">${title}</div>
-      <div style="font-size:12px;color:${ok?'#067D62':'#C0392B'}">${ok?'Completed successfully':'Action failed'}</div></div></div>`;
+      <div style="font-size:12px;color:${ok?'var(--good-ink)':'var(--crit-ink)'}">${ok?'Completed successfully':'Action failed'}</div></div></div>`;
   if (ok && result && typeof result==='object'){
     const labels = RESULT_LABELS[action] || {};
     const rows = Object.entries(result)
@@ -231,14 +231,14 @@ function showResult(action, ok, result, errorMsg){
         const lbl = labels[k] || k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
         const bad = BAD_KEYS.has(k) && Number(v)>0;
         const val = (v===true?'Yes':v===false?'No':Number(v).toLocaleString('en-US'));
-        return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #F2F4F6">
+        return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
           <span style="color:var(--text2)">${lbl}</span>
-          <b style="color:${bad?'#C0392B':'#0F1111'}">${val}</b></div>`;
+          <b style="color:${bad?'var(--crit-ink)':'var(--text)'}">${val}</b></div>`;
       }).join('');
     html += rows || '<div style="color:var(--text2);font-size:12px">Nothing to process — everything is already up to date.</div>';
   } else if (!ok){
-    html += `<div style="background:#FDF3F2;border:1px solid #F3C6C0;border-radius:6px;padding:10px 12px;
-      font-size:12px;color:#7A2018;white-space:pre-wrap;word-break:break-word">${esc(errorMsg||'Unknown error')}</div>`;
+    html += `<div style="background:var(--crit-weak);border:1px solid var(--crit-ink);border-radius:6px;padding:10px 12px;
+      font-size:12px;color:var(--crit-ink);white-space:pre-wrap;word-break:break-word">${esc(errorMsg||'Unknown error')}</div>`;
   }
   box.innerHTML = html;
   document.getElementById('resModal').classList.add('show');
