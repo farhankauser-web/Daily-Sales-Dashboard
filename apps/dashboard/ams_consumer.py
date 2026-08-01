@@ -251,6 +251,23 @@ def time_window_to_local(payload: dict, tz_name: str) -> tuple[str, int] | None:
     return dt_local.date().isoformat(), dt_local.hour
 
 
+def _num(payload: dict, cast, *keys):
+    """
+    First key present with a non-null value, cast to `cast` (int or Decimal).
+
+    Lets one call site accept several spellings of the same metric — see the
+    note in fold_into_bucket about AMS conversion field naming.
+    """
+    for k in keys:
+        v = payload.get(k)
+        if v is not None:
+            try:
+                return cast(str(v)) if cast is Decimal else cast(v)
+            except (TypeError, ValueError, ArithmeticError):
+                continue
+    return cast(0)
+
+
 def fold_into_bucket(
     buckets: dict,
     marketplace: str,
@@ -314,13 +331,29 @@ def fold_into_bucket(
         return True
 
     # kind == 'conversion'
+    #
+    # Field naming is the fragile part here. AMS payloads are snake_case
+    # (`time_window_start`, `campaign_id`, `idempotency_id`), and the traffic
+    # metrics we read — impressions / clicks / cost — are single words, so they
+    # match under any convention. The conversion metrics carry an attribution
+    # window suffix, where the spellings genuinely differ between Amazon's
+    # report columns (`purchases1d`) and the stream (`purchases_1d`), and a
+    # miss silently yields 0 — which is how spend populated while sales,
+    # orders, ACoS, ROAS and CVR all stayed empty. Accept every known spelling
+    # rather than betting on one.
     if ad_product == 'sp':
-        bucket.orders_7d += int(payload.get('purchases1d') or 0)
-        bucket.sales_7d  += Decimal(str(payload.get('sales1d') or 0))
-        bucket.units_7d  += int(payload.get('units1d') or 0)
+        bucket.orders_7d += _num(payload, int, 'purchases_1d', 'purchases1d',
+                                 'attributed_conversions_1d')
+        bucket.sales_7d  += _num(payload, Decimal, 'sales_1d', 'sales1d',
+                                 'attributed_sales_1d')
+        bucket.units_7d  += _num(payload, int, 'units_sold_1d', 'unitsSold1d',
+                                 'units1d', 'attributed_units_ordered_1d')
     else:    # sb / sd → 14-day attribution columns
-        bucket.orders_7d += int(payload.get('attributed_conversions_14d') or 0)
-        bucket.sales_7d  += Decimal(str(payload.get('attributed_sales_14d') or 0))
-        bucket.units_7d  += int(payload.get('attributed_units_ordered_14d') or 0)
+        bucket.orders_7d += _num(payload, int, 'attributed_conversions_14d',
+                                 'conversions_14d', 'purchases_14d')
+        bucket.sales_7d  += _num(payload, Decimal, 'attributed_sales_14d',
+                                 'sales_14d')
+        bucket.units_7d  += _num(payload, int, 'attributed_units_ordered_14d',
+                                 'units_sold_14d', 'units_14d')
     bucket.saw_conversion = True
     return True
