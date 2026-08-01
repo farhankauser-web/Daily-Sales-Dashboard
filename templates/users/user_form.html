@@ -127,8 +127,13 @@
     </div>
     {% endif %}
 
-    <div style="display:flex;gap:10px">
-      <button type="submit" class="btn btn-primary">{{ action }} User</button>
+    {# Label the submit for what it DOES. When editing, "{{ action }} User"
+       rendered as "Edit User" — identical to the page title, so it read as a
+       navigation button and users couldn't find how to save. #}
+    <div style="display:flex;gap:10px;align-items:center">
+      <button type="submit" class="btn btn-primary">
+        {% if action == 'Edit' %}Save Changes{% else %}Create User{% endif %}
+      </button>
       <a href="{% url 'users:list' %}" class="btn btn-ghost">Cancel</a>
     </div>
   </form>

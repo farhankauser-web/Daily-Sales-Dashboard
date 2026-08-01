@@ -103,6 +103,36 @@ def _mp_filter(qs, cfg):
     return qs.filter(marketplace=mp) if mp and mp != 'all' else qs
 
 
+def _ams_ppc(start, end, cfg=None):
+    """
+    {(marketplace, date): spend} straight from PPCCampaignHourlySnapshot.
+
+    DailyMetric.ppc_spend is only written by the daily PPC rollup, so the
+    current (partial) day sits at 0 there while AMS already holds that day's
+    hour-by-hour spend — which is why the scorecard rendered PPC $0 / TACoS
+    0.0% for every region. Callers take max(AMS, DailyMetric), matching the
+    max(AMS, daily) rule the rest of the app uses.
+    """
+    try:
+        from apps.dashboard.models import PPCCampaignHourlySnapshot as P
+    except Exception:
+        return {}
+    qs = P.objects.filter(date__range=(start, end))
+    mp = (cfg or {}).get('marketplace')
+    if mp and mp != 'all':
+        qs = qs.filter(marketplace=mp)
+    return {(r['marketplace'], r['date']): float(r['s'] or 0)
+            for r in qs.values('marketplace', 'date').annotate(s=Sum('spend'))}
+
+
+def _ams_ppc_by_date(start, end, cfg=None):
+    """{date: spend} — _ams_ppc collapsed across marketplaces."""
+    out = {}
+    for (_mp, d), v in _ams_ppc(start, end, cfg).items():
+        out[d] = out.get(d, 0.0) + v
+    return out
+
+
 # ── producers ───────────────────────────────────────────────────────────────
 _METRICS = {
     'revenue':      {'label': 'Revenue',      'field': 'revenue',      'fmt': 'currency'},
@@ -118,16 +148,21 @@ def w_kpi(user, cfg):
     if metric == 'tacos':
         rows = (_mp_filter(DM.objects.filter(date__range=(start, d)), cfg)
                 .values('date').annotate(r=Sum('revenue'), p=Sum('ppc_spend')).order_by('date'))
-        spark = [round(float(x['p'] or 0) / float(x['r']) * 100, 2) if x['r'] else 0 for x in rows]
+        ams = _ams_ppc_by_date(start, d, cfg)
+        spark = [round(max(float(x['p'] or 0), ams.get(x['date'], 0.0)) / float(x['r']) * 100, 2)
+                 if x['r'] else 0 for x in rows]
         cur = spark[-1] if spark else 0
         prev = sum(spark[:-1]) / max(len(spark) - 1, 1) if len(spark) > 1 else cur
         return {'label': 'TACoS · latest day', 'value': cur, 'format': 'pct',
                 'delta': (cur - prev), 'delta_unit': 'pt', 'delta_good': 'down',
                 'delta_label': 'vs 14d avg', 'spark': spark}
     m = _METRICS.get(metric, _METRICS['revenue']); f = m['field']
-    rows = (_mp_filter(DM.objects.filter(date__range=(start, d)), cfg)
-            .values('date').annotate(s=Sum(f)).order_by('date'))
+    rows = list(_mp_filter(DM.objects.filter(date__range=(start, d)), cfg)
+                .values('date').annotate(s=Sum(f)).order_by('date'))
     spark = [float(x['s'] or 0) for x in rows]
+    if metric == 'ppc':
+        ams = _ams_ppc_by_date(start, d, cfg)
+        spark = [max(v, ams.get(x['date'], 0.0)) for v, x in zip(spark, rows)]
     cur = spark[-1] if spark else 0
     prev = sum(spark[:-1]) / max(len(spark) - 1, 1) if len(spark) > 1 else cur
     delta = ((cur - prev) / prev * 100) if prev else 0
@@ -158,13 +193,15 @@ def w_marketplace_split(user, cfg):
 
 def w_scorecard(user, cfg):
     DM = _DM(); d = _latest_date(); out = []
+    ams = _ams_ppc(d, d)
     for mp in MARKETPLACES:
         a = DM.objects.filter(marketplace=mp, date=d).aggregate(
             rev=Sum('revenue'), u=Sum('units'), ppc=Sum('ppc_spend'), gm=Sum('gross_margin'))
         rev = float(a['rev'] or 0)
         if rev <= 0:
             continue
-        ppc = float(a['ppc'] or 0); gm = float(a['gm'] or 0)
+        ppc = max(float(a['ppc'] or 0), ams.get((mp, d), 0.0))
+        gm = float(a['gm'] or 0)
         out.append({'mp': mp, 'flag': FLAG.get(mp, ''), 'revenue': rev, 'units': int(a['u'] or 0),
                     'ppc': ppc, 'tacos': (ppc / rev * 100 if rev else 0),
                     'gm_pct': (gm / rev * 100 if rev else 0), 'net': gm - ppc})
@@ -249,9 +286,10 @@ def w_ppc_vs_sales(user, cfg):
     DM = _DM(); end = _latest_date(); start = end - timedelta(days=6)
     rows = (_mp_filter(DM.objects.filter(date__range=(start, end)), cfg)
             .values('date').annotate(rev=Sum('revenue'), ppc=Sum('ppc_spend')).order_by('date'))
+    ams = _ams_ppc_by_date(start, end, cfg)
     labels = [r['date'].strftime('%a') for r in rows]
     sales = [float(r['rev'] or 0) for r in rows]
-    ppc = [float(r['ppc'] or 0) for r in rows]
+    ppc = [max(float(r['ppc'] or 0), ams.get(r['date'], 0.0)) for r in rows]
     tacos = [round(p / s * 100, 1) if s else 0 for p, s in zip(ppc, sales)]
     return {'labels': labels, 'sales': sales, 'ppc': ppc, 'tacos': tacos}
 
