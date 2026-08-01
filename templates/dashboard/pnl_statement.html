@@ -422,7 +422,7 @@ async function saveEntry(){
   const r = await fetch(U_ENTRY,{method:'POST',headers:{'X-CSRFToken':csrf()},body:fd});
   if(r.ok){closeEntry();loadPnl();}else{
     let msg='Save failed'; try{msg+=': '+(await r.json()).error;}catch(e){}
-    alert(msg);
+    ixAlert(msg);
   }
 }
 
@@ -434,7 +434,7 @@ async function saveFx(){
     currency: document.getElementById('fxCurrency').value,
     rate_to_usd: parseFloat(document.getElementById('fxRate').value||'0')};
   const r = await fetch(U_FX,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
-  if(r.ok){closeFx();loadPnl();}else{alert('Save failed');}
+  if(r.ok){closeFx();loadPnl();}else{ixAlert('Save failed');}
 }
 
 // ── Excel import ──────────────────────────────────────────────
@@ -449,21 +449,21 @@ async function syncFromAmazon(){
     });
     const ct = r.headers.get('content-type') || '';
     if (r.redirected || !ct.includes('application/json')){
-      alert('Your session appears to have expired. Please refresh this page '
+      ixAlert('Your session appears to have expired. Please refresh this page '
           + '(you may need to log in again), then retry the sync.');
       btn.disabled = false; btn.textContent = '☁ Sync from Amazon'; return;
     }
     const j = await r.json();
     if (j.status === 'ok'){
-      alert('Synced ' + (j.month||curMonth()) + ' from Amazon.\n'
+      ixAlert('Synced ' + (j.month||curMonth()) + ' from Amazon.\n'
         + 'Net Sales: $' + Number(j.net_sales).toLocaleString()
         + '  ·  COGS: $' + Number(j.cogs).toLocaleString()
         + '\n\n' + (j.message||''));
       loadPnl();
     } else {
-      alert('Sync failed: ' + (j.error || 'unknown'));
+      ixAlert('Sync failed: ' + (j.error || 'unknown'));
     }
-  } catch(e){ alert('Sync failed: ' + e); }
+  } catch(e){ ixAlert('Sync failed: ' + e); }
   btn.disabled = false; btn.textContent = '☁ Sync from Amazon';
 }
 function downloadMissingCogs(){
@@ -487,12 +487,12 @@ async function recalcCogs(){
       if (p && typeof p === 'object')
         msg += ` P&L COGS: ${Number(p.old).toLocaleString()} → ${Number(p.new).toLocaleString()}.`;
       else if (p) msg += ' ' + p;
-      alert(msg);
+      ixAlert(msg);
       loadPnl();
     } else {
-      alert('Recalc failed: ' + (j.error || 'unknown'));
+      ixAlert('Recalc failed: ' + (j.error || 'unknown'));
     }
-  } catch(e){ alert('Recalc failed: ' + e); }
+  } catch(e){ ixAlert('Recalc failed: ' + e); }
   btn.disabled = false; btn.textContent = '↻ Recalc COGS';
 }
 function openUnified(){

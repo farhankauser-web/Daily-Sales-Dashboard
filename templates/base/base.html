@@ -283,6 +283,42 @@ a:hover { text-decoration: underline; color: var(--accent2); }
 .btn-ghost:hover { background: var(--bg3); text-decoration: none; }
 .btn-danger { background: var(--red); color: #fff; border-color: var(--red2); }
 .btn-danger:hover { background: var(--red2); }
+
+/* ── Themed dialogs (ixAlert / ixConfirm) — see the JS at the end of base ── */
+.ix-dlg-bg {
+  position: fixed; inset: 0; z-index: 4000;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: ixDlgFade .12s ease-out;
+}
+.ix-dlg {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
+  width: 420px; max-width: 100%;
+  padding: 20px 22px;
+  animation: ixDlgPop .13s ease-out;
+}
+.ix-dlg-title {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  margin-bottom: 8px;
+}
+.ix-dlg-msg {
+  font-size: 13px; line-height: 1.5; color: var(--text2);
+  white-space: pre-wrap; word-break: break-word;
+}
+.ix-dlg-actions {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+}
+.ix-dlg-actions .btn { min-width: 84px; justify-content: center; }
+@keyframes ixDlgFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ixDlgPop  { from { opacity: 0; transform: translateY(-6px) scale(.98) }
+                       to   { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: reduce) {
+  .ix-dlg-bg, .ix-dlg { animation: none; }
+}
 .btn-success { background: var(--green); color: #fff; border-color: var(--green2); }
 .btn-sm { padding: 4px 10px; font-size: 11px; }
 .btn-xs { padding: 2px 8px; font-size: 10px; }
@@ -877,6 +913,78 @@ document.querySelectorAll('.nav-section').forEach(sec => {
     const cur = document.documentElement.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', cur);
     localStorage.setItem('ix_theme', cur); icon();
+  };
+})();
+
+// ── Themed dialogs — replacements for native alert() / confirm() ──
+// The browser's own dialogs render in the OS chrome, ignore our palette, and
+// say "pulse.infinitee.biz says". These match the app in both themes.
+//   await ixConfirm('Submit all 21 orders?')  -> true | false
+//   ixAlert('Saved.')                         -> Promise (fire-and-forget ok)
+// Both return Promises, so `if (!confirm(x)) return;` becomes
+// `if (!await ixConfirm(x)) return;` inside an async function.
+(function(){
+  function build(opts){
+    const bg = document.createElement('div');
+    bg.className = 'ix-dlg-bg';
+    const danger = /delete|remove|cancel order|wipe|discard|permanent/i.test(
+                     (opts.title || '') + ' ' + (opts.message || ''));
+    bg.innerHTML =
+      '<div class="ix-dlg" role="dialog" aria-modal="true">' +
+        '<div class="ix-dlg-title"></div>' +
+        '<div class="ix-dlg-msg"></div>' +
+        '<div class="ix-dlg-actions">' +
+          (opts.confirm ? '<button class="btn btn-secondary ix-dlg-no"></button>' : '') +
+          '<button class="btn ' + (danger ? 'btn-danger' : 'btn-primary') + ' ix-dlg-yes"></button>' +
+        '</div>' +
+      '</div>';
+    bg.querySelector('.ix-dlg-title').textContent = opts.title || (opts.confirm ? 'Confirm' : 'Notice');
+    bg.querySelector('.ix-dlg-msg').textContent   = opts.message == null ? '' : String(opts.message);
+    bg.querySelector('.ix-dlg-yes').textContent   = opts.okText || (opts.confirm ? 'Confirm' : 'OK');
+    if (opts.confirm) bg.querySelector('.ix-dlg-no').textContent = opts.cancelText || 'Cancel';
+    return bg;
+  }
+
+  function show(opts){
+    return new Promise(function(resolve){
+      const bg = build(opts);
+      document.body.appendChild(bg);
+      const yes = bg.querySelector('.ix-dlg-yes');
+      const no  = bg.querySelector('.ix-dlg-no');
+      function close(v){
+        document.removeEventListener('keydown', onKey);
+        bg.remove();
+        resolve(v);
+      }
+      function onKey(e){
+        if (e.key === 'Escape') close(false);
+        if (e.key === 'Enter')  close(true);
+      }
+      yes.onclick = function(){ close(true); };
+      if (no) no.onclick = function(){ close(false); };
+      // Clicking the backdrop cancels — same as dismissing a native dialog.
+      bg.onclick = function(e){ if (e.target === bg) close(false); };
+      document.addEventListener('keydown', onKey);
+      setTimeout(function(){ yes.focus(); }, 30);
+    });
+  }
+
+  window.ixAlert   = function(message, opts){
+    return show(Object.assign({message: message, confirm: false}, opts || {}));
+  };
+  window.ixConfirm = function(message, opts){
+    return show(Object.assign({message: message, confirm: true}, opts || {}));
+  };
+
+  // For plain <form onsubmit="..."> guards, which can't await. Cancels the
+  // native submit, asks, then re-submits via form.submit() — which does NOT
+  // re-fire onsubmit, so there's no loop.
+  //   <form onsubmit="return ixConfirmSubmit(event,'Delete this target?')">
+  window.ixConfirmSubmit = function(ev, message, opts){
+    ev.preventDefault();
+    const form = ev.target;
+    ixConfirm(message, opts).then(function(ok){ if (ok) form.submit(); });
+    return false;
   };
 })();
 </script>

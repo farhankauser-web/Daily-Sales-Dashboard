@@ -150,9 +150,9 @@ document.getElementById('upForm').onsubmit = async e => {
     const r = await (await fetch('{% url "inventory_planning:api_packing_preview" %}',
       {method:'POST', body:new FormData(e.target),
        headers:{'X-CSRFToken':getCookie('csrftoken')}})).json();
-    if (r.status !== 'ok'){ alert(r.message); }
+    if (r.status !== 'ok'){ ixAlert(r.message); }
     else { PREV = r; await loadPlans(); render(); }
-  } catch(err){ alert('Preview failed: ' + err); }
+  } catch(err){ ixAlert('Preview failed: ' + err); }
   btn.disabled = false; btn.textContent = 'Preview allocation →';
 };
 
@@ -252,9 +252,9 @@ async function commit(){
     const r = await (await fetch('{% url "inventory_planning:api_packing_commit" %}',
       {method:'POST', body:JSON.stringify(payload),
        headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')}})).json();
-    alert(r.message || r.status);
+    ixAlert(r.message || r.status);
     if (r.status === 'ok') reset_();
-  } catch(err){ alert('Commit failed: ' + err); }
+  } catch(err){ ixAlert('Commit failed: ' + err); }
   btn.disabled = false; btn.textContent = '✓ Confirm & allocate to container';
 }
 

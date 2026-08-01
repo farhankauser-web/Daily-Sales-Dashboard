@@ -362,7 +362,7 @@
                       onclick="editTarget({{ t.pk }}, '{{ t.marketplace }}', '{{ t.month|date:'Y-m' }}', {{ t.revenue_target }}, {{ t.units_target }}, {{ t.tacos_target }}, {{ t.gm_target }}, {{ t.ppc_budget }})">
                       Edit
                     </button>
-                    <form method="post" style="display:inline" onsubmit="return confirm('Delete this target?')">
+                    <form method="post" style="display:inline" onsubmit="return ixConfirmSubmit(event,'Delete this target?')">
                       {% csrf_token %}
                       <input type="hidden" name="action" value="delete">
                       <input type="hidden" name="pk"     value="{{ t.pk }}">

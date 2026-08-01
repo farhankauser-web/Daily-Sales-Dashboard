@@ -200,7 +200,7 @@ function render(){
 
 async function refresh(){
   const r = await post('{% url "inventory_planning:api_cashflow_refresh" %}', {region:REGION});
-  alert(r.message); load();
+  ixAlert(r.message); load();
 }
 async function saveOpening(){
   const prevLead = DATA ? (DATA.pay_lead_days||0) : 0;
@@ -228,13 +228,13 @@ function openEntry(id){
 async function saveEntry(){
   const b = {id:e_id.value||null, region:REGION, date:e_date.value, direction:e_dir.value,
     category:e_cat.value, amount:parseFloat(e_amt.value||0), description:e_desc.value, vendor:e_vendor.value};
-  if(!b.date){ alert('Pick a date.'); return; }
+  if(!b.date){ ixAlert('Pick a date.'); return; }
   const r = await post('{% url "inventory_planning:api_cashflow_entry" %}', b);
-  if(r.status!=='ok'){ alert(r.message); return; }
+  if(r.status!=='ok'){ ixAlert(r.message); return; }
   mdl.classList.remove('on'); load();
 }
 async function delEntry(id){
-  if(!confirm('Remove this line?')) return;
+  if(!await ixConfirm('Remove this line?')) return;
   await post('{% url "inventory_planning:api_cashflow_entry" %}', {action:'delete', id}); load();
 }
 function openFreight(cid, cno){
@@ -252,7 +252,7 @@ function openFreight(cid, cno){
 async function saveFreight(){
   const r = await post('{% url "inventory_planning:api_container_freight" %}',
     {id:parseInt(fr_id.value), freight_cost:parseFloat(fr_amt.value||0)});
-  if(r.status!=='ok'){ alert(r.message); return; }
+  if(r.status!=='ok'){ ixAlert(r.message); return; }
   frMdl.classList.remove('on');
   await post('{% url "inventory_planning:api_cashflow_refresh" %}', {region:REGION});
   load();

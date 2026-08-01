@@ -87,16 +87,16 @@ async function load(){
 }
 async function regen(){
   const r=await post('{% url "inventory_planning:api_reorder_regenerate" %}',{cover_days:fCover.value||null});
-  alert(r.message); load();
+  ixAlert(r.message); load();
 }
 async function approve(){
-  const ids=sel(); if(!ids.length){ alert('Select rows first.'); return; }
-  if(!confirm(`Create draft PO(s) from ${ids.length} suggestion(s)?`)) return;
-  const r=await post('{% url "inventory_planning:api_reorder_action" %}',{action:'approve',ids}); alert(r.message); load();
+  const ids=sel(); if(!ids.length){ ixAlert('Select rows first.'); return; }
+  if(!await ixConfirm(`Create draft PO(s) from ${ids.length} suggestion(s)?`)) return;
+  const r=await post('{% url "inventory_planning:api_reorder_action" %}',{action:'approve',ids}); ixAlert(r.message); load();
 }
 async function dismiss(){
-  const ids=sel(); if(!ids.length){ alert('Select rows first.'); return; }
-  const r=await post('{% url "inventory_planning:api_reorder_action" %}',{action:'dismiss',ids}); alert(r.message); load();
+  const ids=sel(); if(!ids.length){ ixAlert('Select rows first.'); return; }
+  const r=await post('{% url "inventory_planning:api_reorder_action" %}',{action:'dismiss',ids}); ixAlert(r.message); load();
 }
 load();
 </script>

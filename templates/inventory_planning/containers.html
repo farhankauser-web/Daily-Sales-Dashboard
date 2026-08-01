@@ -326,7 +326,7 @@ async function openContainer(id){
   renderContLines(); document.getElementById('contModal').classList.add('show');
 }
 async function saveContainer(){
-  if(!contLines.length){ alert('Add at least one SKU + units.'); return; }
+  if(!contLines.length){ ixAlert('Add at least one SKU + units.'); return; }
   const body={ id:document.getElementById('contId').value||null, region:curRegion,
     container_no:document.getElementById('contNo').value, vendor:document.getElementById('contVendor').value,
     po_number:document.getElementById('contPo').value, shipment_id:document.getElementById('contShip').value,
@@ -334,7 +334,7 @@ async function saveContainer(){
     departure:document.getElementById('contDep').value, eta_port:document.getElementById('contEta').value, lines:contLines };
   const r=await fetch("{% url 'inventory_planning:save_container' %}",{method:'POST',
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
-  if(r.ok){ document.getElementById('contModal').classList.remove('show'); load(); } else alert('Save failed');
+  if(r.ok){ document.getElementById('contModal').classList.remove('show'); load(); } else ixAlert('Save failed');
 }
 
 // ── receive ──
@@ -362,14 +362,14 @@ async function doReceive(){
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
   const j=await r.json();
   if(j.status==='ok'){
-    alert(`Received. ${n(j.units_added)} units added to ${j.warehouse||'warehouse'}. Container archived to Container History.`);
+    ixAlert(`Received. ${n(j.units_added)} units added to ${j.warehouse||'warehouse'}. Container archived to Container History.`);
     document.getElementById('recvModal').classList.remove('show');
     document.getElementById('contModal').classList.remove('show'); load();
-  } else alert('Receive failed: '+(j.error||'unknown'));
+  } else ixAlert('Receive failed: '+(j.error||'unknown'));
 }
 async function deleteContainer(){
   const id=document.getElementById('contId').value;
-  if(!id||!confirm('Delete this container?'))return;
+  if(!id||!await ixConfirm('Delete this container?'))return;
   await fetch("{% url 'inventory_planning:delete_container' %}",{method:'POST',
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({id})});
   document.getElementById('contModal').classList.remove('show'); load();

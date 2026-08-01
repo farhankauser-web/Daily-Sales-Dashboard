@@ -436,9 +436,9 @@ async function syncStock(btn){
       let msg = `Synced ${j.fba_skus} FBA SKUs`;
       if (j.awd_skus) msg += `, ${j.awd_skus} AWD SKUs`;
       else if (j.awd_error) msg += `. AWD unavailable (${j.awd_error.slice(0,60)}) — AWD stock comes from the ops workbook until the AWD role is enabled.`;
-      alert(msg); load();
-    } else alert('Sync failed: ' + (j.error||''));
-  }catch(e){ alert('Sync failed: '+e); }
+      ixAlert(msg); load();
+    } else ixAlert('Sync failed: ' + (j.error||''));
+  }catch(e){ ixAlert('Sync failed: '+e); }
   btn.disabled=false; btn.textContent=old;
 }
 
@@ -507,7 +507,7 @@ async function openContainer(id){
   document.getElementById('contModal').classList.add('show');
 }
 async function saveContainer(){
-  if (!contLines.length){ alert('Add at least one SKU + units.'); return; }
+  if (!contLines.length){ ixAlert('Add at least one SKU + units.'); return; }
   const body = {
     id: document.getElementById('contId').value || null,
     region: curRegion,
@@ -522,11 +522,11 @@ async function saveContainer(){
   const r = await fetch("{% url 'inventory_planning:save_container' %}", {method:'POST',
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}, body:JSON.stringify(body)});
   if (r.ok){ document.getElementById('contModal').classList.remove('show'); load(); }
-  else alert('Save failed');
+  else ixAlert('Save failed');
 }
 async function deleteContainer(){
   const id = document.getElementById('contId').value;
-  if (!id || !confirm('Delete this container?')) return;
+  if (!id || !await ixConfirm('Delete this container?')) return;
   await fetch("{% url 'inventory_planning:delete_container' %}", {method:'POST',
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}, body:JSON.stringify({id})});
   document.getElementById('contModal').classList.remove('show'); load();

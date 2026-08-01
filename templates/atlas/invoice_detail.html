@@ -84,7 +84,7 @@
           <button class="btn btn-primary btn-sm" style="width:100%">Record payment</button></form>
         {% endif %}
         {% if inv.status != 'void' %}
-        <form method="post" style="margin-top:8px" onsubmit="return confirm('Void this invoice?')"><input type="hidden" name="co" value="{{ company.code }}">{% csrf_token %}
+        <form method="post" style="margin-top:8px" onsubmit="return ixConfirmSubmit(event,'Void this invoice?')"><input type="hidden" name="co" value="{{ company.code }}">{% csrf_token %}
           <input type="hidden" name="action" value="void">
           <button class="btn btn-ghost btn-sm" style="width:100%;color:#B42318">Void invoice</button></form>
         {% endif %}

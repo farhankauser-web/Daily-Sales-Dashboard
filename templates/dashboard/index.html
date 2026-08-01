@@ -977,7 +977,7 @@ function applyCustomRange(){
   const s = document.getElementById('customStart').value;
   const e = document.getElementById('customEnd').value;
   if(!s || !e || s > e){
-    alert('Please select a valid start and end date.');
+    ixAlert('Please select a valid start and end date.');
     return;
   }
   customStartDate = s;
@@ -1006,11 +1006,11 @@ function doRefresh(){
 }
 function exportData(){
   if(typeof XLSX === 'undefined'){
-    alert('Spreadsheet library not loaded yet — please retry in a moment.');
+    ixAlert('Spreadsheet library not loaded yet — please retry in a moment.');
     return;
   }
   if(!allSkuData || !allSkuData.length){
-    alert('No product performance data to export yet.');
+    ixAlert('No product performance data to export yet.');
     return;
   }
 

@@ -236,9 +236,9 @@ function collect(){
 }
 async function save(thenShip){
   const body=collect();
-  if(!body.source||!body.lines.length){ alert('Pick a source warehouse and add at least one SKU + quantity.'); return; }
+  if(!body.source||!body.lines.length){ ixAlert('Pick a source warehouse and add at least one SKU + quantity.'); return; }
   const r=await post('{% url "inventory_planning:api_fba_transfer_save" %}', body);
-  if(r.status!=='ok'){ alert(r.message); return; }
+  if(r.status!=='ok'){ ixAlert(r.message); return; }
   if(thenShip){ await act(r.id,'ship', body.lines, {date:f_date.value}); }
   closeMdl(); load();
 }
@@ -252,18 +252,18 @@ async function edit(id){
   r.lines.forEach(l=>addLine(l.sku,l.units));
 }
 async function act(id, action, _l, extra){
-  if(action==='cancel' && !confirm('Cancel this transfer? Shipped units return to the source warehouse.')) return;
+  if(action==='cancel' && !await ixConfirm('Cancel this transfer? Shipped units return to the source warehouse.')) return;
   let r=await post('{% url "inventory_planning:api_fba_transfer_action" %}', {id, action, ...(extra||{})});
   if(r.status==='confirm'){
-    if(!confirm(r.message)) return;
+    if(!await ixConfirm(r.message)) return;
     r=await post('{% url "inventory_planning:api_fba_transfer_action" %}', {id, action, force:true, ...(extra||{})});
   }
-  alert(r.message); load();
+  ixAlert(r.message); load();
 }
 async function del(id){
-  if(!confirm('Delete this draft?')) return;
+  if(!await ixConfirm('Delete this draft?')) return;
   const r=await post('{% url "inventory_planning:api_fba_transfer_delete" %}', {id});
-  alert(r.message); load();
+  ixAlert(r.message); load();
 }
 function closeMdl(){ mdl.classList.remove('on'); }
 
@@ -277,9 +277,9 @@ document.getElementById('upForm').onsubmit = async e => {
   try {
     const r = await (await fetch('{% url "inventory_planning:import_fba_transfers" %}',
       {method:'POST', body:fd, headers:{'X-CSRFToken':getCookie('csrftoken')}})).json();
-    alert(r.message || r.status);
+    ixAlert(r.message || r.status);
     if (r.status === 'ok'){ upMdl.classList.remove('on'); load(); }
-  } catch(err){ alert('Upload failed: ' + err); }
+  } catch(err){ ixAlert('Upload failed: ' + err); }
   btn.disabled = false; btn.textContent = 'Upload';
 };
 

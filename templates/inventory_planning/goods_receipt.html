@@ -142,13 +142,13 @@ function renderB(){
   tbB.innerHTML = h || `<tr><td colspan="7" class="l muted" style="padding:16px">No received PO-linked containers yet.</td></tr>`;
 }
 async function closeLine(id){
-  if(!confirm('Short-close this line? Unallocated units become production shortage.')) return;
-  const r=await post('{% url "inventory_planning:api_short_close" %}',{line_id:id}); alert(r.message); load();
+  if(!await ixConfirm('Short-close this line? Unallocated units become production shortage.')) return;
+  const r=await post('{% url "inventory_planning:api_short_close" %}',{line_id:id}); ixAlert(r.message); load();
 }
 async function bulkClose(){
-  if(!confirm('Short-close every open PO line that has nothing left in transit? Unallocated remainders book as production shortage.')) return;
+  if(!await ixConfirm('Short-close every open PO line that has nothing left in transit? Unallocated remainders book as production shortage.')) return;
   const r=await post('{% url "inventory_planning:api_short_close" %}',
-    {bulk:true, supplier:fSup.value||null, po:fPo.value||null}); alert(r.message); load();
+    {bulk:true, supplier:fSup.value||null, po:fPo.value||null}); ixAlert(r.message); load();
 }
 async function setReason(id,reason){ await post('{% url "inventory_planning:api_receipt_reason" %}',{line_id:id,reason}); }
 boot();

@@ -368,7 +368,7 @@ document.getElementById('recalcMonth').value = new Date().toISOString().slice(0,
 
 async function recalcCogsMonth(){
   const month = document.getElementById('recalcMonth').value;
-  if (!month){ alert('Pick a month first.'); return; }
+  if (!month){ ixAlert('Pick a month first.'); return; }
   const btn = document.getElementById('recalcCogsBtn');
   btn.disabled = true; btn.textContent = '↻ Recalculating…';
   const csrft = document.cookie.split('; ').find(c=>c.startsWith('csrftoken='))?.split('=')[1] || '';
@@ -386,17 +386,17 @@ async function recalcCogsMonth(){
         msg += `Management P&L COGS: ${Number(p.old).toLocaleString()} → ${Number(p.new).toLocaleString()}\n`;
       else if (p) msg += p + '\n';
       msg += `Daily SKU rows repriced: ${d.rows||0} (COGS ${Number(d.old_cgs||0).toLocaleString()} → ${Number(d.new_cgs||0).toLocaleString()})`;
-      alert(msg);
+      ixAlert(msg);
     } else {
-      alert('Recalc failed: ' + (j.error || 'unknown'));
+      ixAlert('Recalc failed: ' + (j.error || 'unknown'));
     }
-  } catch(e){ alert('Recalc failed: ' + e); }
+  } catch(e){ ixAlert('Recalc failed: ' + e); }
   btn.disabled = false; btn.textContent = '↻ Recalculate financials';
 }
 
 function downloadMissingCogs(){
   const month = document.getElementById('recalcMonth').value;
-  if (!month){ alert('Pick a month first.'); return; }
+  if (!month){ ixAlert('Pick a month first.'); return; }
   window.location = "{% url 'dashboard:cogs_missing_csv' %}" + `?mp=usa&month=${month}`;
 }
 </script>

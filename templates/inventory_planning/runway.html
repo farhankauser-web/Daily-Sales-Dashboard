@@ -142,7 +142,7 @@ async function editPds(sku, cur){
   const r = await fetch("{% url 'inventory_planning:save_pds' %}", {method:'POST',
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
     body: JSON.stringify({sku, pds: parseFloat(v), region: curRegion})});
-  if (r.ok) load(); else alert('Save failed');
+  if (r.ok) load(); else ixAlert('Save failed');
 }
 
 function offset(dateStr){

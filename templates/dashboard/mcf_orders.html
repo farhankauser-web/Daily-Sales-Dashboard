@@ -140,7 +140,7 @@ async function syncMcf(){
                              days: parseInt(document.getElementById('fDays').value)})});
     const ct = r.headers.get('content-type') || '';
     if (r.redirected || !ct.includes('application/json')){
-      alert('Your session appears to have expired. Please refresh this page '
+      ixAlert('Your session appears to have expired. Please refresh this page '
           + '(you may need to log in again), then retry the sync.');
       btn.disabled = false; btn.textContent = '↻ Sync from Amazon'; return;
     }
@@ -149,8 +149,8 @@ async function syncMcf(){
       document.getElementById('countLbl').textContent =
         `Synced: ${j.listed} listed · ${j.new} new · ${j.updated} updated`;
       load();
-    } else { alert('Sync failed: ' + (j.error||'unknown')); }
-  }catch(e){ alert('Sync failed: ' + e); }
+    } else { ixAlert('Sync failed: ' + (j.error||'unknown')); }
+  }catch(e){ ixAlert('Sync failed: ' + e); }
   btn.disabled = false; btn.textContent = '↻ Sync from Amazon';
 }
 function downloadCsv(){ window.location = U_EXPORT + qs(); }

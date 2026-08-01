@@ -515,7 +515,7 @@ function loadProductLines() {
   fetch(`/dashboard/product-line/?mp=${MP}&start=${PERIOD_START}&end=${PERIOD_END}`)
     .then(r => r.json())
     .then(data => {
-      if (data.error) { alert('Error: ' + data.error); return; }
+      if (data.error) { ixAlert('Error: ' + data.error); return; }
       renderPLTable(data.groups);
       status.style.display = 'none';
       tbl.style.display    = '';

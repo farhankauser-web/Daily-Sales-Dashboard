@@ -340,9 +340,9 @@ function bindForm(){
     try {
       const r = await (await fetch(URLS[upKind], {method:'POST', body:new FormData(f),
         headers:{'X-CSRFToken': getCookie('csrftoken')}})).json();
-      alert(r.message || r.status);
+      ixAlert(r.message || r.status);
       if (r.status === 'ok'){ closeUp(); showSuppliers(); load(); }
-    } catch(err){ alert('Upload failed: ' + err); }
+    } catch(err){ ixAlert('Upload failed: ' + err); }
     btn.disabled = false; btn.textContent = 'Upload';
   };
 }

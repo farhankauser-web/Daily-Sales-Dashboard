@@ -254,7 +254,7 @@ async function submitSelected(btn){
   const msg = ids.length
     ? `Create REAL Amazon MCF orders for ${ids.length} selected order(s)?`
     : `No orders selected — submit ALL ${displayedIds.length} order(s) shown on this page?`;
-  if (!confirm(msg)) return;
+  if (!await ixConfirm(msg)) return;
   await runJob('submit', btn, ids.length ? ids : displayedIds.slice());
 }
 async function runJob(action, btn, orderIds){

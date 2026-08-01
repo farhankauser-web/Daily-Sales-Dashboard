@@ -69,13 +69,13 @@ async function reserve(lineId, avail){
   const r = await (await fetch('{% url "inventory_planning:api_reserve" %}',{method:'POST',
     body:JSON.stringify({po_line_id:lineId, region:region.trim().toLowerCase(), units}),
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}})).json();
-  alert(r.message); DETAIL={}; if(curSup) openSupplier(curSup.id);
+  ixAlert(r.message); DETAIL={}; if(curSup) openSupplier(curSup.id);
 }
 async function unreserve(id){
-  if(!confirm('Remove this reservation?')) return;
+  if(!await ixConfirm('Remove this reservation?')) return;
   const r = await (await fetch('{% url "inventory_planning:api_reserve" %}',{method:'POST',
     body:JSON.stringify({delete_id:id}), headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}})).json();
-  alert(r.message); DETAIL={}; if(curSup) openSupplier(curSup.id);
+  ixAlert(r.message); DETAIL={}; if(curSup) openSupplier(curSup.id);
 }
 
 async function load(){

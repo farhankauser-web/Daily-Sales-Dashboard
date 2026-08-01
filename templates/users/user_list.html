@@ -95,7 +95,7 @@ async function toggleUser(pk, btn){
     headers:{'X-CSRFToken':getCookie('csrftoken')}
   });
   const d=await res.json();
-  if(d.error){ alert(d.error); return; }
+  if(d.error){ ixAlert(d.error); return; }
   // Refresh the row
   location.reload();
 }
