@@ -341,16 +341,21 @@ def fold_into_bucket(
     # miss silently yields 0 — which is how spend populated while sales,
     # orders, ACoS, ROAS and CVR all stayed empty. Accept every known spelling
     # rather than betting on one.
+    # Window choice: the destination columns are orders_7d / sales_7d /
+    # units_7d, and 7-day is Amazon's default attribution for Sponsored
+    # Products (what Seller Central reports). The old code read the 1-day
+    # window into those 7-day columns — understating conversions even once
+    # the key names are right, since a click today can convert days later.
     if ad_product == 'sp':
-        bucket.orders_7d += _num(payload, int, 'purchases_1d', 'purchases1d',
-                                 'attributed_conversions_1d')
-        bucket.sales_7d  += _num(payload, Decimal, 'sales_1d', 'sales1d',
-                                 'attributed_sales_1d')
-        bucket.units_7d  += _num(payload, int, 'units_sold_1d', 'unitsSold1d',
-                                 'units1d', 'attributed_units_ordered_1d')
+        bucket.orders_7d += _num(payload, int, 'purchases_7d',
+                                 'attributed_conversions_7d')
+        bucket.sales_7d  += _num(payload, Decimal, 'sales_7d',
+                                 'attributed_sales_7d')
+        bucket.units_7d  += _num(payload, int, 'units_sold_7d',
+                                 'attributed_units_ordered_7d')
     else:    # sb / sd → 14-day attribution columns
         bucket.orders_7d += _num(payload, int, 'attributed_conversions_14d',
-                                 'conversions_14d', 'purchases_14d')
+                                 'purchases_14d', 'conversions_14d')
         bucket.sales_7d  += _num(payload, Decimal, 'attributed_sales_14d',
                                  'sales_14d')
         bucket.units_7d  += _num(payload, int, 'attributed_units_ordered_14d',
