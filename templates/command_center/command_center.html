@@ -37,6 +37,11 @@
   /* heatmap */
   .cc-heat{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-top:6px}
   .cc-hcell{aspect-ratio:1;border-radius:2px;background:var(--teal);min-height:12px}
+  /* Hour with no snapshot — hatched, not a pale-teal "almost zero" cell, so a
+     partial day reads as missing data rather than as genuinely quiet hours. */
+  .cc-hcell-na{background:repeating-linear-gradient(45deg,
+      var(--border) 0 3px, transparent 3px 6px);
+    border:1px solid var(--border);opacity:1}
   .cc-hx{display:flex;justify-content:space-between;color:var(--text3);font-size:9px;margin-top:5px}
   .cc-bar-row{display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;margin:7px 0}
   .cc-track{height:8px;background:var(--bg3);border-radius:5px;overflow:hidden}
@@ -286,9 +291,27 @@ const RENDER = {
   },
   hourly_heatmap(body,d){
     if(d.error) return RENDER._default(body,d);
-    const hrs=d.hours||[]; const mx=Math.max(1,...hrs);
-    body.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:2px">${d.metric||'Revenue'} by hour · ${d.date||'—'}</div>
-      <div class="cc-heat">${hrs.map(v=>`<div class="cc-hcell" title="${v}" style="opacity:${(0.12+(v/mx)*0.88).toFixed(2)}"></div>`).join('')}</div>
+    const hrs=d.hours||[];
+    // null = no snapshot for that hour (partial day / sync gap). Only real
+    // numbers scale the colour ramp, otherwise missing hours would drag it.
+    const vals=hrs.filter(v=>v!=null);
+    const mx=Math.max(1,...vals);
+    const miss=(d.missing!=null)?d.missing:hrs.filter(v=>v==null).length;
+    const pend=d.pending||0;
+    const cells=hrs.map((v,h)=>{
+      const hr=(h%12===0?12:h%12)+(h<12?'a':'p');
+      if(v==null) return `<div class="cc-hcell cc-hcell-na" title="${hr} · no data yet"></div>`;
+      return `<div class="cc-hcell" title="${hr} · ${money(v,REGION!=='all'?REGION:null)}"
+                   style="opacity:${(0.12+(v/mx)*0.88).toFixed(2)}"></div>`;
+    }).join('');
+    // Separate "we have no data for an hour that already passed" (a real gap,
+    // worth flagging amber) from "the day isn't over yet" (just pending).
+    const cov = miss
+      ? `<span style="color:var(--crit-ink)">· ${miss} h missing</span>`
+      : (pend ? `<span style="color:var(--text3)">· ${24-pend}/24 h so far</span>`
+              : `<span style="color:var(--good-ink)">· all 24 h</span>`);
+    body.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:2px">${d.metric||'Revenue'} by hour · ${d.date||'—'} ${cov}</div>
+      <div class="cc-heat">${cells}</div>
       <div class="cc-hx"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>`;
   },
   top_skus(body,d){
@@ -323,9 +346,18 @@ const RENDER = {
   container_timeline(body,d){
     if(d.error) return RENDER._default(body,d);
     const s=d.shipments||[];
-    body.innerHTML = s.length ? s.map(x=>`<div class="cc-row"><span>🚢 ${x.name}</span>
-      <span style="text-align:right">${x.eta?`<b>${x.eta}</b>`:'<span style="color:var(--text3)">no ETA</span>'}${x.days!=null?` <span style="color:var(--text3)">(${x.days}d)</span>`:''}</span></div>`).join('')
-      : '<div class="cc-loading">No shipments in transit</div>';
+    // Negative days = ETA passed but not received yet, i.e. overdue — call it
+    // out rather than showing a quiet grey "(-20d)".
+    body.innerHTML = s.length ? s.map(x=>{
+      let tail='';
+      if(x.days!=null){
+        tail = x.days<0
+          ? ` <span style="color:var(--crit-ink);font-weight:600">${-x.days}d overdue</span>`
+          : ` <span style="color:var(--text3)">in ${x.days}d</span>`;
+      }
+      return `<div class="cc-row"><span>🚢 ${x.name}</span>
+        <span style="text-align:right">${x.eta?`<b>${x.eta}</b>`:'<span style="color:var(--text3)">no ETA</span>'}${tail}</span></div>`;
+    }).join('') : '<div class="cc-loading">No shipments in transit</div>';
   },
   inventory_risk(body,d){
     if(d.error) return RENDER._default(body,d);

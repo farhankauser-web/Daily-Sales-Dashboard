@@ -98,6 +98,29 @@ def _latest_date():
     return d or timezone.localdate()
 
 
+def _mp_now(mp):
+    """Current time in a marketplace's own timezone (falls back to server TZ)."""
+    from django.conf import settings
+    from datetime import datetime
+    tz_name = None
+    if mp and mp != 'all':
+        tz_name = (settings.AMAZON_MARKETPLACES.get(mp) or {}).get('timezone')
+    tz_name = tz_name or settings.TIME_ZONE
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        return datetime.now()
+
+
+def _local_today(mp):
+    return _mp_now(mp).date()
+
+
+def _local_hour(mp):
+    return _mp_now(mp).hour
+
+
 def _mp_filter(qs, cfg):
     mp = (cfg or {}).get('marketplace')
     return qs.filter(marketplace=mp) if mp and mp != 'all' else qs
@@ -263,7 +286,25 @@ def w_hourly_heatmap(user, cfg):
     qs = qs.filter(date=d)
     per = {r['hour']: float(r['s'] or 0)
            for r in qs.values('hour').annotate(s=Sum(field))}
-    return {'hours': [round(per.get(h, 0), 2) for h in range(24)],
+    # An hour is UNKNOWN — not zero — when it has no snapshot row, and equally
+    # when it simply hasn't happened yet in the marketplace's own timezone.
+    # The snapshot cron writes rows for the whole day, so a zero for 11pm at
+    # 9am local is "not yet", not "no sales". Reporting both as 0 made a
+    # part-done day look like a dead one.
+    last_hour = 23
+    if d == _local_today(mp):
+        last_hour = _local_hour(mp)
+    hours, gaps = [], 0
+    for h in range(24):
+        if h > last_hour:                 # hasn't happened yet
+            hours.append(None)
+        elif h in per:
+            hours.append(round(per[h], 2))
+        else:                             # elapsed but never synced — a real gap
+            hours.append(None); gaps += 1
+    return {'hours': hours,
+            'elapsed': last_hour + 1, 'covered': (last_hour + 1) - gaps,
+            'missing': gaps, 'pending': 23 - last_hour,
             'metric': ('Contribution margin' if field == 'cm' else 'Revenue'),
             'date': d.isoformat()}
 
@@ -311,9 +352,16 @@ def w_ai_recs(user, cfg):
 
 
 def w_container_timeline(user, cfg):
-    from apps.inventory_planning.models import InTransitShipment as S
+    from apps.inventory_planning.models import (InTransitShipment as S,
+                                                ACTIVE_STATUS_KEYS)
     today = timezone.localdate(); rows = []
-    for s in S.objects.order_by('eta_destination', 'eta_port')[:8]:
+    # Only shipments still in flight. Unfiltered, this listed containers
+    # received long ago — the widget was showing 2023 ETAs at "-1209d".
+    qs = (S.objects
+          .filter(status__in=ACTIVE_STATUS_KEYS,
+                  received_date__isnull=True, received_at__isnull=True)
+          .order_by('eta_destination', 'eta_port'))
+    for s in qs[:8]:
         eta = getattr(s, 'eta_destination', None) or getattr(s, 'eta_port', None)
         name = (getattr(s, 'name', None) or getattr(s, 'reference', None)
                 or getattr(s, 'container_no', None) or f'Shipment {s.pk}')
@@ -326,16 +374,29 @@ def w_container_timeline(user, cfg):
 
 def w_inventory_risk(user, cfg):
     from apps.inventory_planning.models import WarehouseStock as W
+    # `units` is the real column; `detail` is the raw API payload and is
+    # frequently empty. Reading only detail made every SKU render "0 left".
+    # WarehouseStock is unique per (warehouse, sku), so summing units across
+    # warehouses gives total on-hand per SKU.
+    # "Risk" means a SKU we are actively selling that is running out. Ranking
+    # the whole catalogue by lowest units just surfaces discontinued lines
+    # sitting at zero forever — which is why every row read "0 left".
+    from apps.dashboard.models import DailySkuSnapshot as D
+    end = _latest_date(); start = end - timedelta(days=30)
+    selling = set(_mp_filter(D.objects.filter(date__range=(start, end)), cfg)
+                  .values_list('sku', flat=True).distinct())
     agg = {}
-    for w in W.objects.all()[:400]:
-        d = getattr(w, 'detail', {}) or {}
-        avail = (d.get('available') or d.get('sellable') or 0) if isinstance(d, dict) else 0
-        sku = str(getattr(w, 'sku', None) or getattr(w, 'planning_sku', None) or '')
-        if sku:
-            agg[sku] = agg.get(sku, 0) + int(avail or 0)
+    for w in W.objects.all().only('sku', 'units', 'detail').iterator(chunk_size=500):
+        sku = (w.sku or '').strip()
+        if not sku or (selling and sku not in selling):
+            continue
+        d = w.detail if isinstance(w.detail, dict) else {}
+        avail = max(int(w.units or 0),
+                    int(d.get('available') or d.get('sellable') or 0))
+        agg[sku] = agg.get(sku, 0) + avail
     rows = sorted(({'sku': k, 'available': v} for k, v in agg.items()),
                   key=lambda x: x['available'])[:6]
-    return {'rows': rows}
+    return {'rows': rows, 'tracked': len(agg)}
 
 
 def w_cash_runway(user, cfg):
