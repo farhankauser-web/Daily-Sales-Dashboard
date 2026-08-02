@@ -128,24 +128,33 @@ def _mp_filter(qs, cfg):
 
 def _ams_ppc(start, end, cfg=None):
     """
-    {(marketplace, date): spend} straight from PPCCampaignHourlySnapshot.
+    {(marketplace, date): spend} — best live PPC figure per region/day.
 
-    DailyMetric.ppc_spend is only written by the daily PPC rollup, so the
-    current (partial) day sits at 0 there while AMS already holds that day's
-    hour-by-hour spend — which is why the scorecard rendered PPC $0 / TACoS
-    0.0% for every region. Callers take max(AMS, DailyMetric), matching the
-    max(AMS, daily) rule the rest of the app uses.
+    DailyMetric.ppc_spend is only written by the daily rollup, so the current
+    (partial) day sits at 0 there — which is why the scorecard rendered PPC $0
+    and TACoS 0.0% for every region. Two live sources fill that gap, and we
+    take the larger, matching the max(AMS, daily) rule used elsewhere:
+
+      * PPCCampaignHourlySnapshot — the AMS stream. Real-time, but only for
+        marketplaces with a bucket in settings.AMS_S3 (today: USA only).
+      * PPCCampaignSnapshot — what sync_today_ppc pulls from the Ads API every
+        30 min. Covers all four regions, so UK/AE/SA depend on it entirely.
     """
-    try:
-        from apps.dashboard.models import PPCCampaignHourlySnapshot as P
-    except Exception:
-        return {}
-    qs = P.objects.filter(date__range=(start, end))
+    out = {}
     mp = (cfg or {}).get('marketplace')
-    if mp and mp != 'all':
-        qs = qs.filter(marketplace=mp)
-    return {(r['marketplace'], r['date']): float(r['s'] or 0)
-            for r in qs.values('marketplace', 'date').annotate(s=Sum('spend'))}
+    for model_path in ('PPCCampaignHourlySnapshot', 'PPCCampaignSnapshot'):
+        try:
+            from apps.dashboard import models as m
+            P = getattr(m, model_path)
+        except Exception:
+            continue
+        qs = P.objects.filter(date__range=(start, end))
+        if mp and mp != 'all':
+            qs = qs.filter(marketplace=mp)
+        for r in qs.values('marketplace', 'date').annotate(s=Sum('spend')):
+            k = (r['marketplace'], r['date'])
+            out[k] = max(out.get(k, 0.0), float(r['s'] or 0))
+    return out
 
 
 def _ams_ppc_by_date(start, end, cfg=None):
