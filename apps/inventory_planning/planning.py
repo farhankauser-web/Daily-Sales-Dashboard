@@ -124,10 +124,23 @@ def build_projection(region: str = 'usa', horizon: int = HORIZON_DAYS) -> dict:
                  .filter(shipment__region=region)
                  .exclude(shipment__status__in=['received', 'cancelled'])):
         sku = line.sku.upper()
-        transit_units[sku] += line.units
+        # Once Amazon starts counting a container in, the units it has already
+        # received are in warehouse stock — only the REMAINDER is still
+        # inbound. Counting the whole line through receiving would double it
+        # against on-hand, which is what left 45,088 phantom units on the
+        # books while five containers sat "at port" after landing.
+        #
+        # amazon_received_units is Amazon's own figure (sync_awd_receipts),
+        # already converted from cases to eaches. Zero for anything Amazon has
+        # not begun receiving, so this is a no-op while genuinely in transit.
+        got = int(line.amazon_received_units or 0)
+        remaining = max(0, int(line.units or 0) - got)
+        if remaining == 0:
+            continue                       # fully counted in by Amazon
+        transit_units[sku] += remaining
         dest = line.shipment.destination
         if dest is not None and dest.kind == 'fba':
-            fc_transit_units[sku] += line.units
+            fc_transit_units[sku] += remaining
         eta = line.shipment.eta_destination
         bucket = None
         if eta and eta >= today:
@@ -135,14 +148,15 @@ def build_projection(region: str = 'usa', horizon: int = HORIZON_DAYS) -> dict:
         elif eta:
             bucket = today + timedelta(days=3)
         if bucket is not None:
-            arrivals[sku][bucket] += line.units
+            arrivals[sku][bucket] += remaining
             sh = line.shipment
             arrival_detail[sku][bucket].append({
                 'container': sh.container_no or sh.shipment_id or f'#{sh.pk}',
-                'units': line.units,
+                'units': remaining,
+                'received': got,
                 'status': sh.status})
         else:
-            unscheduled[sku] += line.units
+            unscheduled[sku] += remaining
 
     skus = list(PlanningSku.objects.filter(region=region, is_active=True))
     known = {s.sku.upper() for s in skus}

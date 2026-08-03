@@ -172,3 +172,21 @@ LOG=/Users/farhankauser/Desktop/project/infinitee_app/logs
 # ── ATLAS (B2B quote-to-cash) — supply-chain alert sweep ─────────────────────
 # RFQ 24h TAT breaches, PO stage TAT breaches, refill-due articles (hourly)
 20 * * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE atlas_alerts >> $LOG/atlas.log 2>&1
+
+# ── INVENTORY PLANNING — container receipts ──────────────────────────────────
+# Pull Amazon's expected/received per SKU for every open container carrying an
+# Amazon shipment ID (STAR-… for AWD). Amazon counts in CASES; the command
+# converts to eaches using the case-pack in the same payload.
+#
+# Why this matters: the planner counts a container's units as inbound until it
+# is received. Once Amazon starts counting one in, those units are ALSO in
+# warehouse stock — so without this sync they are double-counted, which left
+# 45,088 phantom units on the books while five landed containers sat "at port".
+# Twice daily is plenty; AWD receipts move over days, not minutes.
+20 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_awd_receipts --marketplace usa --apply >> $LOG/container_receipts.log 2>&1
+#
+# Stage transitions (in_transit → receiving on first receipt, → received when
+# Amazon CLOSES the shipment) are NOT enabled above. Closing a container is an
+# accounting act: shipped-minus-received books as shortage. Watch a couple of
+# containers land first, then swap the line above for this one:
+# 20 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_awd_receipts --marketplace usa --apply --advance-status >> $LOG/container_receipts.log 2>&1
