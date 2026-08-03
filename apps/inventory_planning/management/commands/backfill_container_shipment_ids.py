@@ -24,7 +24,10 @@ class Command(BaseCommand):
             'from the Containers Summary workbook.')
 
     def add_arguments(self, parser):
-        parser.add_argument('xlsx', help='Path to "Containers Summary" .xlsx')
+        parser.add_argument('xlsx', help='Path to "Containers Summary" .xlsx, '
+                                         'or a .csv with container,shipment_id '
+                                         'columns (handy on a server with no '
+                                         'copy of the workbook).')
         parser.add_argument('--sheet', default='Container Details')
         parser.add_argument('--apply', action='store_true',
                             help='Write the IDs. Without this, report only.')
@@ -32,20 +35,52 @@ class Command(BaseCommand):
                             help='Replace an existing, different shipment ID.')
 
     def handle(self, *args, **opts):
+        from apps.inventory_planning.models import InTransitShipment
+
+        if str(opts['xlsx']).lower().endswith('.csv'):
+            pairs, skipped_rows = self._read_csv(opts['xlsx'])
+        else:
+            pairs, skipped_rows = self._read_xlsx(opts['xlsx'], opts['sheet'])
+
+        self.stdout.write(f'rows usable: {len(pairs)} '
+                          f'(skipped {skipped_rows} blank/header)')
+        self._reconcile(InTransitShipment, pairs, opts)
+
+    # ── readers ──────────────────────────────────────────────────────────
+    def _read_csv(self, path):
+        import csv
+        pairs, skipped = {}, 0
+        try:
+            fh = open(path, newline='', encoding='utf-8-sig')
+        except OSError as exc:
+            raise CommandError(f'cannot open csv: {exc}')
+        with fh:
+            for row in csv.reader(fh):
+                if len(row) < 2:
+                    skipped += 1
+                    continue
+                cont = (row[0] or '').strip().upper()
+                ship = (row[1] or '').strip()
+                dest = (row[2] or '').strip() if len(row) > 2 else ''
+                if not cont or not ship or cont in ('CONTAINER', 'CONTAINER #'):
+                    skipped += 1
+                    continue
+                pairs[cont] = (ship, dest)
+        return pairs, skipped
+
+    def _read_xlsx(self, path, sheet):
         try:
             import openpyxl
         except ImportError:
             raise CommandError('openpyxl not installed: pip install openpyxl')
-        from apps.inventory_planning.models import InTransitShipment
-
         try:
-            wb = openpyxl.load_workbook(opts['xlsx'], data_only=True)
+            wb = openpyxl.load_workbook(path, data_only=True)
         except Exception as exc:
             raise CommandError(f'cannot open workbook: {exc}')
-        if opts['sheet'] not in wb.sheetnames:
-            raise CommandError(f'sheet "{opts["sheet"]}" not found; '
+        if sheet not in wb.sheetnames:
+            raise CommandError(f'sheet "{sheet}" not found; '
                                f'have {wb.sheetnames}')
-        ws = wb[opts['sheet']]
+        ws = wb[sheet]
 
         # Find the header row rather than assuming row 1 — the ops file has a
         # blank spacer row above it, and that will drift as people edit.
@@ -81,10 +116,10 @@ class Command(BaseCommand):
                 skipped_rows += 1
                 continue
             pairs[cont] = (ship, str(row[c_dest] or '').strip() if c_dest is not None else '')
+        return pairs, skipped_rows
 
-        self.stdout.write(f'workbook rows usable: {len(pairs)} '
-                          f'(skipped {skipped_rows} blank/header)')
-
+    # ── reconcile + write ────────────────────────────────────────────────
+    def _reconcile(self, InTransitShipment, pairs, opts):
         matched, already, conflict, missing = [], [], [], []
         for cont, (ship, dest) in sorted(pairs.items()):
             sh = InTransitShipment.objects.filter(container_no__iexact=cont).first()
