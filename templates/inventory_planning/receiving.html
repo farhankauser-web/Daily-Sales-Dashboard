@@ -1,0 +1,155 @@
+{% extends "base/base.html" %}
+{% block title %}Receiving{% endblock %}
+{% block nav_inv_receiving %}active{% endblock %}
+{% block page_title %}Receiving — containers Amazon is counting in{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-secondary btn-sm" onclick="load()">↻ Refresh</button>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .kpi{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+  .kpi .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em}
+  .cbox{background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden}
+  .chead{display:grid;grid-template-columns:1.6fr repeat(4,1fr) 1.1fr;gap:8px;align-items:center;
+         padding:10px 12px;cursor:pointer}
+  .chead:hover{background:var(--bg3)}
+  .cnum{text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+  .clab{font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;text-align:right}
+  .bar{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-top:5px}
+  .bar>i{display:block;height:100%;background:var(--green)}
+  .st{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:700;
+      background:var(--info-weak);color:var(--info-ink)}
+  .st.RECEIVING{background:var(--warn-weak);color:var(--warn-ink)}
+  .st.CLOSED{background:var(--good-weak);color:var(--good-ink)}
+  .st.CREATED{background:var(--bg3);color:var(--text2)}
+  table.sk{width:100%;border-collapse:collapse;font-size:12px}
+  table.sk th{background:var(--surface2);text-align:right;padding:6px 10px;font-size:9px;
+              text-transform:uppercase;color:var(--text2);border-bottom:1px solid var(--border)}
+  table.sk th:first-child{text-align:left}
+  table.sk td{padding:5px 10px;border-bottom:1px solid var(--border);text-align:right;
+              font-variant-numeric:tabular-nums}
+  table.sk td:first-child{text-align:left;font-family:'DM Mono',monospace;font-size:11px}
+  .short{color:var(--crit-ink);font-weight:600}
+  .ok{color:var(--good-ink)}
+  .muted{color:var(--text3)}
+  .note{font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);
+        border-radius:6px;padding:8px 10px;margin-bottom:12px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="note">
+  <b>Packed</b> is your packing list — the truth of what shipped.
+  <b>Declared</b> is what Amazon was told when labels were generated (always ≥ packed).
+  <b>Received</b> is Amazon's count, converted from cases to units.
+  <b>Variance = Packed − Received</b>; the declared figure is never used for it,
+  because over-declaring would invent a shortage that does not exist.
+</div>
+
+<div class="kpi-strip">
+  <div class="kpi"><div class="v" id="k_cont">–</div><div class="l">Containers receiving</div></div>
+  <div class="kpi"><div class="v" id="k_packed">–</div><div class="l">Units shipped</div></div>
+  <div class="kpi"><div class="v" id="k_recv">–</div><div class="l">Units received</div></div>
+  <div class="kpi"><div class="v" id="k_var">–</div><div class="l">Variance (shortfall)</div></div>
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+  <select id="fShow" class="form-control" style="width:auto;padding:5px 8px;font-size:12px" onchange="load()">
+    <option value="active">In transit &amp; receiving</option>
+    <option value="all">Include closed</option>
+  </select>
+  <span id="lbl" style="font-size:11px;color:var(--text2)"></span>
+</div>
+
+<div id="list"><div class="cc-loading" style="padding:30px;text-align:center;color:var(--text3)">Loading…</div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const U = "{% url 'inventory_planning:api_receiving' %}";
+let ROWS = [], OPEN = new Set();
+function n(v){ return (v==null?'–':Number(v).toLocaleString()); }
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+
+async function load(){
+  const show = document.getElementById('fShow').value;
+  const r = await fetch(`${U}?region=${encodeURIComponent(REGION||'usa')}&show=${show}`);
+  const j = await r.json();
+  ROWS = j.rows||[];
+  // Only count containers Amazon has actually started — a container still at
+  // sea has "variance = everything", which is not a shortfall.
+  const started = ROWS.filter(x=>x.started);
+  document.getElementById('k_cont').textContent   = started.length;
+  document.getElementById('k_packed').textContent = n(started.reduce((a,b)=>a+b.packed,0));
+  document.getElementById('k_recv').textContent   = n(started.reduce((a,b)=>a+b.received,0));
+  const v = started.reduce((a,b)=>a+Math.max(0,b.packed-b.received),0);
+  const el = document.getElementById('k_var');
+  el.textContent = n(v); el.className = 'v ' + (v>0?'short':'ok');
+  document.getElementById('lbl').textContent =
+    `${ROWS.length} container(s) linked to an Amazon shipment`;
+  render();
+}
+
+function render(){
+  const box = document.getElementById('list');
+  if(!ROWS.length){
+    box.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text3)">'
+      + 'No containers carry an Amazon Shipment ID yet — add one in the Containers page.</div>';
+    return;
+  }
+  box.innerHTML = ROWS.map(r=>{
+    const open = OPEN.has(r.id);
+    const varTxt = r.started
+      ? `<span class="${r.variance>0?'short':'ok'}">${r.variance>0?'−':''}${n(Math.abs(r.variance))}</span>`
+      : '<span class="muted">not started</span>';
+    return `<div class="cbox">
+      <div class="chead" onclick="tog(${r.id})">
+        <div>
+          <div style="font-weight:600;font-size:13px">${esc(r.container)}
+            <span class="st ${esc(r.amazon_status)}">${esc(r.amazon_status||'—')}</span></div>
+          <div style="font-size:10px;color:var(--text3)">${esc(r.shipment_id)} ·
+            ${esc(r.destination||'')} ${r.eta?'· ETA '+r.eta:''}</div>
+          <div class="bar"><i style="width:${r.pct}%"></i></div>
+        </div>
+        <div><div class="clab">Packed</div><div class="cnum">${n(r.packed)}</div></div>
+        <div><div class="clab">Declared</div><div class="cnum muted">${n(r.declared)}</div></div>
+        <div><div class="clab">Received</div><div class="cnum">${n(r.received)}</div></div>
+        <div><div class="clab">Remaining</div><div class="cnum">${n(r.remaining)}</div></div>
+        <div><div class="clab">Variance</div><div class="cnum">${varTxt}</div></div>
+      </div>
+      ${open?skuTable(r):''}
+    </div>`;
+  }).join('');
+}
+
+function skuTable(r){
+  const rows = r.lines.map(l=>`<tr>
+    <td>${esc(l.sku)}</td>
+    <td>${n(l.packed)}</td>
+    <td class="muted">${n(l.declared)}</td>
+    <td>${n(l.received)}</td>
+    <td>${l.per_case?n(l.per_case):'<span class="muted">–</span>'}</td>
+    <td>${n(l.remaining)}</td>
+    <td class="${l.short?'short':(l.over?'ok':'muted')}">${
+      l.short?('−'+n(l.short)) : (l.over?('+'+n(l.over)) : '0')}</td>
+  </tr>`).join('');
+  const note = r.over_declared
+    ? `<div style="padding:6px 12px;font-size:11px;color:var(--text2)">
+         Declared ${n(r.over_declared)} more than packed — normal, and
+         <b>not</b> a loss. Amazon reconciles against its own declared figure,
+         which is why its discrepancy report will look worse than reality.</div>`
+    : '';
+  return `${note}<table class="sk"><thead><tr>
+      <th>SKU</th><th>Packed</th><th>Declared</th><th>Received</th>
+      <th>Per case</th><th>Remaining</th><th>Variance</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function tog(id){ OPEN.has(id)?OPEN.delete(id):OPEN.add(id); render(); }
+load();
+</script>
+{% endblock %}

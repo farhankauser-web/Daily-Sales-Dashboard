@@ -734,6 +734,9 @@ tfoot td:first-child { text-align: left; }
   <a href="{% url 'inventory_planning:containers' %}" class="nav-item {% block nav_inv_containers %}{% endblock %}">
     <span class="nav-icon">🚢</span> Containers
   </a>
+  <a href="{% url 'inventory_planning:receiving' %}" class="nav-item {% block nav_inv_receiving %}{% endblock %}">
+    <span class="nav-icon">📥</span> Receiving
+  </a>
   <a href="{% url 'inventory_planning:fba_transfers' %}" class="nav-item {% block nav_inv_fbatransfer %}{% endblock %}">
     <span class="nav-icon">🔁</span> FBA Transfers
   </a>

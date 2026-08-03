@@ -88,6 +88,85 @@ def container_history(request):
 
 @login_required
 @permission_required('can_view_inventory')
+def receiving(request):
+    """Containers Amazon is currently counting in — the stage between In
+    Transit and Container History."""
+    return render(request, 'inventory_planning/receiving.html', {
+        'can_edit': request.user.has_perm_flag('can_manage_cogs'),
+    })
+
+
+@login_required
+@permission_required('can_view_inventory')
+def api_receiving(request):
+    """
+    Containers linked to an Amazon shipment, with the shipped-vs-received
+    picture per SKU.
+
+    Three quantities per line, and they are not interchangeable:
+      packed (B)   our packing list — the truth of what left the factory
+      declared (A) what we told Amazon when generating labels; A ≥ B always
+      received (C) what Amazon has counted in, converted from CASES to eaches
+
+    Variance is B − C. It is never A − C: because we always declare at least
+    as much as we pack, an A-based figure invents a shortage out of our own
+    over-declaration.
+    """
+    from .models import InTransitShipment
+    region = request.GET.get('region', 'usa')
+    qs = (InTransitShipment.objects
+          .filter(region=region)
+          .exclude(shipment_id='')
+          .exclude(status='cancelled')
+          .select_related('destination')
+          .prefetch_related('lines')
+          .order_by('-amazon_synced_at', 'eta_destination'))
+    show = (request.GET.get('show') or 'active')
+    if show == 'active':
+        qs = qs.exclude(status='received')
+
+    rows = []
+    for sh in qs[:300]:
+        lines, packed, declared, received = [], 0, 0, 0
+        for l in sh.lines.all():
+            b = int(l.units or 0)
+            a = int(l.amazon_expected_units or 0)
+            c = int(l.amazon_received_units or 0)
+            packed += b; declared += a; received += c
+            lines.append({
+                'sku': l.sku, 'packed': b, 'declared': a, 'received': c,
+                'remaining': max(0, b - c),
+                'short': max(0, b - c) if c else 0,
+                'over': max(0, c - b),
+                'per_case': int(l.units_per_case or 0),
+                'pct': round(min(100, c / b * 100), 1) if b else 0,
+            })
+        lines.sort(key=lambda x: (-x['short'], -x['packed']))
+        started = received > 0
+        rows.append({
+            'id': sh.pk,
+            'container': sh.container_no or f'#{sh.pk}',
+            'shipment_id': sh.shipment_id,
+            'vendor': sh.vendor, 'status': sh.status,
+            'amazon_status': sh.amazon_status,
+            'destination': sh.destination.name if sh.destination else '',
+            'eta': sh.eta_destination.isoformat() if sh.eta_destination else None,
+            'synced': sh.amazon_synced_at.isoformat() if sh.amazon_synced_at else None,
+            'packed': packed, 'declared': declared, 'received': received,
+            'remaining': max(0, packed - received),
+            # Only meaningful once Amazon has started; before that the whole
+            # container would read as missing.
+            'variance': (packed - received) if started else None,
+            'over_declared': declared - packed,
+            'started': started,
+            'pct': round(min(100, received / packed * 100), 1) if packed else 0,
+            'lines': lines,
+        })
+    return JsonResponse({'rows': rows, 'region': region})
+
+
+@login_required
+@permission_required('can_view_inventory')
 def container_view(request, pk):
     """Standalone page (opens in a new tab) showing one container's contents
     in the Type/Name/SKU/Units matrix format."""
