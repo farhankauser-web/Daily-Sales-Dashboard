@@ -261,6 +261,53 @@ class SPAPIClient:
             time.sleep(0.6)
         return out
 
+    # ── AWD inbound shipments ────────────────────────────────────────────
+    # These are what turn a container into a receipt. `/awd/.../inventory`
+    # only gives per-SKU aggregates, so it cannot say WHICH container landed
+    # when two share a SKU. An inbound shipment is per-container (our ops
+    # record one STAR-… id per container), and carries expected vs received
+    # quantities — the exact numbers needed for the shipped-vs-received delta.
+    def get_awd_inbound_shipments(self, updated_after: str = None,
+                                  status: str = None,
+                                  max_results: int = 100) -> list[dict]:
+        """
+        AWD inbound shipments, newest first (paginated).
+
+        updated_after : ISO-8601, e.g. '2026-07-01T00:00:00Z'
+        status        : Amazon's shipmentStatus filter, when you want one state
+        """
+        out, token = [], None
+        for _ in range(100):
+            params = {'maxResults': max_results, 'sortBy': 'UPDATED_AT',
+                      'sortOrder': 'DESCENDING'}
+            if updated_after:
+                params['updatedAfter'] = updated_after
+            if status:
+                params['shipmentStatus'] = status
+            if token:
+                params['nextToken'] = token
+            resp = self._get_throttled('/awd/2024-05-09/inboundShipments', params)
+            out.extend(resp.get('shipments') or resp.get('inboundShipments') or [])
+            token = resp.get('nextToken')
+            if not token:
+                break
+            time.sleep(0.6)
+        return out
+
+    def get_awd_inbound_shipment(self, shipment_id: str,
+                                 sku_quantities: str = 'SHOW') -> dict:
+        """
+        One AWD inbound shipment by id (the `STAR-…` on the container).
+
+        sku_quantities='SHOW' asks Amazon to include the per-SKU breakdown —
+        without it you get status only and no received counts. Returned raw so
+        callers can decide how to read it; see probe_awd_shipment for a dump of
+        the real field names before relying on any of them.
+        """
+        return self._get_throttled(
+            f'/awd/2024-05-09/inboundShipments/{shipment_id}',
+            {'skuQuantities': sku_quantities})
+
     def get_orders(self, date_range: str = 'today', start_date: str = None, end_date: str = None) -> dict:
         start_local, end_local, tz_name = self._resolve_local_dates(
             date_range, start_date=start_date, end_date=end_date, marketplace=self.config.marketplace
