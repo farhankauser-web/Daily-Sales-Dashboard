@@ -111,6 +111,10 @@ ACTIVE_STATUSES = [
     ('customs',             'Customs Clearance'),
     ('inland',              'Inland Transit'),
     ('out_for_delivery',    'Out for Delivery'),
+    # Amazon has started counting the container in. Still "active" because the
+    # units are not all on hand yet — the planner counts the un-received
+    # remainder (packed − received) as inbound while this lasts.
+    ('receiving',           'Receiving at Amazon'),
 ]
 TERMINAL_STATUSES = [('received', 'Received'), ('cancelled', 'Cancelled')]
 ALL_STATUSES = ACTIVE_STATUSES + TERMINAL_STATUSES
@@ -147,6 +151,14 @@ class InTransitShipment(models.Model):
                                         null=True, blank=True)
     updated_at    = models.DateTimeField(auto_now=True)
 
+    # ── Amazon's view of the linked inbound shipment (see shipment_id) ──
+    # RECEIVING means intake has started — that is what moves a container out
+    # of In Transit. CLOSED is what finally moves it to History; our own
+    # `status` stays ops-owned so a human can still override.
+    amazon_status     = models.CharField(max_length=32, blank=True)
+    amazon_updated_at = models.DateTimeField(null=True, blank=True)
+    amazon_synced_at  = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ['eta_destination', 'eta_port']
 
@@ -173,8 +185,21 @@ class InTransitLine(models.Model):
     shipment = models.ForeignKey(InTransitShipment, on_delete=models.CASCADE,
                                  related_name='lines')
     sku      = models.CharField(max_length=64)
-    units    = models.PositiveIntegerField(default=0)          # shipped qty
-    received_units = models.PositiveIntegerField(default=0)    # confirmed on receipt
+    units    = models.PositiveIntegerField(default=0)          # shipped qty (packing list = B)
+    received_units = models.PositiveIntegerField(default=0)    # human count, Goods Receipt
+
+    # ── What Amazon reports for this SKU on the linked inbound shipment ──
+    # Kept apart from received_units so an API sync never overwrites someone's
+    # manual count — where the two disagree, that is itself worth seeing.
+    #
+    # Amazon works in CASES and we ship in EACHES, so both are converted using
+    # units_per_case from the same payload. Amazon's case-pack wins even when
+    # it disagrees with ours (per Farhan): their count is what can actually be
+    # sold, so a pack-size difference lands inside the variance rather than
+    # being argued about.
+    amazon_expected_units = models.PositiveIntegerField(default=0)   # A, eaches
+    amazon_received_units = models.PositiveIntegerField(default=0)   # C, eaches
+    units_per_case        = models.PositiveIntegerField(default=0)   # Amazon's factor
     # procurement attribution (null = legacy line imported before Phase 2).
     # Points at the SKU line — that is the grain a packing list ships at.
     po_line  = models.ForeignKey('POLine', null=True, blank=True,
