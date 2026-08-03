@@ -369,7 +369,8 @@ function updateRevNet(gross){
   if (!el) return;
   const r = VAT_RATES[currentMP] || 0;
   if (r > 0 && gross > 0){
-    el.textContent = 'after VAT: $' + Math.round(gross / (1 + r)).toLocaleString();
+    el.textContent = 'after VAT: ' + curSym()
+                   + Math.round(gross / (1 + r)).toLocaleString();
     el.style.display = '';
   } else { el.style.display = 'none'; }
 }
@@ -444,6 +445,7 @@ function loadProductsBackground(){
         groupName:   g.groupName,
         qty:         g.qty,
         revenue:     g.revenue,
+        revenueNet:  g.revenueNet ?? g.revenue,   // ex-VAT basis for the TOTAL ratios
         cgs:         g.cgs,
         amzFee:      g.amzFee,
         fulfill:     g.fulfill,
@@ -829,9 +831,12 @@ function renderSKUTable(data, targets){
   const tPpc   = sum('totalPpc');
   const tGm    = sum('grossMargin');
   const tTar   = data.reduce((a, g) => a + Number(targets?.by_group?.[g.groupName] || 0), 0);
-  const cmPct  = tRev ? (tCm  / tRev * 100) : 0;
-  const gmPct  = tRev ? (tGm  / tRev * 100) : 0;
-  const tacos  = tRev ? (tPpc / tRev * 100) : 0;
+  // Ratios divide by revenue EX-VAT, matching the per-group rows. Using gross
+  // here would make TOTAL disagree with the rows above it in the UK/AE/SA.
+  const tRevNet = sum('revenueNet') || tRev;
+  const cmPct  = tRevNet ? (tCm  / tRevNet * 100) : 0;
+  const gmPct  = tRevNet ? (tGm  / tRevNet * 100) : 0;
+  const tacos  = tRevNet ? (tPpc / tRevNet * 100) : 0;
   const arpu   = tQty ? (tRev / tQty)       : 0;
   const cpa    = tQty ? (tPpc / tQty)       : 0;
   const gmTar  = tGm - tTar;
@@ -1133,7 +1138,13 @@ function renderMD(md){
 {% endif %}
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
-const fmt = v => '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+// Money is shown in the marketplace's own currency — a UK figure labelled "$"
+// is simply wrong, and mentally converting while reading a report is where
+// mistakes get made. Every fmt() call is scoped to the selected marketplace,
+// so switching region re-renders with the right symbol.
+const CURRENCY = { usa:'$', ca:'C$', uk:'£', de:'€', ae:'AED ', sa:'SAR ' };
+const curSym = () => CURRENCY[currentMP] || '$';
+const fmt = v => curSym() + Number(v).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
 const pct = v => Number(v).toFixed(2) + '%';
 const num = v => Number(v).toLocaleString();
 

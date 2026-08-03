@@ -627,6 +627,11 @@ def product_line_analysis(request):
         var  = parts[2] if len(parts) > 2 else ''
         return pt, pack, var
 
+    # VAT-exclusive basis for every margin/percentage below. 1.0 for the USA.
+    from .sync import _vat_rate
+    vat_rate   = _vat_rate(marketplace)
+    net_factor = 1.0 / (1.0 + vat_rate)
+
     grouped = {}
     for key, m in agg.items():
         sku  = m['sku']
@@ -649,7 +654,16 @@ def product_line_analysis(request):
         total_cgs = cgs_u * qty
         fulfill   = fba_u * qty
         amz_fee   = rev * 0.15
-        cm        = rev - total_cgs - amz_fee - fulfill
+        # Margin is measured on revenue EXCLUDING VAT. In the UK/AE/SA the
+        # item price Amazon reports is VAT-inclusive, and that VAT is never
+        # ours — it is collected on behalf of the tax authority. Dividing a
+        # margin by a VAT-inclusive top line understates every percentage, and
+        # by a different amount per region (UK 20%, SA 15%, AE 5%), so the
+        # regions were not comparable either. sync.py already does this for
+        # the daily aggregates; this path had not caught up.
+        # USA has no VAT, so net_factor is 1.0 and nothing changes there.
+        rev_net   = rev * net_factor
+        cm        = rev_net - total_cgs - amz_fee - fulfill
 
         if product and product.title:
             pt, pack, var = split_title(product.title)
@@ -660,13 +674,14 @@ def product_line_analysis(request):
         if gk not in grouped:
             grouped[gk] = {
                 'pt': pt, 'pack': pack,
-                'qty': 0, 'revenue': 0.0, 'cgs': 0.0,
+                'qty': 0, 'revenue': 0.0, 'revenue_net': 0.0, 'cgs': 0.0,
                 'amz_fee': 0.0, 'fulfill': 0.0, 'cm': 0.0,
                 'ppc': 0.0, '_sku_set': set(), '_asin_set': set(),
             }
         g = grouped[gk]
         g['qty']     += qty
         g['revenue'] += rev
+        g['revenue_net'] += rev_net
         g['cgs']     += total_cgs
         g['amz_fee'] += amz_fee
         g['fulfill'] += fulfill
@@ -766,6 +781,9 @@ def product_line_analysis(request):
     out = []
     for (pt, pack), g in sorted(grouped.items(), key=lambda x: -x[1]['revenue']):
         rev    = g['revenue']
+        # Every ratio below divides by revenue EX-VAT, matching the margin
+        # numerators. Falls back to gross if a group somehow has no net.
+        rev_net = g.get('revenue_net') or rev
         cm     = g['cm']
         ppc    = g['ppc']       # SP + SB + SD total
         ppc_sp = g.get('ppc_sp', ppc)
@@ -779,11 +797,13 @@ def product_line_analysis(request):
             'groupName': f'{pt} · {pack}' if pack != '—' else pt,
             'qty':        qty,
             'revenue':    round(rev, 2),
+            'revenueNet': round(rev_net, 2),
+            'vatRate':    round(vat_rate * 100, 2),
             'cgs':        round(g['cgs'], 2),
             'amzFee':     round(g['amz_fee'], 2),
             'fulfill':    round(g['fulfill'], 2),
             'cm':         round(cm, 2),
-            'cmPct':      round((cm / rev * 100) if rev else 0, 2),
+            'cmPct':      round((cm / rev_net * 100) if rev_net else 0, 2),
             'arpu':       round((rev / qty) if qty else 0, 2),
             'ppcSpend':   round(ppc, 2),
             'spSpend':    round(ppc_sp, 2),
@@ -791,9 +811,9 @@ def product_line_analysis(request):
             'sdSpend':    round(ppc_sd, 2),
             'grossMargin': round(gm, 2),
             'gmPerUnit':  round((gm / qty) if qty else 0, 2),
-            'gmPct':      round((gm / rev * 100) if rev else 0, 2),
+            'gmPct':      round((gm / rev_net * 100) if rev_net else 0, 2),
             'cpa':        round((ppc / qty) if qty else 0, 2),
-            'tacos':      round((ppc / rev * 100) if rev else 0, 2),
+            'tacos':      round((ppc / rev_net * 100) if rev_net else 0, 2),
             'tarGmDay':   round(tar, 2),
             'gmMinusTar': round(gm - tar, 2),
         })
