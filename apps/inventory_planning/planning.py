@@ -113,14 +113,21 @@ def build_projection(region: str = 'usa', horizon: int = HORIZON_DAYS) -> dict:
 
     # transit units + arrival schedule
     transit_units = defaultdict(int)
+    # Subset of the above bound for an Amazon FC rather than AWD/3PL. Amazon
+    # already reports these as FBA "inbound", so they get netted out below to
+    # avoid counting the same cartons twice.
+    fc_transit_units = defaultdict(int)
     arrivals = defaultdict(lambda: defaultdict(int))
     arrival_detail = defaultdict(lambda: defaultdict(list))   # sku→date→[lines]
     unscheduled = defaultdict(int)
-    for line in (InTransitLine.objects.select_related('shipment')
+    for line in (InTransitLine.objects.select_related('shipment', 'shipment__destination')
                  .filter(shipment__region=region)
                  .exclude(shipment__status__in=['received', 'cancelled'])):
         sku = line.sku.upper()
         transit_units[sku] += line.units
+        dest = line.shipment.destination
+        if dest is not None and dest.kind == 'fba':
+            fc_transit_units[sku] += line.units
         eta = line.shipment.eta_destination
         bucket = None
         if eta and eta >= today:
@@ -150,8 +157,16 @@ def build_projection(region: str = 'usa', horizon: int = HORIZON_DAYS) -> dict:
 
         fd = fba_detail.get(sku, {})
         available = int(fd.get('available', 0))
-        inbound = int(fd.get('inbound', 0))
         reserved = int(fd.get('reserved', 0))
+        # Amazon's FBA "inbound" covers anything booked into an inbound
+        # shipment. When a container of ours is sent straight to an FC, those
+        # same units are ALSO an open InTransitLine — counting both inflates
+        # cover. The container is the more detailed record (it carries ETA and
+        # per-line units), so it wins: net the FC-bound container units out of
+        # Amazon's inbound. Anything left over is a genuine AWD→FC transfer,
+        # which has no container behind it and must still count.
+        inbound_raw = int(fd.get('inbound', 0))
+        inbound = max(0, inbound_raw - int(fc_transit_units.get(sku, 0)))
         total_amazon = available + inbound + reserved
         awd = int(awd_units.get(sku, 0))
         tpl = int(threepl_total.get(sku, 0))          # all 3PL warehouses
