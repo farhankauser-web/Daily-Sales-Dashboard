@@ -224,20 +224,30 @@ def w_marketplace_split(user, cfg):
 
 
 def w_scorecard(user, cfg):
-    DM = _DM(); d = _latest_date(); out = []
-    ams = _ams_ppc(d, d)
+    # Each marketplace gets its OWN latest day with sales. A single global
+    # latest date drops whichever regions are behind on the clock: USA is
+    # hours behind UK/AE/SA, so early in the day it had no revenue yet on the
+    # shared date and disappeared from the table entirely.
+    DM = _DM(); out = []
     for mp in MARKETPLACES:
+        d = (DM.objects.filter(marketplace=mp, revenue__gt=0)
+             .aggregate(m=Max('date'))['m'])
+        if not d:
+            continue
         a = DM.objects.filter(marketplace=mp, date=d).aggregate(
             rev=Sum('revenue'), u=Sum('units'), ppc=Sum('ppc_spend'), gm=Sum('gross_margin'))
         rev = float(a['rev'] or 0)
         if rev <= 0:
             continue
-        ppc = max(float(a['ppc'] or 0), ams.get((mp, d), 0.0))
+        ppc = max(float(a['ppc'] or 0), _ams_ppc(d, d, {'marketplace': mp}).get((mp, d), 0.0))
         gm = float(a['gm'] or 0)
-        out.append({'mp': mp, 'flag': FLAG.get(mp, ''), 'revenue': rev, 'units': int(a['u'] or 0),
+        out.append({'mp': mp, 'flag': FLAG.get(mp, ''), 'date': d.isoformat(),
+                    'revenue': rev, 'units': int(a['u'] or 0),
                     'ppc': ppc, 'tacos': (ppc / rev * 100 if rev else 0),
                     'gm_pct': (gm / rev * 100 if rev else 0), 'net': gm - ppc})
-    return {'date': d.isoformat(), 'rows': out}
+    dates = {r['date'] for r in out}
+    return {'date': (out[0]['date'] if len(dates) == 1 and out else None),
+            'mixed_dates': len(dates) > 1, 'rows': out}
 
 
 def w_profit_alerts(user, cfg):

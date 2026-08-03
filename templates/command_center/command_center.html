@@ -262,7 +262,8 @@ const RENDER = {
     const names={usa:'🇺🇸 USA',uk:'🇬🇧 UK',ae:'🇦🇪 UAE',sa:'🇸🇦 KSA',ca:'🇨🇦 CA',de:'🇩🇪 DE'};
     body.classList.add('pad0');
     body.innerHTML = `<table><thead><tr><th>Market</th><th>Revenue</th><th>Units</th><th>PPC</th><th>TACoS</th><th>GM%</th><th>Net</th></tr></thead>
-      <tbody>${(d.rows||[]).map(r=>`<tr><td>${names[r.mp]||r.mp}</td>
+      <tbody>${(d.rows||[]).map(r=>`<tr><td>${names[r.mp]||r.mp}${
+          d.mixed_dates&&r.date?` <span style="color:var(--text3);font-size:10px">${r.date.slice(5)}</span>`:''}</td>
         <td>${money(r.revenue,r.mp)}</td><td>${r.units.toLocaleString()}</td><td>${money(r.ppc,r.mp)}</td>
         <td>${r.tacos.toFixed(1)}%</td><td>${r.gm_pct.toFixed(1)}%</td>
         <td class="cc-pos">${money(r.net,r.mp)}</td></tr>`).join('')||'<tr><td colspan=7 style="color:var(--text3)">No data yet</td></tr>'}</tbody></table>`;
