@@ -98,6 +98,32 @@ def _latest_date():
     return d or timezone.localdate()
 
 
+def _complete_date(cfg=None):
+    """
+    Latest day whose data is COMPLETE for the selected scope.
+
+    finalize_day() stamps DailyMetric.finalized_at once a day's order data is
+    locked, so that flag is our "whole day" marker. KPI tiles compare the
+    latest day against a 14-day average, which only means something if the two
+    are like-for-like. On the unified (All) view the newest date belongs to
+    whichever region crossed midnight first, so a couple of hours of UK/AE/SA
+    were being measured against full-day averages and reported as -95%.
+
+    For a single marketplace: that region's newest finalized day.
+    For 'all': the newest day EVERY reporting region has finalized.
+    """
+    DM = _DM()
+    mp = (cfg or {}).get('marketplace')
+    if mp and mp != 'all':
+        d = (DM.objects.filter(marketplace=mp, finalized_at__isnull=False)
+             .aggregate(m=Max('date'))['m'])
+        return d or _latest_date()
+    per = (DM.objects.filter(finalized_at__isnull=False)
+           .values('marketplace').annotate(m=Max('date')))
+    dates = [r['m'] for r in per if r['m']]
+    return min(dates) if dates else _latest_date()
+
+
 def _mp_now(mp):
     """Current time in a marketplace's own timezone (falls back to server TZ)."""
     from django.conf import settings
@@ -175,7 +201,10 @@ _METRICS = {
 
 
 def w_kpi(user, cfg):
-    DM = _DM(); d = _latest_date(); metric = (cfg or {}).get('metric', 'revenue')
+    # Complete day, not merely the newest one — see _complete_date(). Comparing
+    # a part-day against a 14-day average is what produced "-95.5% vs 14d avg".
+    DM = _DM(); d = _complete_date(cfg); metric = (cfg or {}).get('metric', 'revenue')
+    day_lab = d.strftime('%b %d')
     start = d - timedelta(days=13)
     if metric == 'tacos':
         rows = (_mp_filter(DM.objects.filter(date__range=(start, d)), cfg)
@@ -185,7 +214,7 @@ def w_kpi(user, cfg):
                  if x['r'] else 0 for x in rows]
         cur = spark[-1] if spark else 0
         prev = sum(spark[:-1]) / max(len(spark) - 1, 1) if len(spark) > 1 else cur
-        return {'label': 'TACoS · latest day', 'value': cur, 'format': 'pct',
+        return {'label': f'TACoS · {day_lab}', 'value': cur, 'format': 'pct',
                 'delta': (cur - prev), 'delta_unit': 'pt', 'delta_good': 'down',
                 'delta_label': 'vs 14d avg', 'spark': spark}
     m = _METRICS.get(metric, _METRICS['revenue']); f = m['field']
@@ -198,7 +227,7 @@ def w_kpi(user, cfg):
     cur = spark[-1] if spark else 0
     prev = sum(spark[:-1]) / max(len(spark) - 1, 1) if len(spark) > 1 else cur
     delta = ((cur - prev) / prev * 100) if prev else 0
-    return {'label': f"{m['label']} · latest day", 'value': cur, 'format': m['fmt'],
+    return {'label': f"{m['label']} · {day_lab}", 'value': cur, 'format': m['fmt'],
             'delta': delta, 'delta_unit': '%', 'delta_good': 'up',
             'delta_label': 'vs 14d avg', 'spark': spark}
 
