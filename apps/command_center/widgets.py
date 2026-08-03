@@ -269,11 +269,15 @@ def w_scorecard(user, cfg):
         if rev <= 0:
             continue
         ppc = max(float(a['ppc'] or 0), _ams_ppc(d, d, {'marketplace': mp}).get((mp, d), 0.0))
+        # DailyMetric.gross_margin is ALREADY contribution margin minus ad
+        # spend — sync.py computes it as "GM = CM − PPC". The old 'net' column
+        # subtracted PPC from it a second time, understating profit by exactly
+        # one PPC. GM is the bottom line here; there is no separate net.
         gm = float(a['gm'] or 0)
         out.append({'mp': mp, 'flag': FLAG.get(mp, ''), 'date': d.isoformat(),
                     'revenue': rev, 'units': int(a['u'] or 0),
                     'ppc': ppc, 'tacos': (ppc / rev * 100 if rev else 0),
-                    'gm_pct': (gm / rev * 100 if rev else 0), 'net': gm - ppc})
+                    'gm': gm, 'gm_pct': (gm / rev * 100 if rev else 0)})
     dates = {r['date'] for r in out}
     return {'date': (out[0]['date'] if len(dates) == 1 and out else None),
             'mixed_dates': len(dates) > 1, 'rows': out}

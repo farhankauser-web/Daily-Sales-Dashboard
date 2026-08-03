@@ -86,6 +86,7 @@
   /* scorecard / tables in widgets */
   .cc-body table{font-size:12px} .cc-body td,.cc-body th{padding:6px 8px}
   .cc-pos{color:var(--cc-good);font-weight:600}
+  .cc-neg{color:var(--crit-ink);font-weight:600}
 
   /* mini rows */
   .cc-row{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -261,12 +262,16 @@ const RENDER = {
     if(d.error) return RENDER._default(body,d);
     const names={usa:'🇺🇸 USA',uk:'🇬🇧 UK',ae:'🇦🇪 UAE',sa:'🇸🇦 KSA',ca:'🇨🇦 CA',de:'🇩🇪 DE'};
     body.classList.add('pad0');
-    body.innerHTML = `<table><thead><tr><th>Market</th><th>Revenue</th><th>Units</th><th>PPC</th><th>TACoS</th><th>GM%</th><th>Net</th></tr></thead>
+    // GM here is contribution margin AFTER ad spend (sync.py: GM = CM − PPC),
+    // so it is the bottom line — there is no further "net" to subtract.
+    body.innerHTML = `<table><thead><tr><th>Market</th><th>Revenue</th><th>Units</th><th>PPC</th><th>TACoS</th>
+      <th title="Contribution margin after PPC">GM</th><th title="GM ÷ revenue">GM%</th></tr></thead>
       <tbody>${(d.rows||[]).map(r=>`<tr><td>${names[r.mp]||r.mp}${
           d.mixed_dates&&r.date?` <span style="color:var(--text3);font-size:10px">${r.date.slice(5)}</span>`:''}</td>
         <td>${money(r.revenue,r.mp)}</td><td>${r.units.toLocaleString()}</td><td>${money(r.ppc,r.mp)}</td>
-        <td>${r.tacos.toFixed(1)}%</td><td>${r.gm_pct.toFixed(1)}%</td>
-        <td class="cc-pos">${money(r.net,r.mp)}</td></tr>`).join('')||'<tr><td colspan=7 style="color:var(--text3)">No data yet</td></tr>'}</tbody></table>`;
+        <td>${r.tacos.toFixed(1)}%</td>
+        <td class="${r.gm>=0?'cc-pos':'cc-neg'}">${money(r.gm,r.mp)}</td>
+        <td>${r.gm_pct.toFixed(1)}%</td></tr>`).join('')||'<tr><td colspan=7 style="color:var(--text3)">No data yet</td></tr>'}</tbody></table>`;
   },
   profit_alerts(body,d){
     if(d.error) return RENDER._default(body,d);
@@ -416,7 +421,15 @@ function currentLayout(){
   return grid.getGridItems().map(el=>{const n=el.gridstackNode;
     return {key:el.dataset.key,x:n.x,y:n.y,w:n.w,h:n.h,config:JSON.parse(el.dataset.cfg||'{}')};});
 }
-function scheduleSave(){ clearTimeout(saveT); saveT=setTimeout(saveLayout,700); }
+let ccReady=false;   // true once the initial render has settled — see bottom
+function ccHint(){
+  return editing ? 'Edit mode — drag to move, pull corners to resize, ✕ to remove'
+                 : 'Your personal Command Center · drag & resize in Edit mode';
+}
+function scheduleSave(){
+  if(!ccReady) return;               // ignore events from the initial populate
+  clearTimeout(saveT); saveT=setTimeout(saveLayout,700);
+}
 async function saveLayout(){
   const st=document.getElementById('ccStatus'); st.textContent='Saving…';
   try{
@@ -424,6 +437,9 @@ async function saveLayout(){
       headers:{'Content-Type':'application/json','X-CSRFToken':CSRF_TOKEN},
       body:JSON.stringify({layout:currentLayout()})});
     st.textContent='All changes saved ✓';
+    // Transient confirmation, not a permanent banner.
+    clearTimeout(window._ccHintT);
+    window._ccHintT=setTimeout(function(){ st.textContent=ccHint(); },2500);
   }catch(e){ st.textContent='Save failed'; }
 }
 grid.on('change added removed resizestop dragstop', scheduleSave);
@@ -434,9 +450,8 @@ document.getElementById('ccEdit').onclick=function(){
   document.getElementById('grid').classList.toggle('editing',editing);
   this.classList.toggle('btn-primary',editing); this.classList.toggle('btn-secondary',!editing);
   this.innerHTML = editing?'✓ Done':'⧉ Edit layout';
-  document.getElementById('ccStatus').textContent = editing
-    ? 'Edit mode — drag to move, pull corners to resize, ✕ to remove'
-    : 'Your personal Command Center · drag & resize in Edit mode';
+  clearTimeout(window._ccHintT);
+  document.getElementById('ccStatus').textContent = ccHint();
 };
 
 // drawer
@@ -469,7 +484,10 @@ document.getElementById('ccReset').onclick=async function(){
   });
 })();
 
-// initial render
+// initial render. Populating the grid fires Gridstack's 'added'/'change'
+// events, which would otherwise trigger a save — and leave "All changes
+// saved ✓" on screen — on every page load without the user touching anything.
 LAYOUT.forEach(addItem);
+setTimeout(function(){ ccReady = true; }, 900);
 </script>
 {% endblock %}
