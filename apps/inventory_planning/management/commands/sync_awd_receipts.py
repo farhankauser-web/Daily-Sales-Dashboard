@@ -140,19 +140,36 @@ class Command(BaseCommand):
             f'    packed(B)={packed:>8,}   declared(A)={exp:>8,}   '
             f'received(C)={rcv:>8,}   variance(B−C)={packed - rcv:>+8,}')
 
-        shortage = packsize = 0
-        for sku, v in sorted(amz.items()):
+        # Nothing counted yet ⇒ still on the water, not a loss. Saying
+        # "variance +12,146" for a container Amazon has only CREATED would
+        # read as a total write-off.
+        if rcv == 0 and data['status'].upper() in ('CREATED', 'SHIPPED', ''):
+            self.stdout.write(self.style.NOTICE(
+                '      not yet received — in transit, no variance to assess'))
+            return self._maybe_write(sh, ref, data, amz, lines, opts, now)
+
+        # Shortfall is packed-minus-received PER SKU. It must never be derived
+        # from expectedQuantity: Amazon reconciles against what we declared
+        # (A), and A ≥ B always, so an A-based figure invents a shortage out
+        # of our own over-declaration and would trigger a bogus claim.
+        short = over = 0
+        for sku, v in amz.items():
             line = lines.get(sku)
-            b = int(line.units or 0) if line else 0
-            # Same cases but fewer eaches ⇒ pack-size disagreement, not loss.
-            if v['received_cases'] < v['expected_cases']:
-                shortage += (v['expected_cases'] - v['received_cases']) * v['units_per_case']
-            if line and v['received_cases'] == v['expected_cases'] and b != v['received_units']:
-                packsize += b - v['received_units']
-        if shortage or packsize:
-            self.stdout.write(
-                f'      of which  shortage(cases short)={shortage:>+7,}   '
-                f'pack-size difference={packsize:>+7,}')
+            if not line:
+                continue
+            b, c = int(line.units or 0), v['received_units']
+            short += max(0, b - c)
+            over += max(0, c - b)
+        declared_gap = exp - packed          # A − B, informational only
+        bits = []
+        if short:
+            bits.append(f'shortfall(B−C)={short:>+7,}')
+        if over:
+            bits.append(f'over-received={over:>+7,}')
+        if declared_gap:
+            bits.append(f'over-declared(A−B)={declared_gap:>+7,} (not a loss)')
+        if bits:
+            self.stdout.write('      ' + '   '.join(bits))
 
         missing = [s for s in amz if s not in lines]
         if missing:
@@ -160,8 +177,12 @@ class Command(BaseCommand):
                 f'      {len(missing)} SKU(s) Amazon lists that our packing '
                 f'list does not: {", ".join(sorted(missing)[:5])}'))
 
+        return self._maybe_write(sh, ref, data, amz, lines, opts, now)
+
+    def _maybe_write(self, sh, ref, data, amz, lines, opts, now):
         if not opts['apply']:
             return
+        rcv = sum(v['received_units'] for v in amz.values())
 
         n = 0
         for sku, v in amz.items():
