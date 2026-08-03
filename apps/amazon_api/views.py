@@ -605,7 +605,14 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
         from zoneinfo import ZoneInfo as _ZI
         from apps.dashboard.models import DailySkuSnapshot as _SkuSnap, Product as _Prod
         from apps.dashboard.models import PPCProductSnapshot as _ProdSnap, PPCCampaignSnapshot as _CampSnap
+        from apps.dashboard.sync import net_factor as _net_factor
         from django.db.models import Sum as _Sum
+
+        # DailySkuSnapshot.revenue is what the customer paid (VAT-inclusive in
+        # UK/AE/SA); .cm is already measured ex-VAT by sync.py. So every ratio
+        # here has to divide by revenue × _nf, or the numerator and denominator
+        # sit on different bases and UK margins read ~9 points too flattering.
+        _nf = _net_factor(marketplace)
 
         def _split(title):
             parts = [p.strip() for p in (title or '').split(' - ') if p.strip()]
@@ -720,13 +727,15 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
                     'group':     f'{pt}-{pack}'.upper().replace(' ', '-')[:12].rstrip('-'),
                     'groupName': f'{pt} · {pack}' if pack != '—' else pt,
                     '_pt': pt, '_pack': pack,
-                    'qty': 0, 'revenue': 0.0, 'cgs': 0.0, 'amzFee': 0.0,
+                    'qty': 0, 'revenue': 0.0, 'revenueNet': 0.0,
+                    'cgs': 0.0, 'amzFee': 0.0,
                     'fulfill': 0.0, 'cm': 0.0, 'spSpend': 0.0,
                     'variants': [],
                 }
             g = grouped[gk]
-            _rev = float(snap.revenue)
-            _cm  = float(snap.cm)
+            _rev     = float(snap.revenue)
+            _rev_net = _rev * _nf
+            _cm      = float(snap.cm)
 
             # Per-variant PPC from the allocator (authoritative when present);
             # falls back to legacy per-ASIN computation when the allocator hasn't
@@ -754,6 +763,7 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
 
             g['qty']     += snap.qty
             g['revenue'] += _rev
+            g['revenueNet'] += _rev_net
             g['cgs']     += float(snap.cgs)
             g['amzFee']  += float(snap.amz_fee)
             g['fulfill'] += float(snap.fulfill)
@@ -772,11 +782,12 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
                 'sku': sku, 'asin': asin,
                 'name': var or sku,
                 'qty': snap.qty, 'revenue': round(_rev, 2),
+                'revenueNet': round(_rev_net, 2),
                 'cgs': round(float(snap.cgs), 2),
                 'amzFee': round(float(snap.amz_fee), 2),
                 'fulfill': round(float(snap.fulfill), 2),
                 'cm': round(_cm, 2),
-                'cmPct': round((_cm / _rev * 100) if _rev else 0, 2),
+                'cmPct': round((_cm / _rev_net * 100) if _rev_net else 0, 2),
                 'arpu': round(_rev / snap.qty, 2) if snap.qty else 0,
                 # Variant-level PPC — allocator values when available, else
                 # historical-only (today shows $0 in legacy path; allocator
@@ -786,8 +797,8 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
                 'sdSpend':     round(_sd_v, 2),
                 'totalPpc':    round(_total_v, 2),
                 'grossMargin': round(_cm - _total_v, 2),
-                'gmPct':       round(((_cm - _total_v) / _rev * 100) if _rev else 0, 2),
-                'tacos':       round((_total_v / _rev * 100) if _rev else 0, 2),
+                'gmPct':       round(((_cm - _total_v) / _rev_net * 100) if _rev_net else 0, 2),
+                'tacos':       round((_total_v / _rev_net * 100) if _rev_net else 0, 2),
                 'cpa':         round((_total_v / snap.qty), 2) if snap.qty else 0,
                 'ppc_source':  _ppc_source_v,
                 'ppc_confidence':  (_alloc.get('conf') if _alloc else None),
@@ -807,8 +818,9 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
         for _gk_canon, g in sorted(grouped.items(), key=lambda x: -x[1]['revenue']):
             pt   = g['_pt']
             pack = g['_pack']
-            rev = g['revenue']
-            cm  = g['cm']
+            rev     = g['revenue']
+            rev_net = g['revenueNet'] or rev
+            cm      = g['cm']
             _ppc_for_group = grouped_ppc_ck.get(_gk_canon, {'sp': 0.0, 'sb': 0.0, 'sd': 0.0})
             # Allocator-driven path (preferred): group SP/SB/SD are the
             # sum of variant rows — already reconciled to campaign spend.
@@ -830,19 +842,20 @@ def _build_cached_skus(marketplace: str, date, sp_total: float, sb_total: float,
                 '_pt': pt, '_pack': pack,
                 'qty':         g['qty'],
                 'revenue':     round(rev, 2),
+                'revenueNet':  round(rev_net, 2),
                 'cgs':         round(g['cgs'], 2),
                 'amzFee':      round(g['amzFee'], 2),
                 'fulfill':     round(g['fulfill'], 2),
                 'cm':          round(cm, 2),
-                'cmPct':       round((cm / rev * 100) if rev else 0, 2),
+                'cmPct':       round((cm / rev_net * 100) if rev_net else 0, 2),
                 'arpu':        round(rev / g['qty'], 2) if g['qty'] else 0,
                 'spSpend':     round(sp, 2),
                 'sdSpend':     round(grp_sd, 2),
                 'sbSpend':     round(grp_sb, 2),
                 'totalPpc':    total,
                 'grossMargin': gm,
-                'gmPct':       round((gm / rev * 100) if rev else 0, 2),
-                'tacos':       round((total / rev * 100) if rev else 0, 2),
+                'gmPct':       round((gm / rev_net * 100) if rev_net else 0, 2),
+                'tacos':       round((total / rev_net * 100) if rev_net else 0, 2),
                 'cpa':         0,
                 'variants':    g['variants'],
                 'ppc_source':  ('allocator' if g.get('_alloc_any')
@@ -1052,6 +1065,9 @@ def fetch_dashboard_data(request):
                         _sd = float(_camp.get('sd', 0) or 0)
                     _ppc  = (_sp + _sb + _sd) or float(_dm.ppc_spend or 0)
                     _rev  = float(_dm.revenue or 0)
+                    # Ex-VAT top line — the basis for every ratio below.
+                    from apps.dashboard.sync import net_factor as _net_factor
+                    _rev_net = float(_dm.revenue_net or 0) or (_rev * _net_factor(marketplace))
                     _cm   = float(_dm.contribution_margin or 0)
                     _gm   = round(_cm - _ppc, 2)   # always GM = CM − PPC
                     _cached_at = _dm.synced_at.astimezone(
@@ -1100,6 +1116,7 @@ def fetch_dashboard_data(request):
                         'sales': {
                             'metrics': {
                                 'ordered_revenue': _rev,
+                                'revenue_net':     round(_rev_net, 2),
                                 'ordered_units':   _dm.units,
                                 'total_orders':    _dm.orders,
                                 'cgs':      float(_dm.cgs or 0),
@@ -1109,7 +1126,7 @@ def fetch_dashboard_data(request):
                                 'cm_pct':   round(float(_dm.cm_pct or 0) * 100, 2),
                                 'ppc_spend': _ppc,
                                 'gross_margin': _gm,
-                                'gm_pct':   round((_gm / _rev * 100) if _rev else 0, 2),
+                                'gm_pct':   round((_gm / _rev_net * 100) if _rev_net else 0, 2),
                                 'arpu':     round(_rev / _dm.units, 2) if _dm.units else 0,
                             },
                             'daily_breakdown': _daily_breakdown,
@@ -1211,6 +1228,9 @@ def fetch_dashboard_data(request):
 
                 _ppc = (_sp + _sb + _sd) if (_sp + _sb + _sd) > 0 else _ppc_hourly
                 _gm_final = round(_cm - _ppc, 2)
+                # Ex-VAT top line — _cm from the snapshots is already on it.
+                from apps.dashboard.sync import net_factor as _net_factor
+                _rev_net = _rev * _net_factor(marketplace)
 
                 _cached_at = (_last_synced.astimezone(ZoneInfo(_mp_tz))
                               .strftime('%-I:%M %p %Z')) if _last_synced else '—'
@@ -1248,16 +1268,17 @@ def fetch_dashboard_data(request):
                     'sales': {
                         'metrics': {
                             'ordered_revenue': round(_rev, 2),
+                            'revenue_net':     round(_rev_net, 2),
                             'ordered_units':   _units,
                             'total_orders':    _orders,
                             'cgs':             round(_cgs, 2),
                             'amz_fee':         round(_amz, 2),
                             'fulfill':         round(_fba, 2),
                             'cm':              round(_cm, 2),
-                            'cm_pct':          round((_cm / _rev * 100) if _rev else 0, 2),
+                            'cm_pct':          round((_cm / _rev_net * 100) if _rev_net else 0, 2),
                             'ppc_spend':       round(_ppc, 2),
                             'gross_margin':    _gm_final,
-                            'gm_pct':          round((_gm_final / _rev * 100) if _rev else 0, 2),
+                            'gm_pct':          round((_gm_final / _rev_net * 100) if _rev_net else 0, 2),
                             'arpu':            round(_rev / _units, 2) if _units else 0,
                         },
                         'hourly_breakdown': [
@@ -1339,6 +1360,7 @@ def fetch_dashboard_data(request):
                         marketplace=marketplace, date__gte=_start, date__lte=_end,
                     ).aggregate(
                         revenue   = _Sum('revenue'),
+                        revenue_net = _Sum('revenue_net'),
                         units     = _Sum('units'),
                         orders    = _Sum('orders'),
                         cgs       = _Sum('cgs'),
@@ -1346,7 +1368,12 @@ def fetch_dashboard_data(request):
                         fba       = _Sum('fba_fee'),
                         cm        = _Sum('contribution_margin'),
                     )
+                    from apps.dashboard.sync import net_factor as _net_factor
+                    _range_nf = _net_factor(marketplace)
                     _rev   = float(_agg['revenue'] or 0)
+                    # Ex-VAT top line. Prefer the stored per-day figure (survives
+                    # a future VAT-rate change); fall back to today's rate.
+                    _rev_net = float(_agg['revenue_net'] or 0) or (_rev * _range_nf)
                     _units = int(_agg['units']    or 0)
                     _ords  = int(_agg['orders']   or 0)
                     _cgs   = float(_agg['cgs']    or 0)
@@ -1478,13 +1505,17 @@ def fetch_dashboard_data(request):
                                 'group':     f'{pt}-{pack}'.upper().replace(' ', '-')[:12].rstrip('-'),
                                 'groupName': f'{pt} · {pack}' if pack != '—' else pt,
                                 '_pt': pt, '_pack': pack,
-                                'qty': 0, 'revenue': 0.0, 'cgs': 0.0, 'amzFee': 0.0,
+                                'qty': 0, 'revenue': 0.0, 'revenueNet': 0.0,
+                                'cgs': 0.0, 'amzFee': 0.0,
                                 'fulfill': 0.0, 'cm': 0.0,
                                 'sp_past': 0.0,        # sum of per-ASIN SP for past days
                                 'variants': [],
                             }
                         g = _grouped[gk]
                         s_rev = float(s['revenue'] or 0)
+                        # Ratios divide by revenue ex-VAT — `cm` from the snapshot
+                        # is already on that basis (see sync.py).
+                        s_rev_net = s_rev * _range_nf
                         s_cm  = float(s['cm']      or 0)
                         s_qty = int(s['qty']       or 0)
 
@@ -1512,6 +1543,7 @@ def fetch_dashboard_data(request):
 
                         g['qty']     += s_qty
                         g['revenue'] += s_rev
+                        g['revenueNet'] += s_rev_net
                         g['cgs']     += float(s['cgs'] or 0)
                         g['amzFee']  += float(s['amz'] or 0)
                         g['fulfill'] += float(s['fba'] or 0)
@@ -1531,19 +1563,20 @@ def fetch_dashboard_data(request):
                             'name': var or sku,
                             'qty': s_qty,
                             'revenue': round(s_rev, 2),
+                            'revenueNet': round(s_rev_net, 2),
                             'cgs':     round(float(s['cgs'] or 0), 2),
                             'amzFee':  round(float(s['amz'] or 0), 2),
                             'fulfill': round(float(s['fba'] or 0), 2),
                             'cm':      round(s_cm, 2),
-                            'cmPct':   round((s_cm / s_rev * 100) if s_rev else 0, 2),
+                            'cmPct':   round((s_cm / s_rev_net * 100) if s_rev_net else 0, 2),
                             'arpu':    round(s_rev / s_qty, 2) if s_qty else 0,
                             'spSpend': round(_sp_v, 2),
                             'sbSpend': round(_sb_v, 2),
                             'sdSpend': round(_sd_v, 2),
                             'totalPpc':    round(_total_v, 2),
                             'grossMargin': round(s_cm - _total_v, 2),
-                            'gmPct':       round(((s_cm - _total_v) / s_rev * 100) if s_rev else 0, 2),
-                            'tacos':       round((_total_v / s_rev * 100) if s_rev else 0, 2),
+                            'gmPct':       round(((s_cm - _total_v) / s_rev_net * 100) if s_rev_net else 0, 2),
+                            'tacos':       round((_total_v / s_rev_net * 100) if s_rev_net else 0, 2),
                             'cpa':         round(_total_v / s_qty, 2) if s_qty else 0,
                             'last_hour_units': 0,
                             'ppc_source':  _ppc_source_v,
@@ -1553,6 +1586,7 @@ def fetch_dashboard_data(request):
                     for g in sorted(_grouped.values(), key=lambda x: -x['revenue']):
                         gk  = (g['_pt'], g['_pack'])
                         rev = g['revenue']; cm = g['cm']
+                        rev_net = g['revenueNet'] or rev
                         if g.get('_alloc_any'):
                             # Allocator drove the variants — group totals are
                             # variant sums (reconciled to campaign spend).
@@ -1571,15 +1605,15 @@ def fetch_dashboard_data(request):
                             sd_grp   = sd_past + sd_today
                         total    = round(sp_grp + sb_grp + sd_grp, 2)
                         gm       = round(cm - total, 2)
-                        g['cmPct']       = round((cm / rev * 100) if rev else 0, 2)
+                        g['cmPct']       = round((cm / rev_net * 100) if rev_net else 0, 2)
                         g['arpu']        = round(rev / g['qty'], 2) if g['qty'] else 0
                         g['spSpend']     = round(sp_grp, 2)
                         g['sbSpend']     = round(sb_grp, 2)
                         g['sdSpend']     = round(sd_grp, 2)
                         g['totalPpc']    = total
                         g['grossMargin'] = gm
-                        g['gmPct']       = round((gm / rev * 100) if rev else 0, 2)
-                        g['tacos']       = round((total / rev * 100) if rev else 0, 2)
+                        g['gmPct']       = round((gm / rev_net * 100) if rev_net else 0, 2)
+                        g['tacos']       = round((total / rev_net * 100) if rev_net else 0, 2)
                         g['cpa']         = 0
                         g['last_hour_units'] = 0
                         # Source label — allocator wins when present, else legacy
@@ -1589,7 +1623,7 @@ def fetch_dashboard_data(request):
                             g['ppc_source'] = 'mixed' if (_has_past and _has_today_in_range) else (
                                 'campaign_attributed' if _has_today_in_range else 'asin_actual'
                             )
-                        for f in ('revenue', 'cgs', 'amzFee', 'fulfill', 'cm'):
+                        for f in ('revenue', 'revenueNet', 'cgs', 'amzFee', 'fulfill', 'cm'):
                             g[f] = round(g[f], 2)
                         g.pop('sp_past', None)
                         _skus_out.append(g)
@@ -1638,16 +1672,17 @@ def fetch_dashboard_data(request):
                         'sales': {
                             'metrics': {
                                 'ordered_revenue': round(_rev, 2),
+                                'revenue_net':     round(_rev_net, 2),
                                 'ordered_units':   _units,
                                 'total_orders':    _ords,
                                 'cgs':             round(_cgs, 2),
                                 'amz_fee':         round(_amz, 2),
                                 'fulfill':         round(_fba, 2),
                                 'cm':              round(_cm, 2),
-                                'cm_pct':          round((_cm / _rev * 100) if _rev else 0, 2),
+                                'cm_pct':          round((_cm / _rev_net * 100) if _rev_net else 0, 2),
                                 'ppc_spend':       round(_ppc, 2),
                                 'gross_margin':    _gm,
-                                'gm_pct':          round((_gm / _rev * 100) if _rev else 0, 2),
+                                'gm_pct':          round((_gm / _rev_net * 100) if _rev_net else 0, 2),
                                 'arpu':            round(_rev / _units, 2) if _units else 0,
                             },
                             'daily_breakdown': _daily_breakdown,
@@ -1874,7 +1909,11 @@ def fetch_dashboard_data(request):
             return pt, pack, var
 
         sku_rows = []
-        tot_rev = tot_units = tot_cgs = tot_amz = tot_fbf = 0.0
+        # Margins are measured ex-VAT here too, so the live path can't disagree
+        # with the cached one it eventually gets replaced by.
+        from apps.dashboard.sync import net_factor as _net_factor
+        _live_nf = _net_factor(marketplace)
+        tot_rev = tot_rev_net = tot_units = tot_cgs = tot_amz = tot_fbf = 0.0
         for key, m in agg.items():
             sku  = m['sku']
             asin = m['asin']
@@ -1907,11 +1946,13 @@ def fetch_dashboard_data(request):
             total_cgs = cgs_per_unit * qty
             fulfill   = fba_per_unit * qty
             amz_fee   = rev * 0.15                              # flat 15% referral
-            cm        = rev - total_cgs - amz_fee - fulfill
-            cm_pct       = (cm / rev * 100) if rev else 0.0
+            rev_net   = rev * _live_nf
+            cm        = rev_net - total_cgs - amz_fee - fulfill
+            cm_pct       = (cm / rev_net * 100) if rev_net else 0.0
             arpu         = (rev / qty)      if qty else 0.0
 
             tot_rev   += rev
+            tot_rev_net += rev_net
             tot_units += qty
             tot_cgs   += total_cgs
             tot_amz   += amz_fee
@@ -1927,6 +1968,7 @@ def fetch_dashboard_data(request):
                 'name': var or sku or asin,
                 'qty': qty,
                 'revenue': round(rev, 2),
+                'revenueNet': round(rev_net, 2),
                 'cgs': round(total_cgs, 2),
                 'amzFee': round(amz_fee, 2),
                 'fulfill': round(fulfill, 2),
@@ -1949,14 +1991,14 @@ def fetch_dashboard_data(request):
                     'groupName': f'{r["_pt"]} · {r["_pack"]}' if r['_pack'] != '—' else r['_pt'],
                     '_pt': r['_pt'],    # kept for SB/SD group lookup — stripped before JSON
                     '_pack': r['_pack'],
-                    'qty': 0, 'revenue': 0.0,
+                    'qty': 0, 'revenue': 0.0, 'revenueNet': 0.0,
                     'cgs': 0.0, 'amzFee': 0.0, 'fulfill': 0.0, 'cm': 0.0,
                     'spSpend': 0, 'sdSpend': 0, 'sbSpend': 0, 'totalPpc': 0,
                     'cpa': 0, 'tacos': 0,
                     'variants': [],
                 }
             g = grouped[gk]
-            for f in ('qty', 'revenue', 'cgs', 'amzFee', 'fulfill', 'cm'):
+            for f in ('qty', 'revenue', 'revenueNet', 'cgs', 'amzFee', 'fulfill', 'cm'):
                 g[f] += r[f]
             v = {k: r[k] for k in r if not k.startswith('_')}
             g['variants'].append(v)
@@ -1964,14 +2006,15 @@ def fetch_dashboard_data(request):
         skus_out = []
         for g in grouped.values():
             rev = g['revenue']
+            rev_net = g['revenueNet'] or rev
             cm  = g['cm']
             sp  = g.get('spSpend', 0)
             gm  = cm - sp
-            g['cmPct']       = round((cm  / rev * 100) if rev else 0, 2)
+            g['cmPct']       = round((cm  / rev_net * 100) if rev_net else 0, 2)
             g['arpu']        = round((rev / g['qty']) if g['qty'] else 0, 2)
             g['grossMargin'] = round(gm, 2)
-            g['gmPct']       = round((gm / rev * 100) if rev else 0, 2)
-            for f in ('revenue', 'cgs', 'amzFee', 'fulfill', 'cm'):
+            g['gmPct']       = round((gm / rev_net * 100) if rev_net else 0, 2)
+            for f in ('revenue', 'revenueNet', 'cgs', 'amzFee', 'fulfill', 'cm'):
                 g[f] = round(g[f], 2)
             skus_out.append(g)
         skus_out.sort(key=lambda x: -x['revenue'])
@@ -1981,20 +2024,24 @@ def fetch_dashboard_data(request):
         order_level_units = sum(v['units']   for v in daily_buckets.values())
         final_rev   = round(tot_rev, 2)   if tot_rev   > 0 else round(order_level_rev, 2)
         final_units = int(tot_units)      if tot_units > 0 else order_level_units
-        total_cm    = round(final_rev - tot_cgs - tot_amz - tot_fbf, 2)
+        # The order-level fallback is gross, so derive its net with the rate.
+        final_rev_net = (round(tot_rev_net, 2) if tot_rev > 0
+                         else round(order_level_rev * _live_nf, 2))
+        total_cm    = round(final_rev_net - tot_cgs - tot_amz - tot_fbf, 2)
 
         data = {
             'metrics': {
                 'ordered_revenue': final_rev,
+                'revenue_net':     final_rev_net,
                 'ordered_units':   final_units,
                 'total_orders':    len(unique_order_ids),
                 'cgs':             round(tot_cgs, 2),
                 'amz_fee':         round(tot_amz, 2),
                 'fulfill':         round(tot_fbf, 2),
                 'cm':              total_cm,
-                'cm_pct':          round((total_cm / final_rev * 100) if final_rev else 0, 2),
+                'cm_pct':          round((total_cm / final_rev_net * 100) if final_rev_net else 0, 2),
                 'gross_margin':    total_cm,
-                'gm_pct':          round((total_cm / final_rev * 100) if final_rev else 0, 2),
+                'gm_pct':          round((total_cm / final_rev_net * 100) if final_rev_net else 0, 2),
                 'arpu':            round((final_rev / final_units) if final_units else 0, 2),
             },
             'daily_breakdown': daily_breakdown,
@@ -2297,13 +2344,15 @@ def fetch_dashboard_data(request):
                             sp = sku_spend.get(v_sku) or asin_spend.get(v_asin) or 0.0
                             v_cm  = variant.get('cm', 0)
                             v_rev = variant.get('revenue', 0)
+                            # Ratios stay on the ex-VAT base the row was built with.
+                            v_net = variant.get('revenueNet') or v_rev
                             variant['spSpend']     = round(sp, 2)
                             variant['sdSpend']     = 0
                             variant['sbSpend']     = 0
                             variant['totalPpc']    = round(sp, 2)
-                            variant['tacos']       = round((sp / v_rev * 100) if v_rev else 0, 2)
+                            variant['tacos']       = round((sp / v_net * 100) if v_net else 0, 2)
                             variant['grossMargin'] = round(v_cm - sp, 2)
-                            variant['gmPct']       = round(((v_cm - sp) / v_rev * 100) if v_rev else 0, 2)
+                            variant['gmPct']       = round(((v_cm - sp) / v_net * 100) if v_net else 0, 2)
                             grp_sp += sp
 
                         # SB/SD applied at group row level — separate columns
@@ -2312,21 +2361,23 @@ def fetch_dashboard_data(request):
                         _grp_sd = _sb_sd_by_group.get(_gk, {}).get('sd', 0.0)
                         _grp_total = grp_sp + _grp_sb + _grp_sd
                         grp_rev = grp.get('revenue', 0)
+                        grp_net = grp.get('revenueNet') or grp_rev
                         grp_cm  = grp.get('cm', 0)
                         grp['spSpend']     = round(grp_sp, 2)
                         grp['sbSpend']     = round(_grp_sb, 2)
                         grp['sdSpend']     = round(_grp_sd, 2)
                         grp['totalPpc']    = round(_grp_total, 2)
-                        grp['tacos']       = round((_grp_total / grp_rev * 100) if grp_rev else 0, 2)
+                        grp['tacos']       = round((_grp_total / grp_net * 100) if grp_net else 0, 2)
                         grp['grossMargin'] = round(grp_cm - _grp_total, 2)
-                        grp['gmPct']       = round(((grp_cm - _grp_total) / grp_rev * 100) if grp_rev else 0, 2)
+                        grp['gmPct']       = round(((grp_cm - _grp_total) / grp_net * 100) if grp_net else 0, 2)
 
                     # ── Patch overall metrics — use authoritative campaign total ──
                     # _camp_total = full SP+SB+SD from live API or DB snapshots,
                     # so this matches the top KPI tile exactly.
                     total_ppc = _camp_total if _camp_total else round(sum(asin_spend.values()), 2)
                     total_cm_val  = data['metrics'].get('cm', 0)
-                    total_rev_val = data['metrics'].get('ordered_revenue', 0)
+                    total_rev_val = (data['metrics'].get('revenue_net')
+                                     or data['metrics'].get('ordered_revenue', 0))
                     data['metrics']['gross_margin'] = round(total_cm_val - total_ppc, 2)
                     data['metrics']['gm_pct'] = round(
                         ((total_cm_val - total_ppc) / total_rev_val * 100) if total_rev_val else 0, 2)

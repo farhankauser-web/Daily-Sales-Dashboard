@@ -167,9 +167,14 @@ def _build_initial_today(marketplace: str) -> dict:
         vs_yest_pct = None  # no comparable data
 
     rev = totals['revenue']
-    gm_pct = round((totals['gm'] / rev * 100), 2) if rev else 0.0
-    cm_pct = round((totals['cm'] / rev * 100), 2) if rev else 0.0
-    tacos  = round((totals['ppc'] / rev * 100), 2) if rev else 0.0
+    # Ratios are measured against revenue ex-VAT, matching the API the page
+    # refreshes from — otherwise the server-rendered tiles flash one number and
+    # the first fetch replaces it with another.
+    from .sync import net_factor as _net_factor
+    rev_net = rev * _net_factor(marketplace)
+    gm_pct = round((totals['gm'] / rev_net * 100), 2) if rev_net else 0.0
+    cm_pct = round((totals['cm'] / rev_net * 100), 2) if rev_net else 0.0
+    tacos  = round((totals['ppc'] / rev_net * 100), 2) if rev_net else 0.0
     arpu   = round(rev / totals['units'], 2) if totals['units'] else 0.0
 
     # As-of timestamp in marketplace TZ

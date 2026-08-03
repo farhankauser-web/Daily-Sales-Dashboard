@@ -633,10 +633,14 @@ function renderKPIs(sales, ads){
       refreshEl.textContent = '';
     }
   }
-  // TACoS = Total PPC / Revenue
-  const tacos = (rev && ppc) ? (ppc / rev * 100) : 0;
-  // GM% = GM / Revenue  (m.gross_margin = CM − PPC, already correct server-side)
-  const gm_pct = rev ? ((m.gross_margin || 0) / rev * 100) : (m.gm_pct || 0);
+  // Every ratio divides by revenue EX-VAT — the VAT on a UK/AE/SA sale is
+  // owed to the tax authority, so it was never ours to earn a margin on.
+  // USA sends revenue_net == revenue, so nothing changes there.
+  const revNet = m.revenue_net || rev;
+  // TACoS = Total PPC / (Revenue − VAT)
+  const tacos = (revNet && ppc) ? (ppc / revNet * 100) : 0;
+  // GM% = GM / (Revenue − VAT)  (m.gross_margin = CM − PPC, already correct server-side)
+  const gm_pct = revNet ? ((m.gross_margin || 0) / revNet * 100) : (m.gm_pct || 0);
   renderKPIsFromObject({
     revenue:      rev,
     units:        m.ordered_units || 0,

@@ -48,6 +48,17 @@ def _vat_rate(marketplace: str) -> float:
     return float(settings.AMAZON_MARKETPLACES.get(marketplace, {}).get('vat', 0) or 0)
 
 
+def net_factor(marketplace: str) -> float:
+    """Multiplier that strips VAT out of a VAT-inclusive figure.
+
+    Every margin and every percentage on the dashboard is measured against
+    revenue EX-VAT, because the VAT collected on a UK/AE/SA sale is never ours
+    — it belongs to the tax authority. Returns 1.0 for the USA, where the
+    reported price carries no VAT and nothing changes.
+    """
+    return 1.0 / (1.0 + _vat_rate(marketplace))
+
+
 def _iter_clean_rows(rows, local_zone, channel_domain='amazon.com'):
     """Yield (purchase_local_date, sku, asin, qty, revenue) for valid rows.
     Skips Cancelled and non-matching channels — matches Sales Snapshot."""
@@ -626,13 +637,19 @@ def aggregate_rows_by_hour(rows, marketplace: str, day: date_cls):
             s['fulfill'] += fulfill_amt
             s['asin']     = s['asin'] or asin
 
-    # Materialise GM/CM (PPC=0 in hourly path until Ads pipeline writes here)
+    # Materialise GM/CM (PPC=0 in hourly path until Ads pipeline writes here).
+    # Measured on revenue EX-VAT, exactly as the daily path does — otherwise
+    # the intraday view and the finalised day disagree by the VAT rate in
+    # UK/AE/SA. `revenue` itself stays gross (what the customer paid).
+    _nf = net_factor(marketplace)
     for b in mp_buckets.values():
-        b['gm']     = b['revenue'] - b['cgs'] - b['amz_fee'] - b['fulfill']
+        b['revenue_net'] = b['revenue'] * _nf
+        b['gm']     = b['revenue_net'] - b['cgs'] - b['amz_fee'] - b['fulfill']
         b['cm']     = b['gm']
         b['orders'] = len(b['orders'])
     for s in sku_buckets.values():
-        s['cm'] = s['revenue'] - s['cgs'] - s['amz_fee'] - s['fulfill']
+        s['revenue_net'] = s['revenue'] * _nf
+        s['cm'] = s['revenue_net'] - s['cgs'] - s['amz_fee'] - s['fulfill']
 
     return dict(mp_buckets), dict(sku_buckets)
 
@@ -651,11 +668,13 @@ def upsert_hourly_snapshots(marketplace: str, day: date_cls,
     metric_rows = 0
     for hour in range(24):
         b = mp_buckets.get(hour) or {
-            'revenue': 0.0, 'units': 0, 'orders': 0,
+            'revenue': 0.0, 'revenue_net': 0.0, 'units': 0, 'orders': 0,
             'cgs': 0.0, 'amz_fee': 0.0, 'fulfill': 0.0,
             'gm': 0.0, 'cm': 0.0,
         }
         rev = b['revenue']
+        # Percentages divide by the ex-VAT top line, matching gm/cm above.
+        rev_net = b.get('revenue_net', rev)
         gm  = b['gm']
         cm  = b['cm']
         HourlyMetricSnapshot.objects.update_or_create(
@@ -668,9 +687,9 @@ def upsert_hourly_snapshots(marketplace: str, day: date_cls,
                 'amazon_fee':           Decimal(f'{b["amz_fee"]:.2f}'),
                 'fba_fee':              Decimal(f'{b["fulfill"]:.2f}'),
                 'gross_margin':         Decimal(f'{gm:.2f}'),
-                'gm_pct':               Decimal(f'{(gm / rev) if rev else 0:.4f}'),
+                'gm_pct':               Decimal(f'{(gm / rev_net) if rev_net else 0:.4f}'),
                 'contribution_margin':  Decimal(f'{cm:.2f}'),
-                'cm_pct':               Decimal(f'{(cm / rev) if rev else 0:.4f}'),
+                'cm_pct':               Decimal(f'{(cm / rev_net) if rev_net else 0:.4f}'),
             },
         )
         metric_rows += 1
