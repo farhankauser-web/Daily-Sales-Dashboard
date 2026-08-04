@@ -88,6 +88,8 @@ urlpatterns = [
     path('fba-transfer-template.xlsx', views.fba_transfer_template,
          name='fba_transfer_template'),
     path('allocation/',      views.allocation,      name='allocation'),
+    path('packing-list-template.xlsx', views.packing_list_template,
+         name='packing_list_template'),
     path('api/packing/preview/', views.api_packing_preview,
          name='api_packing_preview'),
     path('api/packing/commit/',  views.api_packing_commit,

@@ -590,6 +590,81 @@ def container_template(request):
 
 
 @login_required
+@permission_required('can_view_inventory')
+def packing_list_template(request):
+    """Template for the Allocation Workbench packing list.
+
+    Header names here are the ones parse_packing_list() actually looks for, so
+    a file built from this template cannot miss. The parser matches on a
+    substring and accepts alternatives (Units/Qty/Quantity, P/Box or Pcs/Box,
+    PO Number/PO No/PO) — this is simply the spelling that is certain to work.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    wb = Workbook(); ws = wb.active; ws.title = 'Packing List'
+
+    hdr = ['Name', 'SKU', 'Boxes', 'P/Box', 'Units', 'Total CBM', 'PO Number']
+    ws.append(hdr)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill('solid', fgColor='FFF3E0')
+        c.alignment = Alignment(horizontal='center')
+
+    # Two worked examples: with a PO number (exact match) and without (FIFO off
+    # the supplier's oldest open Production Plan).
+    ws.append(['Bath Towel - 4 Pack - White', 'TW-WHT-BTH-4', 60, 24, 1440,
+               12.5, 'PO-2026-018'])
+    ws.append(['Kitchen Towel - 6 Pack - Grey', 'TW-GRY-KTH-6', 100, 24, 2400,
+               18.0, ''])
+
+    for i, w in enumerate([32, 22, 9, 9, 10, 11, 14], start=1):
+        ws.column_dimensions[ws.cell(1, i).column_letter].width = w
+
+    notes = ws.parent.create_sheet('How to use')
+    for line in [
+        ['Allocation Workbench — packing list'],
+        [''],
+        ['SKU', 'Required. Must be listed for the destination region and have '
+                'an FNSKU, or the line cannot be labelled and will block.'],
+        ['Units', 'Required unless Boxes and P/Box are both given — in that '
+                  'case Units is computed as Boxes x P/Box.'],
+        ['Boxes / P/Box', 'Optional if Units is filled in. Supplying all three '
+                          'is fine; Units wins when they disagree.'],
+        ['Total CBM', 'Optional. The TOTAL cubic metres for the line, not the '
+                      'CBM per box. Used for the container-fill bar only.'],
+        ['PO Number', 'Optional. With it, units draw from that exact PO. '
+                      'Without it, they draw FIFO from that supplier\'s oldest '
+                      'open Production Plan — check the PO shown on each '
+                      'preview line before confirming.'],
+        ['Name', 'Optional, for your own reading. Ignored by the matcher.'],
+        [''],
+        ['Rows whose SKU cell is empty, or reads "Total" / "Grand total", are '
+         'skipped — leave your own subtotal rows in place if you like.'],
+        ['The header row does not have to be row 1; it is found by looking for '
+         'a row containing "SKU".'],
+        [''],
+        ['Delete the two example rows before uploading. They show the format '
+         'only — the PO number on the first one is a placeholder and will not '
+         'match a real Production Plan, so leaving it in produces an error on '
+         'the preview.'],
+    ]:
+        notes.append(line)
+    notes['A1'].font = Font(bold=True, size=13)
+    for r in range(3, notes.max_row + 1):
+        notes.cell(r, 1).font = Font(bold=True)
+        notes.cell(r, 2).alignment = Alignment(wrap_text=True, vertical='top')
+    notes.column_dimensions['A'].width = 18
+    notes.column_dimensions['B'].width = 78
+
+    resp = HttpResponse(content_type='application/vnd.openxmlformats-'
+                                     'officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = ('attachment; '
+                                   'filename="packing_list_template.xlsx"')
+    wb.save(resp)
+    return resp
+
+
+@login_required
 @permission_required('can_manage_cogs')
 @require_POST
 def save_pds(request):

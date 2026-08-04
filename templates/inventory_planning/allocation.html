@@ -4,7 +4,8 @@
 {% block page_title %}Allocation Workbench — Packing List → Container{% endblock %}
 
 {% block topbar_actions %}
-<a class="btn btn-ghost btn-sm" href="{% url 'inventory_planning:containers' %}">🚢 Containers</a>
+<a class="btn btn-ghost btn-sm" href="{% url 'inventory_planning:packing_list_template' %}">⬇ Packing list template</a>
+<a class="btn btn-ghost btn-sm" style="margin-left:6px" href="{% url 'inventory_planning:containers' %}">🚢 Containers</a>
 <a class="btn btn-ghost btn-sm" style="margin-left:6px" href="{% url 'inventory_planning:suppliers' %}">🏭 Suppliers</a>
 {% endblock %}
 
@@ -82,7 +83,10 @@
             <option value="on_vessel">On Vessel</option>
             <option value="at_port">At Port</option>
           </select></div>
-        <div class="f" style="grid-column:span 2"><label>Packing list (.xlsx)</label>
+        <div class="f" style="grid-column:span 2">
+          <label>Packing list (.xlsx) ·
+            <a href="{% url 'inventory_planning:packing_list_template' %}"
+               style="font-weight:400">download template</a></label>
           <input type="file" name="file" accept=".xlsx" required></div>
         <div class="f"><label>&nbsp;</label>
           <button type="submit" class="btn btn-primary btn-sm" style="width:100%">Preview allocation →</button></div>
