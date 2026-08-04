@@ -50,9 +50,21 @@
   <h3>1 · Container &amp; packing list</h3>
   <div class="body">
     <form id="upForm" enctype="multipart/form-data">
+      <div class="f" style="margin-bottom:12px">
+        <label>This upload is…</label>
+        <select name="mode" id="f_mode" onchange="modeChanged()"
+                style="max-width:420px">
+          <option value="replace">A new container, or a corrected list for one</option>
+          <option value="append">A second supplier loading onto a container already created</option>
+        </select>
+        <div class="muted" id="modeHint" style="font-size:11px;margin-top:4px"></div>
+      </div>
       <div class="grid" style="margin-bottom:12px">
-        <div class="f"><label>Container number</label>
+        <div class="f" id="cnoNew"><label>Container number</label>
           <input name="container_no" id="f_cno" placeholder="C-12" required></div>
+        <div class="f" id="cnoPick" style="display:none"><label>Add to container</label>
+          <select id="f_cpick" onchange="pickChanged()">
+            <option value="">— choose an open container —</option></select></div>
         <div class="f"><label>Supplier</label>
           <select name="supplier" id="f_sup" required><option value="">— choose —</option></select></div>
         <div class="f"><label>Destination region</label>
@@ -67,7 +79,7 @@
             <option value="40hc">40 ft HC (~76 CBM)</option>
           </select></div>
       </div>
-      <div class="grid" style="margin-bottom:12px">
+      <div class="grid" style="margin-bottom:12px" id="shipFields">
         <div class="f"><label>Destination warehouse</label>
           <select name="warehouse" id="f_wh"><option value="">— none —</option></select></div>
         <div class="f"><label>Departure date</label><input type="date" id="f_dep"></div>
@@ -75,7 +87,7 @@
         <div class="f"><label>ETA destination</label><input type="date" id="f_etad"></div>
       </div>
       <div class="grid">
-        <div class="f"><label>Status</label>
+        <div class="f" id="statusField"><label>Status</label>
           <select id="f_status">
             <option value="waiting_pickup">Waiting for Pickup</option>
             <option value="production_complete">Production Complete</option>
@@ -135,7 +147,8 @@ async function boot(){
   f_sup.innerHTML = '<option value="">— choose —</option>' +
     SUPS.map(x => `<option value="${x.id}">${x.name}</option>`).join('');
   await loadWarehouses();
-  f_reg.onchange = loadWarehouses;
+  f_reg.onchange = () => { loadWarehouses(); if (isAppend()) loadOpenContainers(); };
+  modeChanged();
 }
 
 async function loadWarehouses(){
@@ -146,13 +159,68 @@ async function loadWarehouses(){
       `<option value="${x.code}">${x.name} — ${x.kind.toUpperCase()}</option>`).join('');
 }
 
+// ── append mode ───────────────────────────────────────────────────────────
+// A container is never owned by a supplier — ownership lives on each line via
+// its PO line. So a second supplier's units can join a container that already
+// exists, and both keep their attribution. What must NOT happen is a second
+// REPLACE upload, which deletes the first supplier's lines.
+let OPEN_CONTAINERS = [];
+
+function isAppend(){ return document.getElementById('f_mode').value === 'append'; }
+
+async function loadOpenContainers(){
+  const r = await (await fetch(
+    `{% url "inventory_planning:api_containers" %}?region=${f_reg.value}&show=active`)).json();
+  OPEN_CONTAINERS = r.rows || [];
+  document.getElementById('f_cpick').innerHTML =
+    '<option value="">— choose an open container —</option>' +
+    OPEN_CONTAINERS.map(c =>
+      `<option value="${c.id}" data-no="${c.container_no}">${c.container_no}
+        — ${c.vendor || 'no vendor'} · ${Number(c.units||0).toLocaleString()} units</option>`
+    ).join('');
+}
+
+function modeChanged(){
+  const ap = isAppend();
+  document.getElementById('cnoNew').style.display  = ap ? 'none' : '';
+  document.getElementById('cnoPick').style.display = ap ? '' : 'none';
+  document.getElementById('f_cno').required = !ap;
+  // On append the container's dates, destination and status already exist —
+  // showing them again invites someone to overwrite them with blanks.
+  document.getElementById('shipFields').style.display  = ap ? 'none' : '';
+  document.getElementById('statusField').style.display = ap ? 'none' : '';
+  document.getElementById('modeHint').innerHTML = ap
+    ? 'The existing lines are kept and these are added on top. The container '
+      + 'will list both suppliers and both PO numbers. Its dates, destination '
+      + 'and status stay as they are.'
+    : 'Re-uploading a container number you have already used <b>replaces</b> '
+      + 'its lines — right for a corrected packing list, wrong for a second '
+      + 'supplier.';
+  if (ap) loadOpenContainers();
+}
+
+function pickChanged(){
+  const sel = document.getElementById('f_cpick');
+  const opt = sel.options[sel.selectedIndex];
+  // The commit keys on container_no, so mirror the chosen one into it.
+  document.getElementById('f_cno').value = opt ? (opt.dataset.no || '') : '';
+}
+
 document.getElementById('upForm').onsubmit = async e => {
   e.preventDefault();
+  if (isAppend() && !document.getElementById('f_cpick').value){
+    ixAlert('Choose the container these units are joining.'); return;
+  }
   const btn = e.target.querySelector('button[type=submit]');
   btn.disabled = true; btn.textContent = 'Reading…';
   try {
+    const fd = new FormData(e.target);
+    // container_no lives in a hidden-ish input on append; send the id too so
+    // the preview knows whether to release that container's units first.
+    fd.set('container_no', document.getElementById('f_cno').value);
+    fd.set('container_id', document.getElementById('f_cpick').value || '');
     const r = await (await fetch('{% url "inventory_planning:api_packing_preview" %}',
-      {method:'POST', body:new FormData(e.target),
+      {method:'POST', body:fd,
        headers:{'X-CSRFToken':getCookie('csrftoken')}})).json();
     if (r.status !== 'ok'){ ixAlert(r.message); }
     else { PREV = r; await loadPlans(); render(); }
@@ -246,6 +314,7 @@ async function commit(){
                    fnsku:r.fnsku, po:a.po});
   const payload = {
     supplier_id: PREV.supplier_id, region: PREV.region,
+    mode: isAppend() ? 'append' : 'replace',
     container: {container_no: f_cno.value, warehouse: f_wh.value,
                 departure_date: f_dep.value, eta_port: f_etap.value,
                 eta_destination: f_etad.value, status: f_status.value},
@@ -263,7 +332,10 @@ async function commit(){
 }
 
 function reset_(){ PREV = null; pnl_prev.style.display='none';
-                   document.getElementById('upForm').reset(); }
+                   document.getElementById('upForm').reset();
+                   // form.reset() puts the mode select back to 'replace';
+                   // re-run so the shown/hidden fields match it.
+                   modeChanged(); }
 function getCookie(n){
   const m = document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');
   return m ? m.pop() : '';

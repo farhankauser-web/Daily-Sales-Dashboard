@@ -465,7 +465,26 @@ def parse_packing_list(file_obj) -> list[dict]:
     return out
 
 
-def _open_lines_for(sku, supplier_id, po_number=''):
+def _remaining_for(line, release_container_id=None) -> int:
+    """Units still open on a PO line.
+
+    release_container_id gives back whatever that container currently holds,
+    for the case where those lines are about to be deleted and re-written
+    (a REPLACE re-upload). Without it, re-uploading a corrected packing list
+    for a container reads its own existing allocation as competing demand and
+    reports a false over-allocation.
+
+    Must NOT be passed when APPENDING to a container: those units are staying,
+    so they are genuine competing demand.
+    """
+    rem = line.remaining_units
+    if release_container_id:
+        rem += sum(a.units for a in line._live_allocations()
+                   if a.shipment_id == int(release_container_id))
+    return rem
+
+
+def _open_lines_for(sku, supplier_id, po_number='', release_container_id=None):
     """That supplier's open PO lines for a SKU, oldest PO first (FIFO)."""
     from .models import POLine
     qs = (POLine.objects.filter(sku__iexact=sku, po__supplier_id=supplier_id)
@@ -474,13 +493,19 @@ def _open_lines_for(sku, supplier_id, po_number=''):
     if po_number:
         qs = qs.filter(po__po_number__iexact=po_number)
     return [l for l in qs.order_by('po__order_date', 'pk')
-            if l.remaining_units > 0]
+            if _remaining_for(l, release_container_id) > 0]
 
 
 def preview_packing_list(rows, supplier_id, region, container_size='',
                          exclude_container_id=None) -> dict:
     """Resolve every packing-list row to Production Plan allocations, and
-    surface every problem BEFORE anything is written."""
+    surface every problem BEFORE anything is written.
+
+    exclude_container_id: only for a REPLACE re-upload, where that container's
+    current lines are about to be deleted — its units are released back into
+    the open balance first. Leave it None when appending a second supplier to
+    a container, because those units are not going anywhere.
+    """
     from .models import PlanningSku, Supplier
 
     supplier = Supplier.objects.get(pk=supplier_id)
@@ -509,7 +534,8 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
             row['fnsku'] = fn
 
         # 2. attribute to a Production Plan
-        lines = _open_lines_for(sku, supplier_id, r.get('po_number', ''))
+        lines = _open_lines_for(sku, supplier_id, r.get('po_number', ''),
+                                release_container_id=exclude_container_id)
         if not lines:
             row['errors'].append(
                 f'No open balance for {sku} on {supplier.name}'
@@ -520,14 +546,15 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
             for l in lines:
                 if left <= 0:
                     break
-                take = min(left, l.remaining_units)
+                avail = _remaining_for(l, exclude_container_id)
+                take = min(left, avail)
                 plan = getattr(l.group, 'plan', None)
                 row['allocs'].append({
                     'po_line_id': l.pk, 'po': l.po.po_number,
                     'po_id': l.po_id,
                     'pp': plan.pp_number if plan else '',
                     'category': l.group.category, 'units': take,
-                    'line_remaining': l.remaining_units})
+                    'line_remaining': avail})
                 left -= take
             if left > 0:
                 row['errors'].append(
@@ -561,10 +588,29 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
 
 
 @transaction.atomic
-def commit_packing_list(container, allocs, supplier_id, region) -> dict:
-    """Write the confirmed allocations. `container` carries container_no,
-    size, destination warehouse code, dates and status. Re-committing the
-    same container number REPLACES its lines (releasing the old balance)."""
+def commit_packing_list(container, allocs, supplier_id, region,
+                        mode='replace') -> dict:
+    """Write the confirmed allocations.
+
+    `container` carries container_no, size, destination warehouse code, dates
+    and status.
+
+    mode='replace' (default)
+        Re-committing the same container number REPLACES its lines, releasing
+        the old balance. Right for re-uploading a corrected packing list.
+
+    mode='append'
+        Keeps the existing lines and adds these on top. This is how a
+        container loaded from two suppliers is recorded: upload supplier A,
+        then append supplier B. Vendor and PO number become the combined
+        list, so the container shows both. Container dates, destination and
+        status are left alone — they were settled by the first upload, and
+        the append form does not ask for them again.
+
+    A container is never owned by a supplier; ownership lives on the line, via
+    po_line. That is what makes appending safe: two suppliers' lines coexist
+    without either losing its attribution.
+    """
     from datetime import datetime
 
     from .models import (InTransitLine, InTransitShipment, POLine, Supplier,
@@ -582,22 +628,50 @@ def commit_packing_list(container, allocs, supplier_id, region) -> dict:
     if container.get('warehouse'):
         wh = Warehouse.objects.filter(code=container['warehouse']).first()
 
+    def _merge(existing: str, *new: str) -> str:
+        """Comma list, de-duplicated, order preserved, trimmed to the column."""
+        seen, out = set(), []
+        for part in ([p.strip() for p in (existing or '').split(',')]
+                     + [str(n or '').strip() for n in new]):
+            if part and part.lower() not in seen:
+                seen.add(part.lower())
+                out.append(part)
+        return ', '.join(out)
+
     sh = InTransitShipment.objects.filter(
         region=region, container_no=container['container_no']).first()
-    if sh:
-        sh.lines.all().delete()          # releases the previous allocation
+    new_pos = sorted({a['po'] for a in allocs if a.get('po')})
+
+    if mode == 'append':
+        if sh is None:
+            raise ValueError(
+                f'No container {container["container_no"]} to append to — '
+                f'create it with the first supplier\'s packing list.')
+        if sh.status in ('received', 'cancelled'):
+            raise ValueError(
+                f'{sh.container_no} is {sh.get_status_display().lower()}; '
+                f'nothing more can be loaded onto it.')
+        # Both suppliers are on the container now, and both PO sets.
+        sh.vendor = _merge(sh.vendor, supplier.name)[:64]
+        sh.po_number = _merge(sh.po_number, *new_pos)[:64]
+        if wh is not None:
+            sh.destination = wh
+        sh.save()
     else:
-        sh = InTransitShipment(region=region,
-                               container_no=container['container_no'])
-    sh.vendor = supplier.name
-    sh.destination = wh
-    sh.po_number = ', '.join(sorted({a['po'] for a in allocs if a.get('po')}))
-    sh.departure_date = _date(container.get('departure_date'))
-    sh.eta_port = _date(container.get('eta_port'))
-    sh.eta_destination = _date(container.get('eta_destination'))
-    sh.status = container.get('status') or 'waiting_pickup'
-    sh.notes = (container.get('notes') or '')[:256]
-    sh.save()
+        if sh:
+            sh.lines.all().delete()      # releases the previous allocation
+        else:
+            sh = InTransitShipment(region=region,
+                                   container_no=container['container_no'])
+        sh.vendor = supplier.name
+        sh.destination = wh
+        sh.po_number = ', '.join(new_pos)[:64]
+        sh.departure_date = _date(container.get('departure_date'))
+        sh.eta_port = _date(container.get('eta_port'))
+        sh.eta_destination = _date(container.get('eta_destination'))
+        sh.status = container.get('status') or 'waiting_pickup'
+        sh.notes = (container.get('notes') or '')[:256]
+        sh.save()
 
     # merge duplicate (sku, po_line) pairs so one SKU = one container line
     merged: dict[tuple, dict] = {}
@@ -613,21 +687,34 @@ def commit_packing_list(container, allocs, supplier_id, region) -> dict:
                            'units': units, 'fnsku': a.get('fnsku', '')}
 
     res = {'container_no': sh.container_no, 'shipment_id': sh.pk,
-           'lines': 0, 'units': 0, 'over_allocated': []}
+           'mode': mode, 'lines': 0, 'units': 0, 'over_allocated': [],
+           'vendor': sh.vendor}
     for m in merged.values():
         line = POLine.objects.filter(pk=m['po_line_id']).first()
         if line is None:
             continue
-        if m['units'] > line.remaining_units:
+        # On append the container's existing lines are staying, so they are
+        # already counted in remaining_units — no release, unlike replace
+        # (whose lines were deleted a few lines above).
+        avail = line.remaining_units
+        if m['units'] > avail:
             res['over_allocated'].append(
-                {'sku': m['sku'], 'requested': m['units'],
-                 'available': line.remaining_units})
+                {'sku': m['sku'], 'requested': m['units'], 'available': avail})
             raise ValueError(
                 f'{m["sku"]}: {m["units"]:,} units requested but only '
-                f'{line.remaining_units:,} remain open on {line.po.po_number}.')
-        InTransitLine.objects.create(
-            shipment=sh, sku=m['sku'], units=m['units'],
-            po_line=line, fnsku=(m.get('fnsku') or '')[:16])
+                f'{avail:,} remain open on {line.po.po_number}.')
+        # Same SKU drawn from the SAME PO line is genuinely additive; a
+        # different po_line stays its own row so each supplier's attribution
+        # survives.
+        existing = (sh.lines.filter(sku=m['sku'], po_line=line).first()
+                    if mode == 'append' else None)
+        if existing:
+            existing.units += m['units']
+            existing.save(update_fields=['units'])
+        else:
+            InTransitLine.objects.create(
+                shipment=sh, sku=m['sku'], units=m['units'],
+                po_line=line, fnsku=(m.get('fnsku') or '')[:16])
         res['lines'] += 1
         res['units'] += m['units']
     return res

@@ -1398,13 +1398,22 @@ def api_packing_preview(request):
         return JsonResponse({'status': 'failed',
                              'message': 'Choose the supplier this container '
                                         'is loading from.'}, status=400)
+    # On a REPLACE re-upload the container's own lines are about to be deleted,
+    # so they must be released back into the open balance before checking it —
+    # otherwise the container competes with itself and reports a false
+    # over-allocation. On APPEND they are staying, so they must not be.
+    mode = 'append' if request.POST.get('mode') == 'append' else 'replace'
+    _cid = request.POST.get('container_id') or None
+    release_id = _cid if (mode == 'replace' and _cid) else None
     try:
         rows = parse_packing_list(f)
         if not rows:
             raise ValueError('No SKU rows found in the packing list.')
         prev = preview_packing_list(rows, supplier_id=supplier_id,
                                     region=region,
-                                    container_size=request.POST.get('size', ''))
+                                    container_size=request.POST.get('size', ''),
+                                    exclude_container_id=release_id)
+        prev['mode'] = mode
     except Exception as exc:
         return JsonResponse({'status': 'failed',
                              'message': f'{type(exc).__name__}: {exc}'},
@@ -1432,16 +1441,23 @@ def api_packing_commit(request):
     if not allocs:
         return JsonResponse({'status': 'failed',
                              'message': 'Nothing to allocate.'}, status=400)
+    mode = 'append' if d.get('mode') == 'append' else 'replace'
     try:
         res = commit_packing_list(container, allocs,
                                   supplier_id=d['supplier_id'],
-                                  region=d.get('region') or 'usa')
+                                  region=d.get('region') or 'usa',
+                                  mode=mode)
     except Exception as exc:
         return JsonResponse({'status': 'failed',
                              'message': f'{type(exc).__name__}: {exc}'},
                             status=400)
-    msg = (f'Container {res["container_no"]}: {res["units"]:,} units across '
-           f'{res["lines"]} SKU lines allocated — balances updated.')
+    if mode == 'append':
+        msg = (f'Container {res["container_no"]}: {res["units"]:,} more units '
+               f'across {res["lines"]} SKU lines ADDED — the container now '
+               f'carries {res["vendor"]}.')
+    else:
+        msg = (f'Container {res["container_no"]}: {res["units"]:,} units across '
+               f'{res["lines"]} SKU lines allocated — balances updated.')
     return JsonResponse({'status': 'ok', **res, 'message': msg})
 
 
