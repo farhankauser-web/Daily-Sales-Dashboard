@@ -1142,7 +1142,12 @@ def api_suppliers(request):
             a['pos'].add(l.po_id)
 
     rows = []
-    for s in Supplier.objects.filter(is_active=True):
+    # Retired suppliers are hidden by default — they would drag their old
+    # balances into the KPI totals. ?all=1 is for the edit list, which needs to
+    # reach one to switch it back on.
+    sup_qs = (Supplier.objects.all() if request.GET.get('all') == '1'
+              else Supplier.objects.filter(is_active=True))
+    for s in sup_qs:
         a = agg.get(s.pk, {'ordered': 0, 'wastage': 0, 'allocated': 0,
                            'loaded': 0, 'received': 0, 'remaining': 0,
                            'value': 0.0, 'pos': set()})
@@ -1150,6 +1155,12 @@ def api_suppliers(request):
         rows.append({
             'id': s.pk, 'code': s.code, 'name': s.name,
             'country': s.country, 'currency': s.currency,
+            # everything the edit form needs to prefill
+            'contact': s.contact, 'payment_terms': s.payment_terms,
+            'notes': s.notes, 'is_active': s.is_active,
+            'production_lead_days': s.production_lead_days,
+            'sea_lead_days': s.sea_lead_days,
+            'port_to_wh_days': s.port_to_wh_days,
             'open_pos': len(a['pos']),
             'opening': op,
             'ordered': a['ordered'], 'wastage': a['wastage'],
@@ -1170,6 +1181,69 @@ def api_suppliers(request):
     tot['outstanding_value'] = round(sum(r['outstanding_value'] for r in rows), 2)
     tot['open_pos'] = sum(r['open_pos'] for r in rows)
     return JsonResponse({'rows': rows, 'totals': tot})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
+def api_supplier_save(request):
+    """Create or edit a supplier.
+
+    Until now the only way one came into existence was a side effect of
+    importing a PO workbook, which get_or_create's on a code derived from the
+    typed name. That made a typo in the PO form silently mint a second
+    factory, and left no way at all to add one up front — which you now need,
+    because the packing list refuses a supplier it does not already know.
+    """
+    from .models import Supplier
+    try:
+        d = json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'status': 'failed', 'error': 'Bad payload.'},
+                            status=400)
+
+    name = (d.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'status': 'failed',
+                             'error': 'Supplier name is required.'}, status=400)
+
+    # Code is the stable key POs are matched on. Derived from the name the same
+    # way import_po_workbook does it, so a supplier added here and one created
+    # by a PO import land on the SAME record rather than becoming duplicates.
+    code = (d.get('code') or '').strip().upper() or \
+        ''.join(ch for ch in name.upper() if ch.isalnum())[:32]
+
+    sup = Supplier.objects.filter(pk=d['id']).first() if d.get('id') else None
+    clash = Supplier.objects.filter(code=code)
+    if sup:
+        clash = clash.exclude(pk=sup.pk)
+    if clash.exists():
+        return JsonResponse(
+            {'status': 'failed',
+             'error': f'Code "{code}" already belongs to '
+                      f'{clash.first().name}. Give this one a different code.'},
+            status=400)
+
+    if sup is None:
+        sup = Supplier(code=code)
+    sup.code = code
+    sup.name = name
+    for f, cast in (('country', str), ('contact', str), ('currency', str),
+                    ('payment_terms', str), ('notes', str),
+                    ('production_lead_days', int), ('sea_lead_days', int),
+                    ('port_to_wh_days', int), ('monthly_capacity_units', int)):
+        if d.get(f) not in (None, ''):
+            try:
+                setattr(sup, f, cast(d[f]))
+            except (TypeError, ValueError):
+                return JsonResponse({'status': 'failed',
+                                     'error': f'{f} must be a number.'},
+                                    status=400)
+    sup.is_active = bool(d.get('is_active', True))
+    sup.save()
+    return JsonResponse({'status': 'ok', 'id': sup.pk, 'name': sup.name,
+                         'code': sup.code,
+                         'message': f'Supplier {sup.name} saved ({sup.code}).'})
 
 
 @login_required

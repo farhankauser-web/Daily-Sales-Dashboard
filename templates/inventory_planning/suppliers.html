@@ -5,7 +5,8 @@
 
 {% block topbar_actions %}
 {% if can_edit %}
-<button class="btn btn-primary btn-sm" onclick="openUp('po')">⬆ Upload Purchase Order</button>
+<button class="btn btn-secondary btn-sm" onclick="openSup(null)">➕ Add Supplier</button>
+<button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="openUp('po')">⬆ Upload Purchase Order</button>
 <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUp('opening')">⬆ Upload Opening Balance</button>
 <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUp('wastage')">⬆ Upload Wastage</button>
 {% endif %}
@@ -67,7 +68,13 @@
 <div class="crumb" id="crumb"></div>
 
 <div class="panel" id="pnl_sup">
-  <h3>🏭 Suppliers</h3>
+  <h3>🏭 Suppliers
+    {% if can_edit %}
+    <label style="float:right;font-weight:400;font-size:11px;color:var(--text2)">
+      <input type="checkbox" onchange="toggleInactive(this)"> Show inactive
+    </label>
+    {% endif %}
+  </h3>
   <table class="t" id="t_sup">
     <thead><tr>
       <th class="l" data-k="name">Supplier</th><th data-k="open_pos">Open POs</th>
@@ -113,6 +120,7 @@
 </div>
 
 <div class="modal" id="upModal"><div class="modal-card" id="upCard"></div></div>
+<div class="modal" id="supModal"><div class="modal-card" id="supCard"></div></div>
 {% endblock %}
 
 {% block extra_js %}
@@ -121,6 +129,8 @@ const N = n => (n||0).toLocaleString();
 const Z = n => n ? N(n) : '<span class="zero">0</span>';
 const M = n => '$' + (n||0).toLocaleString(undefined,{maximumFractionDigits:0});
 let SUP = [], CATS = [], POS = [], curSup = null, curCat = null, upKind = 'po';
+const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
+let SHOW_INACTIVE = false;
 const URLS = {
   po: '{% url "inventory_planning:import_po" %}',
   wastage: '{% url "inventory_planning:import_wastage" %}',
@@ -137,7 +147,9 @@ function crumb(){
 }
 
 async function load(){
-  const r = await (await fetch('{% url "inventory_planning:api_suppliers" %}')).json();
+  const u = '{% url "inventory_planning:api_suppliers" %}'
+          + (SHOW_INACTIVE ? '?all=1' : '');
+  const r = await (await fetch(u)).json();
   SUP = r.rows; const t = r.totals;
   k_pos.textContent = N(t.open_pos);  k_open.textContent = N(t.opening);
   k_ord.textContent = N(t.ordered);   k_rem.textContent  = N(t.remaining);
@@ -147,14 +159,107 @@ async function load(){
 
 function renderSup(){
   document.querySelector('#t_sup tbody').innerHTML = SUP.map(s => `
-    <tr class="clickable" onclick="openSupplier(${s.id})">
-      <td class="l"><span class="lnk">${s.name}</span></td>
+    <tr class="clickable" onclick="openSupplier(${s.id})"
+        style="${s.is_active === false ? 'opacity:.5' : ''}">
+      <td class="l"><span class="lnk">${s.name}</span>${
+        s.is_active === false ? ' <span class="muted">(inactive)</span>' : ''}${CAN_EDIT
+        ? ` <span class="lnk" style="font-weight:400"
+             onclick="event.stopPropagation();openSup(${s.id})">✎</span>` : ''}</td>
       <td>${N(s.open_pos)}</td><td>${Z(s.opening)}</td><td>${N(s.ordered)}</td>
       <td>${Z(s.wastage)}</td><td>${N(s.allocated)}</td><td>${N(s.in_transit)}</td>
       <td>${N(s.received)}</td><td><b>${N(s.remaining)}</b></td>
       <td>${M(s.outstanding_value)}</td><td>${s.lead_days}</td>
-    </tr>`).join('') || '<tr><td colspan="11" class="l muted" style="padding:14px">No suppliers yet — upload a Purchase Order to begin.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="11" class="l muted" style="padding:14px">'
+      + 'No suppliers yet — click <b>➕ Add Supplier</b>, or upload a Purchase '
+      + 'Order (which creates one from the name you type).</td></tr>';
 }
+
+// ── add / edit a supplier ─────────────────────────────────────────────────
+// Until now a supplier could only appear as a side effect of importing a PO
+// workbook. That is also why a typo there quietly created a second factory —
+// and why the packing list, which refuses a supplier it does not know, needed
+// somewhere to add one first.
+function openSup(id){
+  const s = id ? (SUP.find(x => x.id === id) || {}) : {};
+  const v = (k, d) => (s[k] !== undefined && s[k] !== null ? s[k] : (d ?? ''));
+  document.getElementById('supCard').innerHTML = `
+    <h3>${id ? 'Edit' : 'Add'} supplier</h3>
+    <form id="supForm">
+      <input type="hidden" id="s_id" value="${id || ''}">
+      <div class="f"><label>Name</label>
+        <input id="s_name" required value="${v('name')}" placeholder="Ghazali"></div>
+      <div class="f"><label>Code <span class="muted">(leave blank to derive
+        from the name — this is the key PO imports match on, so changing it on
+        an existing supplier can orphan their POs)</span></label>
+        <input id="s_code" value="${v('code')}" placeholder="GHAZALI"></div>
+      <div class="f"><label>Country</label>
+        <input id="s_country" value="${v('country')}" placeholder="Pakistan"></div>
+      <div class="f"><label>Contact</label>
+        <input id="s_contact" value="${v('contact')}"></div>
+      <div class="f"><label>Currency</label>
+        <input id="s_currency" value="${v('currency','USD')}"></div>
+      <div class="f"><label>Payment terms</label>
+        <input id="s_terms" value="${v('payment_terms')}"
+               placeholder="30% advance, 70% on B/L"></div>
+      <div class="f"><label>Lead times in days — production · sea · port→warehouse
+        <span class="muted">(these drive the reorder dates in the planner)</span></label>
+        <div style="display:flex;gap:6px">
+          <input id="s_prod" type="number" min="0" value="${v('production_lead_days',90)}">
+          <input id="s_sea"  type="number" min="0" value="${v('sea_lead_days',45)}">
+          <input id="s_port" type="number" min="0" value="${v('port_to_wh_days',10)}">
+        </div></div>
+      <div class="f"><label>Monthly capacity (units)</label>
+        <input id="s_cap" type="number" min="0" value="${v('capacity',0)}"></div>
+      <div class="f"><label>Notes</label>
+        <input id="s_notes" value="${v('notes')}"></div>
+      <div class="f"><label style="font-weight:400">
+        <input id="s_active" type="checkbox" ${v('is_active',true) ? 'checked' : ''}>
+        Active — unticking hides it from the packing-list dropdown and this
+        list, without touching its history</label></div>
+      <div style="text-align:right;margin-top:14px">
+        <button type="button" class="btn btn-ghost btn-sm"
+                onclick="supModal.classList.remove('on')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm"
+                style="margin-left:6px">Save</button>
+      </div>
+    </form>`;
+  document.getElementById('supForm').onsubmit = saveSup;
+  document.getElementById('supModal').classList.add('on');
+}
+
+async function saveSup(e){
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type=submit]');
+  const num = id => parseInt(document.getElementById(id).value || 0, 10);
+  const payload = {
+    id: document.getElementById('s_id').value || null,
+    name: s_name.value, code: s_code.value, country: s_country.value,
+    contact: s_contact.value, currency: s_currency.value,
+    payment_terms: s_terms.value, notes: s_notes.value,
+    production_lead_days: num('s_prod'), sea_lead_days: num('s_sea'),
+    port_to_wh_days: num('s_port'), monthly_capacity_units: num('s_cap'),
+    is_active: document.getElementById('s_active').checked,
+  };
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await fetch('{% url "inventory_planning:api_supplier_save" %}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')},
+      body: JSON.stringify(payload)});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.status !== 'ok'){
+      ixAlert(j.error || `Save failed (HTTP ${r.status}).`);
+    } else {
+      document.getElementById('supModal').classList.remove('on');
+      ixAlert(j.message);
+      await load();
+    }
+  } catch(err){ ixAlert('Save failed: ' + err); }
+  btn.disabled = false; btn.textContent = 'Save';
+}
+
+function toggleInactive(cb){ SHOW_INACTIVE = cb.checked; load(); }
 
 function showSuppliers(){
   curSup = curCat = null; crumb();

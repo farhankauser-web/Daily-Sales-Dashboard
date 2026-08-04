@@ -64,6 +64,8 @@ urlpatterns = [
     path('api/sku-sourcing/', views.api_sku_sourcing, name='api_sku_sourcing'),
     path('purchase-orders/', views.purchase_orders, name='purchase_orders'),
     path('api/suppliers/',   views.api_suppliers,  name='api_suppliers'),
+    path('api/supplier/save/', views.api_supplier_save,
+         name='api_supplier_save'),
     path('api/supplier/<int:pk>/', views.api_supplier_detail,
          name='api_supplier_detail'),
     path('api/purchase-orders/', views.api_purchase_orders,
