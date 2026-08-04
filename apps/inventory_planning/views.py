@@ -848,17 +848,75 @@ def packing_list_template(request):
     PO Number/PO No/PO) — this is simply the spelling that is certain to work.
     """
     from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from .models import PlanningSku, PurchaseOrder, Supplier
+
+    region = (request.GET.get('region') or 'usa').lower()
     wb = Workbook(); ws = wb.active; ws.title = 'Packing List'
-    _xlsx_header(ws, ['Name', 'SKU', 'Boxes', 'P/Box', 'Units', 'Total CBM',
-                      'PO Number'], [32, 22, 9, 9, 10, 11, 14])
+    _xlsx_header(ws, ['Name', 'SKU', 'Supplier', 'PO Number', 'Boxes', 'P/Box',
+                      'Units', 'Total CBM'],
+                 [32, 22, 18, 16, 9, 9, 10, 11])
+
+    # ── Reference lists, read live at download time ───────────────────────
+    # This is why the file cannot drift: it is generated per download, so a
+    # supplier or PO added five minutes ago is already in the dropdown.
+    suppliers = list(Supplier.objects.order_by('name')
+                     .values_list('name', flat=True))
+    skus = list(PlanningSku.objects.filter(region=region, is_active=True)
+                .order_by('sku').values_list('sku', flat=True))
+    pos = list(PurchaseOrder.objects.exclude(status__in=['closed', 'cancelled'])
+               .order_by('-order_date').values_list('po_number', flat=True))
+
+    ref = wb.create_sheet('Lists')
+    ref['A1'], ref['B1'], ref['C1'] = 'Suppliers', 'SKUs', 'Open POs'
+    for col, vals in (('A', suppliers), ('B', skus), ('C', pos)):
+        for i, v in enumerate(vals, start=2):
+            ref[f'{col}{i}'] = v
+    ref.column_dimensions['A'].width = 22
+    ref.column_dimensions['B'].width = 24
+    ref.column_dimensions['C'].width = 20
+    # Kept visible rather than hidden: when a dropdown does not offer what you
+    # expect, the fastest answer is to look at the list it was built from.
+
+    ROWS = 400          # how far down the sheet the dropdowns reach
+    for col, letter, vals in (('C', 'A', suppliers),   # Supplier ← Lists!A
+                              ('B', 'B', skus),        # SKU      ← Lists!B
+                              ('D', 'C', pos)):        # PO       ← Lists!C
+        if not vals:
+            continue
+        rng = f"'Lists'!${letter}$2:${letter}${len(vals) + 1}"
+        # allow_blank: Supplier and PO are optional, and a blank SKU row is how
+        # you leave a subtotal line in place.
+        dv = DataValidation(type='list', formula1=rng, allow_blank=True,
+                            showDropDown=False)
+        dv.error = ('Pick a value from the list. If what you need is missing, '
+                    'add it in Pulse first, then download this template again.')
+        dv.errorTitle = 'Not a known value'
+        dv.prompt = 'Choose from the list'
+        ws.add_data_validation(dv)
+        dv.add(f'{col}2:{col}{ROWS}')
+
     # Two worked examples: with a PO number (exact match) and without (FIFO off
-    # the supplier's oldest open Production Plan).
-    ws.append(['Bath Towel - 4 Pack - White', 'TW-WHT-BTH-4', 60, 24, 1440,
-               12.5, 'PO-2026-018'])
-    ws.append(['Kitchen Towel - 6 Pack - Grey', 'TW-GRY-KTH-6', 100, 24, 2400,
-               18.0, ''])
+    # that supplier's oldest open Production Plan).
+    ex_sup = suppliers[0] if suppliers else ''
+    ex_sup2 = suppliers[1] if len(suppliers) > 1 else ex_sup
+    ws.append(['Bath Towel - 4 Pack - White', 'TW-WHT-BTH-4', ex_sup, '',
+               60, 24, 1440, 12.5])
+    ws.append(['Kitchen Towel - 6 Pack - Grey', 'TW-GRY-KTH-6', ex_sup2, '',
+               100, 24, 2400, 18.0])
 
     _xlsx_notes(wb, 'Allocation Workbench — packing list', [
+        ['Dropdowns', 'Supplier, SKU and PO Number are picked from the Lists '
+                      'sheet, which is filled in when you download. Add a '
+                      'supplier in Pulse and it is in the next download — but '
+                      'a copy saved to your desktop months ago will NOT have '
+                      'it, so download fresh each time.'],
+        ['Supplier', 'Optional, PER ROW. This is what lets ONE file carry a '
+                     'container loaded from two factories — put each SKU\'s '
+                     'supplier on its own row. Leave the column blank and '
+                     'every row falls back to the supplier chosen on the '
+                     'upload form, which is how a single-supplier list works.'],
         ['SKU', 'Required. Must be listed for the destination region and have '
                 'an FNSKU, or the line cannot be labelled and will block.'],
         ['Units', 'Required unless Boxes and P/Box are both given — in that '
@@ -868,24 +926,26 @@ def packing_list_template(request):
         ['Total CBM', 'Optional. The TOTAL cubic metres for the line, not the '
                       'CBM per box. Used for the container-fill bar only.'],
         ['PO Number', 'Optional. With it, units draw from that exact PO. '
-                      'Without it, they draw FIFO from that supplier\'s oldest '
-                      'open Production Plan — check the PO shown on each '
-                      'preview line before confirming.'],
+                      'Without it, they draw FIFO from that row\'s supplier\'s '
+                      'oldest open Production Plan — check the PO shown on '
+                      'each preview line before confirming.'],
         ['Name', 'Optional, for your own reading. Ignored by the matcher.'],
         [''],
+        ['A dropdown stops typing mistakes, not pasting: pasted cells bypass '
+         'Excel validation entirely. The upload checks every supplier, SKU and '
+         'PO again on the server, so a bad value is caught either way — it is '
+         'just quicker to fix here.'],
+        ['An unrecognised supplier is refused with the nearest matches '
+         'suggested. It is never created automatically, because a typo would '
+         'become a duplicate factory with units stranded against it.'],
         ['Rows whose SKU cell is empty, or reads "Total" / "Grand total", are '
          'skipped — leave your own subtotal rows in place if you like.'],
         ['The header row does not have to be row 1; it is found by looking for '
          'a row containing "SKU".'],
-        ['One upload = one supplier. Re-committing the same container number '
-         'REPLACES its lines, so a second supplier cannot be added this way.'],
         [''],
-        ['Delete the two example rows before uploading. They show the format '
-         'only — the PO number on the first one is a placeholder and will not '
-         'match a real Production Plan, so leaving it in produces an error on '
-         'the preview.'],
+        ['Delete the example rows before uploading.'],
     ])
-    return _xlsx_response(wb, 'packing_list_template.xlsx')
+    return _xlsx_response(wb, f'packing_list_template_{region}.xlsx')
 
 
 @login_required

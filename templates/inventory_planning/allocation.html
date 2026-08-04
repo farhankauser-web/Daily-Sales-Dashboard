@@ -97,7 +97,7 @@
           </select></div>
         <div class="f" style="grid-column:span 2">
           <label>Packing list (.xlsx) ·
-            <a href="{% url 'inventory_planning:packing_list_template' %}"
+            <a id="tplLink" href="{% url 'inventory_planning:packing_list_template' %}"
                style="font-weight:400">download template</a></label>
           <input type="file" name="file" accept=".xlsx" required></div>
         <div class="f"><label>&nbsp;</label>
@@ -124,7 +124,8 @@
       <span class="stat">Container fill<b id="s_fill">–</b><div class="bar"><i id="s_bar"></i></div></span>
     </div>
     <table class="t" id="t_prev"><thead><tr>
-      <th class="l">SKU</th><th class="l">Name</th><th>Boxes</th><th>Units</th>
+      <th class="l">SKU</th><th class="l">Name</th><th class="l">Supplier</th>
+      <th>Boxes</th><th>Units</th>
       <th class="l">FNSKU</th><th class="l">Drawn from</th><th>Open balance</th>
     </tr></thead><tbody></tbody></table>
     <div style="text-align:right;margin-top:14px">
@@ -147,7 +148,9 @@ async function boot(){
   f_sup.innerHTML = '<option value="">— choose —</option>' +
     SUPS.map(x => `<option value="${x.id}">${x.name}</option>`).join('');
   await loadWarehouses();
-  f_reg.onchange = () => { loadWarehouses(); if (isAppend()) loadOpenContainers(); };
+  f_reg.onchange = () => { loadWarehouses(); syncTplLink();
+                           if (isAppend()) loadOpenContainers(); };
+  syncTplLink();
   modeChanged();
 }
 
@@ -167,6 +170,14 @@ async function loadWarehouses(){
 let OPEN_CONTAINERS = [];
 
 function isAppend(){ return document.getElementById('f_mode').value === 'append'; }
+
+// The SKU dropdown in the template is region-specific, so the link has to
+// carry whichever region is selected here.
+function syncTplLink(){
+  const a = document.getElementById('tplLink');
+  if (a) a.href = "{% url 'inventory_planning:packing_list_template' %}"
+                  + '?region=' + encodeURIComponent(f_reg.value);
+}
 
 async function loadOpenContainers(){
   const r = await (await fetch(
@@ -278,6 +289,8 @@ function render(){
     const open = r.allocs.reduce((s,a)=>s+a.line_remaining,0);
     return `<tr class="${cls}">
       <td class="l"><b>${r.sku}</b></td><td class="l">${r.name||''}</td>
+      <td class="l">${r.supplier_id ? r.supplier
+                       : `<span class="msg e">${r.supplier||'—'}</span>`}</td>
       <td>${N(r.boxes)}</td><td><b>${N(r.units)}</b></td>
       <td class="l">${r.fnsku || '<span class="msg e">missing</span>'}</td>
       <td class="l">${from}

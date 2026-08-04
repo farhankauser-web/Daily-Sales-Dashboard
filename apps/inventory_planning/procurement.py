@@ -35,6 +35,32 @@ def _txt(v):
     return str(v).strip() if v not in (None, '') else ''
 
 
+def _match_key(v) -> str:
+    """Fold a supplier label to something typo-tolerant.
+
+    'J.Sons', 'JSons', 'j sons' and 'JSONS' are all the same factory; the
+    punctuation and case in a packing list mean nothing.
+    """
+    return ''.join(ch for ch in str(v or '').lower() if ch.isalnum())
+
+
+def supplier_index() -> dict:
+    """{folded name or code: Supplier} for resolving a Supplier column.
+
+    Never creates a supplier. A packing list that names one we do not know is
+    a typo or a genuinely new factory, and both need a person to look — silently
+    minting a supplier would strand the units against a duplicate record.
+    """
+    from .models import Supplier
+    idx = {}
+    for s in Supplier.objects.all():
+        for label in (s.name, s.code):
+            k = _match_key(label)
+            if k:
+                idx.setdefault(k, s)
+    return idx
+
+
 def _find_header(ws, must_have, limit=12):
     """Row index whose cells contain all `must_have` tokens (lowercased)."""
     for r in range(1, min(ws.max_row, limit) + 1):
@@ -428,7 +454,14 @@ CONTAINER_CBM = {'20ft': 33.0, '40ft': 67.0, '40hc': 76.0}
 
 
 def parse_packing_list(file_obj) -> list[dict]:
-    """Rows of {name, sku, boxes, per_box, units, cbm, po_number}."""
+    """Rows of {name, sku, boxes, per_box, units, cbm, po_number, supplier}.
+
+    `supplier` is optional and per row. One container often loads from two
+    factories — 17 of the containers on record do — and a packing list is one
+    document, so the supplier belongs on the line rather than on the upload.
+    Blank falls back to the supplier chosen on the form, which is what every
+    existing single-supplier file does.
+    """
     import openpyxl
     wb = openpyxl.load_workbook(file_obj, data_only=True)
     ws = wb.active
@@ -443,6 +476,7 @@ def parse_packing_list(file_obj) -> list[dict]:
     c_uni = _pick(cm, 'units', 'qty', 'quantity')
     c_cbm = _pick(cm, 'total cbm', 'cbm')   # the TOTAL, not CBM/Box
     c_po = _pick(cm, 'po number', 'po no', 'po')
+    c_sup = _pick(cm, 'supplier', 'vendor', 'factory')
 
     out = []
     for r in range(hrow + 1, ws.max_row + 1):
@@ -461,6 +495,7 @@ def parse_packing_list(file_obj) -> list[dict]:
             'sku': sku, 'boxes': boxes, 'per_box': per, 'units': units,
             'cbm': round(_num(ws.cell(r, c_cbm).value), 3) if c_cbm else 0,
             'po_number': _txt(ws.cell(r, c_po).value) if c_po else '',
+            'supplier': _txt(ws.cell(r, c_sup).value) if c_sup else '',
         })
     return out
 
@@ -512,13 +547,39 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
     fnskus = dict(PlanningSku.objects.filter(region=region)
                   .values_list('sku', 'fnsku'))
     fn_ci = {k.upper(): v for k, v in fnskus.items()}
+    sup_idx = supplier_index()
 
     out = {'supplier': supplier.name, 'supplier_id': supplier.pk,
            'region': region, 'rows': [], 'errors': 0, 'warnings': 0,
-           'total_units': 0, 'total_cbm': 0.0, 'blocking': False}
+           'total_units': 0, 'total_cbm': 0.0, 'blocking': False,
+           'suppliers': []}
 
     for r in rows:
         row = dict(r, allocs=[], errors=[], warnings=[], fnsku='')
+
+        # 0. whose goods is this line? The row wins over the form, so one file
+        #    can carry a whole container. An unknown name is refused rather
+        #    than guessed — a typo must not create a duplicate factory.
+        row_sup, named, sup_ok = supplier, _txt(r.get('supplier')), True
+        if named:
+            hit = sup_idx.get(_match_key(named))
+            if hit is None:
+                sup_ok = False
+                near = sorted(
+                    {s.name for s in sup_idx.values()
+                     if _match_key(named)[:3] and
+                     _match_key(named)[:3] in _match_key(s.name)})
+                row['errors'].append(
+                    f'Supplier "{named}" is not on record'
+                    + (f' — did you mean {", ".join(near[:3])}?' if near
+                       else ' — add it under Suppliers first.'))
+            else:
+                row_sup = hit
+        row['supplier'] = row_sup.name if sup_ok else named
+        row['supplier_id'] = row_sup.pk if sup_ok else None
+        if sup_ok and row_sup.name not in out['suppliers']:
+            out['suppliers'].append(row_sup.name)
+
         sku = r['sku']
 
         # 1. region identity — the factory must have an FNSKU to label with
@@ -534,11 +595,18 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
             row['fnsku'] = fn
 
         # 2. attribute to a Production Plan
-        lines = _open_lines_for(sku, supplier_id, r.get('po_number', ''),
-                                release_container_id=exclude_container_id)
-        if not lines:
+        # An unresolved supplier means we do not know whose goods these are.
+        # Falling back to the form's supplier here would attribute them to the
+        # wrong factory and draw down the wrong PO — silently, since the row
+        # would otherwise look allocated. Leave it unallocated instead.
+        lines = (_open_lines_for(sku, row_sup.pk, r.get('po_number', ''),
+                                 release_container_id=exclude_container_id)
+                 if sup_ok else [])
+        if not sup_ok:
+            pass                      # the supplier error already says why
+        elif not lines:
             row['errors'].append(
-                f'No open balance for {sku} on {supplier.name}'
+                f'No open balance for {sku} on {row_sup.name}'
                 + (f' PO {r["po_number"]}' if r.get('po_number') else '')
                 + ' — nothing to draw these units from.')
         else:
@@ -559,7 +627,7 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
             if left > 0:
                 row['errors'].append(
                     f'Over-allocation: {left:,} of {r["units"]:,} units have no '
-                    f'open balance left on {supplier.name}.')
+                    f'open balance left on {row_sup.name}.')
             elif len(row['allocs']) > 1:
                 row['warnings'].append(
                     f'Split across {len(row["allocs"])} POs (oldest first).')
@@ -642,6 +710,18 @@ def commit_packing_list(container, allocs, supplier_id, region,
         region=region, container_no=container['container_no']).first()
     new_pos = sorted({a['po'] for a in allocs if a.get('po')})
 
+    # Vendor is DERIVED from the PO lines the units are actually drawn from,
+    # never from the form. With a Supplier column a single file can carry two
+    # factories, and the derived name is the only one that cannot disagree
+    # with the lines. Sorting also ends 'J.Sons + Ghazali' vs
+    # 'Ghazali + J.Sons' being two different strings for one arrangement.
+    _po_lines = POLine.objects.filter(
+        pk__in=[int(a['po_line_id']) for a in allocs if a.get('po_line_id')]
+    ).select_related('po__supplier')
+    new_vendors = sorted({l.po.supplier.name for l in _po_lines})
+    if not new_vendors:
+        new_vendors = [supplier.name]
+
     if mode == 'append':
         if sh is None:
             raise ValueError(
@@ -652,7 +732,7 @@ def commit_packing_list(container, allocs, supplier_id, region,
                 f'{sh.container_no} is {sh.get_status_display().lower()}; '
                 f'nothing more can be loaded onto it.')
         # Both suppliers are on the container now, and both PO sets.
-        sh.vendor = _merge(sh.vendor, supplier.name)[:64]
+        sh.vendor = _merge(sh.vendor, *new_vendors)[:64]
         sh.po_number = _merge(sh.po_number, *new_pos)[:64]
         if wh is not None:
             sh.destination = wh
@@ -663,7 +743,7 @@ def commit_packing_list(container, allocs, supplier_id, region,
         else:
             sh = InTransitShipment(region=region,
                                    container_no=container['container_no'])
-        sh.vendor = supplier.name
+        sh.vendor = ', '.join(new_vendors)[:64]
         sh.destination = wh
         sh.po_number = ', '.join(new_pos)[:64]
         sh.departure_date = _date(container.get('departure_date'))
