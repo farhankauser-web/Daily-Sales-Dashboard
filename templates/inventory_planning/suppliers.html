@@ -279,6 +279,11 @@ document.querySelectorAll('table.t thead th[data-k]').forEach(th => {
 const TITLES = {po:'Upload Purchase Order workbook',
                 opening:'Upload Opening Balance',
                 wastage:'Upload Wastage report'};
+const TEMPLATES = {
+  po:      '{% url "inventory_planning:po_workbook_template" %}',
+  opening: '{% url "inventory_planning:opening_balance_template" %}',
+  wastage: '{% url "inventory_planning:wastage_template" %}',
+};
 const HINTS = {
   po: 'Expects the ops PO workbook: a <b>Summary</b> sheet (one row per product category, carrying the FOB rate) and a <b>Production Plan</b> sheet (one row per SKU). One Production Plan is created per product. Re-uploading the same PO number replaces its lines.',
   opening: 'Backlog owed by this supplier from <b>before</b> the system went live. Expects <b>SKU</b> and <b>Units</b> columns (Category optional). Stored against the date you choose, so it back-dates cleanly against existing POs. Re-uploading the same supplier + date replaces the previous figures.',
@@ -307,7 +312,10 @@ function openUp(kind){
           <select name="po" id="f_posel"><option value="">— all open POs —</option></select></div>` : ''}
       ${kind === 'opening' ? `
         <div class="f"><label>As at date</label><input type="date" name="as_of" required></div>` : ''}
-      <div class="f"><label>File (.xlsx)</label><input type="file" name="file" accept=".xlsx" required></div>
+      <div class="f">
+        <label>File (.xlsx) ·
+          <a href="${TEMPLATES[kind]}" style="font-weight:400">download template</a></label>
+        <input type="file" name="file" accept=".xlsx" required></div>
       <div class="hint">${HINTS[kind]}</div>
       <div style="text-align:right;margin-top:14px">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUp()">Cancel</button>

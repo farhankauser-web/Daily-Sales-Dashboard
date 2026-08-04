@@ -626,6 +626,182 @@ def container_template(request):
     return resp
 
 
+def _xlsx_header(ws, hdr, widths):
+    """Bold, tinted header row + column widths — same look on every template."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    ws.append(hdr)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill('solid', fgColor='FFF3E0')
+        c.alignment = Alignment(horizontal='center')
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(1, i).column_letter].width = w
+
+
+def _xlsx_notes(wb, title, rows):
+    """A 'How to use' sheet: [label, explanation] pairs, or [text] for prose."""
+    from openpyxl.styles import Alignment, Font
+    ws = wb.create_sheet('How to use')
+    ws.append([title])
+    ws.append([''])
+    for row in rows:
+        ws.append(row)
+    ws['A1'].font = Font(bold=True, size=13)
+    for r in range(3, ws.max_row + 1):
+        if ws.cell(r, 2).value:
+            ws.cell(r, 1).font = Font(bold=True)
+            ws.cell(r, 2).alignment = Alignment(wrap_text=True, vertical='top')
+        else:
+            ws.cell(r, 1).alignment = Alignment(wrap_text=True, vertical='top')
+    ws.column_dimensions['A'].width = 22
+    ws.column_dimensions['B'].width = 78
+    return ws
+
+
+def _xlsx_response(wb, filename):
+    resp = HttpResponse(content_type='application/vnd.openxmlformats-'
+                                     'officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(resp)
+    return resp
+
+
+@login_required
+@permission_required('can_view_inventory')
+def po_workbook_template(request):
+    """Template for the ops PO workbook — Summary + Production Plan sheets.
+
+    The two sheets are joined on Category: every SKU row's Category must match
+    a Summary row, because the FOB rate and the Production Plan both hang off
+    the Summary group. A SKU whose category has no Summary row still imports,
+    but lands in an 'Uncategorised' group with no FOB — which is why the
+    importer reports unmatched_categories back.
+    """
+    from openpyxl import Workbook
+    wb = Workbook()
+
+    ws = wb.active; ws.title = 'Summary'
+    _xlsx_header(ws, ['PO Number', 'Category', 'Boxes', 'Per Box', 'Units',
+                      'FOB', 'Total Amount', 'Number of Pcs'],
+                 [14, 26, 9, 10, 11, 10, 14, 14])
+    ws.append(['AKT PO#12', 'Bath Towel 4 Pack', 60, 24, 1440, 6.20, 8928.00, 1440])
+    ws.append(['AKT PO#12', 'Kitchen Towel 6 Pack', 100, 24, 2400, 3.85, 9240.00, 2400])
+
+    pp = wb.create_sheet('Production Plan')
+    _xlsx_header(pp, ['Category', 'Name', 'SKU', 'Per Box', 'Boxes', 'Units',
+                      'CBM per Box', 'Total CBM', 'PP Date', 'Wastage'],
+                 [26, 32, 22, 10, 9, 11, 13, 11, 12, 10])
+    pp.append(['Bath Towel 4 Pack', 'Bath Towel - 4 Pack - White',
+               'TW-WHT-BTH-4', 24, 40, 960, 0.21, 8.4, '2026-09-15', 0])
+    pp.append(['Bath Towel 4 Pack', 'Bath Towel - 4 Pack - Dark Grey',
+               'TW-DK-BTH-4', 24, 20, 480, 0.21, 4.2, '2026-09-15', 0])
+    pp.append(['Kitchen Towel 6 Pack', 'Kitchen Towel - Grey',
+               'TW-GRY-KTH-6', 24, 100, 2400, 0.18, 18.0, '2026-09-22', 0])
+
+    _xlsx_notes(wb, 'Purchase Order workbook', [
+        ['Two sheets', 'Both are required. Summary is one row per product '
+                       'category; Production Plan is one row per SKU.'],
+        ['Category', 'This is the join. Every Production Plan row must carry a '
+                     'Category that also appears on Summary — that is where the '
+                     'FOB rate lives, and one Production Plan (PP-1, PP-2 …) is '
+                     'created per Summary row. A SKU whose category has no '
+                     'Summary row still imports, but into an "Uncategorised" '
+                     'group with no FOB, and the import reports it back.'],
+        ['Units', 'Required on both sheets. Rows with no Units, or a Category '
+                  'reading "Total" / "Grand total", are skipped. If the SKU '
+                  'rows do not add up to the Summary total the import warns '
+                  'rather than failing — check the message.'],
+        ['FOB / Total Amount', 'Summary only. FOB is the per-unit rate; Total '
+                               'Amount is the line value, and is what the '
+                               'cash-flow planner draws on.'],
+        ['PP Date', 'Optional per SKU — the expected ready date. Falls back to '
+                    'the ready date you enter on the upload form.'],
+        ['Wastage', 'Optional. Known factory loss at order time. Wastage found '
+                    'later goes through the separate Wastage upload.'],
+        [''],
+        ['Supplier, PO number, order date and payment terms come from the '
+         'upload form, not the file.'],
+        ['Re-uploading the same PO number REPLACES its lines — but only while '
+         'nothing has been allocated to a container. Once units are allocated '
+         'the import refuses and keeps the existing lines, so a re-import '
+         'cannot silently pull the ground out from under a shipped container.'],
+        ['Delete the example rows before uploading.'],
+    ])
+    return _xlsx_response(wb, 'po_workbook_template.xlsx')
+
+
+@login_required
+@permission_required('can_view_inventory')
+def opening_balance_template(request):
+    """Template for a supplier's pre-system backlog."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active; ws.title = 'Opening Balance'
+    _xlsx_header(ws, ['SKU', 'Category', 'Units'], [24, 26, 12])
+    ws.append(['TW-WHT-BTH-4', 'Bath Towel 4 Pack', 1200])
+    ws.append(['TW-GRY-KTH-6', 'Kitchen Towel 6 Pack', 3600])
+
+    _xlsx_notes(wb, 'Opening Balance', [
+        ['What this is', 'Units this supplier still owed you before Pulse went '
+                         'live — backlog with no PO in the system behind it. '
+                         'Without it, outstanding totals read low.'],
+        ['SKU', 'Required. The header row is found by looking for a row '
+                'containing "SKU"; it does not have to be row 1.'],
+        ['Units', 'Required. The column may also be headed Qty, Quantity, '
+                  'Opening or Balance.'],
+        ['Category', 'Optional. Filled in from the SKU catalogue when left '
+                     'blank.'],
+        [''],
+        ['The supplier and the "as at" date come from the upload form. The '
+         'date matters: the balance is stored against it so it back-dates '
+         'correctly against POs already in the system.'],
+        ['Re-uploading for the same supplier AND the same date replaces the '
+         'previous figures, so correcting a file is safe. A different date '
+         'creates a second, separate balance — it does not supersede the '
+         'first.'],
+        ['Rows reading "Total" / "Grand total" are skipped.'],
+        ['Delete the example rows before uploading.'],
+    ])
+    return _xlsx_response(wb, 'opening_balance_template.xlsx')
+
+
+@login_required
+@permission_required('can_view_inventory')
+def wastage_template(request):
+    """Template for the factory fault report."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active; ws.title = 'Wastage'
+    _xlsx_header(ws, ['SKU', 'Units'], [24, 12])
+    ws.append(['TW-WHT-BTH-4', 40])
+    ws.append(['TW-GRY-KTH-6', 120])
+
+    _xlsx_notes(wb, 'Wastage report', [
+        ['What this is', 'Factory fault — units the supplier will neither '
+                         'deliver nor remake, and that you do not pay for. '
+                         'Applying it CLOSES that much of the outstanding '
+                         'balance permanently.'],
+        ['Not a shortage', 'This is not the same as a container arriving '
+                           'short. Units lost between the factory and Amazon '
+                           'belong to the Receiving variance and a claim, not '
+                           'here.'],
+        ['SKU', 'Required. Header row found by scanning for "SKU".'],
+        ['Units', 'Required, positive. The column may also be headed Qty, '
+                  'Quantity, Wastage or Wasteage.'],
+        [''],
+        ['Supplier is chosen on the upload form and always applies. The PO is '
+         'optional: leave it blank and the units are absorbed FIFO across '
+         'that supplier\'s open lines, oldest PO first.'],
+        ['A SKU with no open balance left to absorb the wastage is reported '
+         'back as unmatched rather than being applied anywhere — usually it '
+         'means the supplier or PO on the form is wrong.'],
+        ['This upload ADDS wastage each time; it does not replace a previous '
+         'one. Uploading the same file twice books the loss twice.'],
+        ['Delete the example rows before uploading.'],
+    ])
+    return _xlsx_response(wb, 'wastage_template.xlsx')
+
+
 @login_required
 @permission_required('can_view_inventory')
 def packing_list_template(request):
@@ -637,16 +813,9 @@ def packing_list_template(request):
     PO Number/PO No/PO) — this is simply the spelling that is certain to work.
     """
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
     wb = Workbook(); ws = wb.active; ws.title = 'Packing List'
-
-    hdr = ['Name', 'SKU', 'Boxes', 'P/Box', 'Units', 'Total CBM', 'PO Number']
-    ws.append(hdr)
-    for c in ws[1]:
-        c.font = Font(bold=True)
-        c.fill = PatternFill('solid', fgColor='FFF3E0')
-        c.alignment = Alignment(horizontal='center')
-
+    _xlsx_header(ws, ['Name', 'SKU', 'Boxes', 'P/Box', 'Units', 'Total CBM',
+                      'PO Number'], [32, 22, 9, 9, 10, 11, 14])
     # Two worked examples: with a PO number (exact match) and without (FIFO off
     # the supplier's oldest open Production Plan).
     ws.append(['Bath Towel - 4 Pack - White', 'TW-WHT-BTH-4', 60, 24, 1440,
@@ -654,13 +823,7 @@ def packing_list_template(request):
     ws.append(['Kitchen Towel - 6 Pack - Grey', 'TW-GRY-KTH-6', 100, 24, 2400,
                18.0, ''])
 
-    for i, w in enumerate([32, 22, 9, 9, 10, 11, 14], start=1):
-        ws.column_dimensions[ws.cell(1, i).column_letter].width = w
-
-    notes = ws.parent.create_sheet('How to use')
-    for line in [
-        ['Allocation Workbench — packing list'],
-        [''],
+    _xlsx_notes(wb, 'Allocation Workbench — packing list', [
         ['SKU', 'Required. Must be listed for the destination region and have '
                 'an FNSKU, or the line cannot be labelled and will block.'],
         ['Units', 'Required unless Boxes and P/Box are both given — in that '
@@ -679,26 +842,15 @@ def packing_list_template(request):
          'skipped — leave your own subtotal rows in place if you like.'],
         ['The header row does not have to be row 1; it is found by looking for '
          'a row containing "SKU".'],
+        ['One upload = one supplier. Re-committing the same container number '
+         'REPLACES its lines, so a second supplier cannot be added this way.'],
         [''],
         ['Delete the two example rows before uploading. They show the format '
          'only — the PO number on the first one is a placeholder and will not '
          'match a real Production Plan, so leaving it in produces an error on '
          'the preview.'],
-    ]:
-        notes.append(line)
-    notes['A1'].font = Font(bold=True, size=13)
-    for r in range(3, notes.max_row + 1):
-        notes.cell(r, 1).font = Font(bold=True)
-        notes.cell(r, 2).alignment = Alignment(wrap_text=True, vertical='top')
-    notes.column_dimensions['A'].width = 18
-    notes.column_dimensions['B'].width = 78
-
-    resp = HttpResponse(content_type='application/vnd.openxmlformats-'
-                                     'officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = ('attachment; '
-                                   'filename="packing_list_template.xlsx"')
-    wb.save(resp)
-    return resp
+    ])
+    return _xlsx_response(wb, 'packing_list_template.xlsx')
 
 
 @login_required
