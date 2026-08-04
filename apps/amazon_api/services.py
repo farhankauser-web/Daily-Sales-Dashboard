@@ -308,6 +308,53 @@ class SPAPIClient:
             f'/awd/2024-05-09/inboundShipments/{shipment_id}',
             {'skuQuantities': sku_quantities})
 
+    # ── FBA inbound shipments (containers sent straight to an FC) ─────────
+    # The AWD calls above only answer for STAR-… ids. A container consigned to
+    # a fulfilment centre carries an FBA… id and lives in a different API, so
+    # without these an FC container never produces a receipt at all: its units
+    # stay "in transit" forever and it never reaches the Receiving stage.
+    #
+    # One difference that matters more than any other: Fulfillment Inbound v0
+    # reports EACHES. AWD reports CASES. Do not reuse the AWD case-conversion
+    # here — it would multiply these figures by the case pack.
+    def get_fba_inbound_shipment_items(self, shipment_id: str) -> list[dict]:
+        """
+        Per-SKU shipped vs received for one FBA inbound shipment (paginated).
+
+        Each item carries SellerSKU, QuantityShipped and QuantityReceived, all
+        in eaches. QuantityReceived climbs over days as the FC counts cartons
+        in, which is exactly the signal the Receiving stage watches for.
+        """
+        out, token = [], None
+        for _ in range(100):
+            params = {'MarketplaceId': self.mp_id}
+            if token:
+                params['NextToken'] = token
+            resp = self._get_throttled(
+                f'/fba/inbound/v0/shipments/{shipment_id}/items', params)
+            payload = resp.get('payload') or resp
+            out.extend(payload.get('ItemData') or [])
+            token = (payload.get('NextToken') or '').strip() or None
+            if not token:
+                break
+            time.sleep(0.6)
+        return out
+
+    def get_fba_inbound_shipment(self, shipment_id: str) -> dict:
+        """Header for one FBA inbound shipment — ShipmentStatus lives here.
+
+        Statuses run WORKING → SHIPPED → RECEIVING → CLOSED, with CANCELLED /
+        DELETED / ERROR as dead ends. Returns {} when Amazon knows no such
+        shipment, so a mistyped id reads as 'not found' rather than an error.
+        """
+        resp = self._get_throttled(
+            '/fba/inbound/v0/shipments',
+            {'MarketplaceId': self.mp_id, 'ShipmentIdList': shipment_id,
+             'QueryType': 'SHIPMENT'})
+        payload = resp.get('payload') or resp
+        rows = payload.get('ShipmentData') or []
+        return rows[0] if rows else {}
+
     def get_orders(self, date_range: str = 'today', start_date: str = None, end_date: str = None) -> dict:
         start_local, end_local, tz_name = self._resolve_local_dates(
             date_range, start_date=start_date, end_date=end_date, marketplace=self.config.marketplace

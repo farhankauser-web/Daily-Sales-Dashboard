@@ -486,10 +486,34 @@ def save_container(request):
 @permission_required('can_manage_cogs')
 @require_POST
 def delete_container(request):
+    """Delete a container and its SKU lines.
+
+    The lines cascade, which is what releases their units back to the
+    Production Plans they were drawn from — deleting a container raises the
+    outstanding PO balance by exactly what was on it.
+
+    Reports what actually happened. It used to return 'ok' unconditionally,
+    including when the id matched nothing, so the caller could not tell a
+    delete from a no-op.
+    """
     from .models import InTransitShipment
     pk = json.loads(request.body or '{}').get('id')
-    InTransitShipment.objects.filter(pk=pk).delete()
-    return JsonResponse({'status': 'ok'})
+    sh = InTransitShipment.objects.filter(pk=pk).first()
+    if sh is None:
+        return JsonResponse({'status': 'failed',
+                             'error': 'That container no longer exists.'},
+                            status=404)
+    ref = sh.container_no or f'#{sh.pk}'
+    units = sum(int(l.units or 0) for l in sh.lines.all())
+    lines = sh.lines.count()
+    try:
+        sh.delete()
+    except Exception as exc:
+        return JsonResponse({'status': 'failed',
+                             'error': f'{type(exc).__name__}: {exc}'},
+                            status=400)
+    return JsonResponse({'status': 'ok', 'container': ref,
+                         'lines_deleted': lines, 'units_released': units})
 
 
 @login_required

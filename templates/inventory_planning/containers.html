@@ -59,6 +59,9 @@
   .st.received,.st.cancelled { background:var(--bg3); color:var(--text3); }
   .mono { font-family:'DM Mono',monospace; }
   .pdsedit { color:#2456A6; cursor:pointer; text-decoration:underline dotted; }
+  /* Destructive, so it reads as such and does not sit flush against the ✎ */
+  .pdsedit.del { color:var(--crit-ink,#B4232A); text-decoration:none; margin-left:4px; }
+  .pdsedit.del:hover { opacity:.7; }
   .pickup { color:var(--green); cursor:pointer; font-size:10px; font-weight:600; }
   .pickup:hover { text-decoration:underline; }
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
@@ -267,7 +270,7 @@ function render(){
       <div class="cno">${esc(c.container_no)||'(no number)'}</div>
       <div class="meta">${esc(c.vendor)||'—'} · ${esc(c.destination)}<br>
         dep ${c.departure||'—'} · ETA→FC ${c.eta_dest||'—'}<br>
-        <span class="st ${c.status}">${c.status.replace(/_/g,' ')}</span>${CAN_EDIT?` <span class="pdsedit" onclick="event.stopPropagation();openContainer(${c.id})">✎</span>`:''}
+        <span class="st ${c.status}">${c.status.replace(/_/g,' ')}</span>${CAN_EDIT?` <span class="pdsedit" onclick="event.stopPropagation();openContainer(${c.id})">✎</span>`:''}${CAN_EDIT?` <span class="pdsedit del" title="Delete this container and all its SKU lines" onclick="event.stopPropagation();deleteContainerById(${c.id},'${esc(c.container_no)}',${c.units||0})">🗑</span>`:''}
         ${CAN_EDIT && ['waiting_pickup','production_complete'].includes(c.status)?`<div><span class="pickup" onclick="event.stopPropagation();openPickup(${c.id},'${esc(c.container_no)}')">🚚 mark picked up</span></div>`:''}</div>
       <div class="uh">Units ${arrow(c.id)}</div></th>`;
   document.getElementById('mhead').innerHTML = `<tr>
@@ -368,12 +371,40 @@ async function doReceive(){
     document.getElementById('contModal').classList.remove('show'); load();
   } else ixAlert('Receive failed: '+(j.error||'unknown'));
 }
-async function deleteContainer(){
-  const id=document.getElementById('contId').value;
-  if(!id||!await ixConfirm('Delete this container?'))return;
-  await fetch("{% url 'inventory_planning:delete_container' %}",{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({id})});
-  document.getElementById('contModal').classList.remove('show'); load();
+// Shared by the 🗑 on the container header and the Delete button in the modal,
+// so there is exactly one delete path and one confirmation wording.
+async function deleteContainerById(id, name, units){
+  if(!id) return;
+  // ixConfirm renders with textContent, so this must be plain text — markup
+  // would show up literally in the dialog.
+  const what = name ? `container ${name}` : 'this container';
+  const u = units ? ` and all ${n(units)} units on it` : ' and all its SKU lines';
+  if(!await ixConfirm(
+      `Delete ${what}${u}?\n\nThis cannot be undone. The units are released `
+      + `back to their Production Plans, so the PO balance goes up by the `
+      + `same amount.`)) return;
+  let ok = false, msg = '';
+  try{
+    const r = await fetch("{% url 'inventory_planning:delete_container' %}",{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+      body:JSON.stringify({id})});
+    const j = await r.json().catch(()=>({}));
+    ok = r.ok && j.status === 'ok';
+    msg = j.error || `HTTP ${r.status}`;
+  }catch(err){ msg = String(err); }
+  // Previously this assumed success and reloaded regardless, so a failed
+  // delete looked exactly like a successful one — the container just came
+  // back on the next render with no explanation.
+  if(!ok){ ixAlert('Could not delete the container: ' + msg); return; }
+  document.getElementById('contModal').classList.remove('show');
+  load();
+}
+function deleteContainer(){
+  const id = document.getElementById('contId').value;
+  const name = document.getElementById('contNo').value;
+  const units = contLines.reduce((a,l)=>a+(Number(l.units)||0),0);
+  return deleteContainerById(id, name, units);
 }
 // ── upload ──
 function openUp(){ document.getElementById('upMsg').textContent=''; document.getElementById('upFile').value=''; document.getElementById('upModal').classList.add('show'); }

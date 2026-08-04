@@ -190,3 +190,19 @@ LOG=/Users/farhankauser/Desktop/project/infinitee_app/logs
 # accounting act: shipped-minus-received books as shortage. Watch a couple of
 # containers land first, then swap the line above for this one:
 # 20 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_awd_receipts --marketplace usa --apply --advance-status >> $LOG/container_receipts.log 2>&1
+#
+# ── FC containers — the same job for shipments consigned to a fulfilment
+# centre rather than AWD. A different API entirely: FBA… ids live in
+# /fba/inbound/v0/, STAR-… ids in /awd/. The ids do not resolve across the two,
+# so without this an FC container never produces a receipt and its units stay
+# "in transit" forever. Skips anything whose shipment ID starts with STAR-, so
+# the two commands never fight over the same container.
+#
+# NOTE: this API reports EACHES, not cases. No case-pack conversion happens in
+# sync_fba_receipts, deliberately — applying the AWD one here would multiply
+# every figure by the pack size.
+25 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_fba_receipts --marketplace usa --apply >> $LOG/container_receipts.log 2>&1
+#
+# Same opt-in stage transitions as AWD; swap the line above for this one once
+# you have watched an FC container land:
+# 25 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_fba_receipts --marketplace usa --apply --advance-status >> $LOG/container_receipts.log 2>&1
