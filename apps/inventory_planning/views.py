@@ -15,6 +15,11 @@ from apps.core.decorators import permission_required
 from .models import DemandInput, InTransitShipment, PlanningSku, Warehouse
 from .planning import build_projection
 
+# Statuses that must NOT appear in the Containers — In Transit list.
+# 'received'/'cancelled' are finished; 'receiving' has moved on to the
+# Receiving tab, where the shipped-vs-counted picture lives.
+_NOT_IN_TRANSIT = ['received', 'cancelled', 'receiving']
+
 
 @login_required
 @permission_required('can_view_inventory')
@@ -42,7 +47,13 @@ def api_containers(request):
           .select_related('destination').prefetch_related('lines')
           .order_by('eta_destination', 'eta_port'))
     if show == 'active':
-        qs = qs.exclude(status__in=['received', 'cancelled'])
+        # 'receiving' is deliberately excluded here as well as the terminal
+        # states: once Amazon starts counting a container in it belongs to the
+        # Receiving tab, not In Transit. Leaving it in both would show the same
+        # container twice, which is the duplication this stage exists to end.
+        # The planner is unaffected — it keys off its own exclude() of
+        # received/cancelled and still counts the un-received remainder.
+        qs = qs.exclude(status__in=_NOT_IN_TRANSIT)
     rows = []
     for sh in qs:
         rows.append({
@@ -61,9 +72,9 @@ def api_containers(request):
         })
     kpi = {
         'active': (InTransitShipment.objects.filter(region=region)
-                   .exclude(status__in=['received', 'cancelled']).count()),
-        'units': sum(r['units'] for r in rows if r['status'] not in
-                     ('received', 'cancelled')),
+                   .exclude(status__in=_NOT_IN_TRANSIT).count()),
+        'units': sum(r['units'] for r in rows
+                     if r['status'] not in _NOT_IN_TRANSIT),
     }
     # SKU metadata (name/type/category) for the matrix view
     from .models import PlanningSku
