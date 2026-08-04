@@ -547,6 +547,12 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
     fnskus = dict(PlanningSku.objects.filter(region=region)
                   .values_list('sku', 'fnsku'))
     fn_ci = {k.upper(): v for k, v in fnskus.items()}
+    # Product name comes from the catalogue, same rule as the PO workbook's
+    # Category: the SKU already knows it, so asking for it again only creates
+    # a way for the file and the catalogue to disagree.
+    name_of = {s.upper(): n for s, n in
+               PlanningSku.objects.filter(region=region)
+               .values_list('sku', 'name') if s}
     sup_idx = supplier_index()
 
     out = {'supplier': supplier.name, 'supplier_id': supplier.pk,
@@ -581,6 +587,8 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
             out['suppliers'].append(row_sup.name)
 
         sku = r['sku']
+        # A typed name still wins, so an older packing list reads as before.
+        row['name'] = _txt(r.get('name')) or name_of.get(sku.upper(), '')
 
         # 1. region identity — the factory must have an FNSKU to label with
         fn = fn_ci.get(sku.upper())

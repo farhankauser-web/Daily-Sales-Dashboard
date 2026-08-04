@@ -854,9 +854,11 @@ def packing_list_template(request):
 
     region = (request.GET.get('region') or 'usa').lower()
     wb = Workbook(); ws = wb.active; ws.title = 'Packing List'
-    _xlsx_header(ws, ['Name', 'SKU', 'Supplier', 'PO Number', 'Boxes', 'P/Box',
+    # No product-name column: the SKU already carries it in the catalogue, and
+    # the preview fills it in. Same rule as Category on the PO workbook.
+    _xlsx_header(ws, ['SKU', 'Supplier', 'PO Number', 'Boxes', 'P/Box',
                       'Units', 'Total CBM'],
-                 [32, 22, 18, 16, 9, 9, 10, 11])
+                 [24, 18, 16, 9, 9, 10, 11])
 
     # ── Reference lists, read live at download time ───────────────────────
     # This is why the file cannot drift: it is generated per download, so a
@@ -880,9 +882,9 @@ def packing_list_template(request):
     # expect, the fastest answer is to look at the list it was built from.
 
     ROWS = 400          # how far down the sheet the dropdowns reach
-    for col, letter, vals in (('C', 'A', suppliers),   # Supplier ← Lists!A
-                              ('B', 'B', skus),        # SKU      ← Lists!B
-                              ('D', 'C', pos)):        # PO       ← Lists!C
+    for col, letter, vals in (('B', 'A', suppliers),   # Supplier ← Lists!A
+                              ('A', 'B', skus),        # SKU      ← Lists!B
+                              ('C', 'C', pos)):        # PO       ← Lists!C
         if not vals:
             continue
         rng = f"'Lists'!${letter}$2:${letter}${len(vals) + 1}"
@@ -901,10 +903,8 @@ def packing_list_template(request):
     # that supplier's oldest open Production Plan).
     ex_sup = suppliers[0] if suppliers else ''
     ex_sup2 = suppliers[1] if len(suppliers) > 1 else ex_sup
-    ws.append(['Bath Towel - 4 Pack - White', 'TW-WHT-BTH-4', ex_sup, '',
-               60, 24, 1440, 12.5])
-    ws.append(['Kitchen Towel - 6 Pack - Grey', 'TW-GRY-KTH-6', ex_sup2, '',
-               100, 24, 2400, 18.0])
+    ws.append(['TW-WHT-BTH-4', ex_sup, '', 60, 24, 1440, 12.5])
+    ws.append(['TW-GRY-KTH-6', ex_sup2, '', 100, 24, 2400, 18.0])
 
     _xlsx_notes(wb, 'Allocation Workbench — packing list', [
         ['Dropdowns', 'Supplier, SKU and PO Number are picked from the Lists '
@@ -929,7 +929,11 @@ def packing_list_template(request):
                       'Without it, they draw FIFO from that row\'s supplier\'s '
                       'oldest open Production Plan — check the PO shown on '
                       'each preview line before confirming.'],
-        ['Name', 'Optional, for your own reading. Ignored by the matcher.'],
+        ['No product name', 'The SKU already carries its name in the '
+                            'catalogue, so the preview fills it in — exactly '
+                            'like Category on the PO workbook. A Name or '
+                            'Description column on an older file is still '
+                            'read, and the typed value wins.'],
         [''],
         ['A dropdown stops typing mistakes, not pasting: pasted cells bypass '
          'Excel validation entirely. The upload checks every supplier, SKU and '
