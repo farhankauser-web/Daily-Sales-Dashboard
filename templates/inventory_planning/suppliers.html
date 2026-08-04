@@ -285,7 +285,7 @@ const TEMPLATES = {
   wastage: '{% url "inventory_planning:wastage_template" %}',
 };
 const HINTS = {
-  po: 'Expects the ops PO workbook: a <b>Summary</b> sheet (one row per product category, carrying the FOB rate) and a <b>Production Plan</b> sheet (one row per SKU). One Production Plan is created per product. Re-uploading the same PO number replaces its lines.',
+  po: 'Expects the ops PO workbook: a <b>Summary</b> sheet (one row per product group, carrying the FOB rate) and a <b>Production Plan</b> sheet (one row per SKU — <b>no Category column</b>, it is read from the SKU catalogue). One Production Plan is created per product. Re-uploading the same PO number replaces its lines, unless units are already allocated to a container.',
   opening: 'Backlog owed by this supplier from <b>before</b> the system went live. Expects <b>SKU</b> and <b>Units</b> columns (Category optional). Stored against the date you choose, so it back-dates cleanly against existing POs. Re-uploading the same supplier + date replaces the previous figures.',
   wastage: 'Factory fault report. Expects <b>SKU</b> and <b>Units</b> columns. Applied to the supplier (and PO, if chosen) you select below. Wastage reduces the outstanding balance <b>permanently</b> — we do not pay for it and the supplier does not remake it.',
 };

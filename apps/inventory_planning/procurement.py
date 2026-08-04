@@ -78,7 +78,8 @@ def import_po_workbook(file_obj, supplier_name: str, po_number: str,
     wb = openpyxl.load_workbook(file_obj, data_only=True)
     res = {'po_number': po_number, 'supplier': supplier_name,
            'groups': 0, 'lines': 0, 'plans': 0, 'ordered_units': 0,
-           'fob_value': 0.0, 'unmatched_categories': [], 'warnings': []}
+           'fob_value': 0.0, 'unmatched_categories': [], 'unknown_skus': [],
+           'warnings': []}
 
     # ── supplier ────────────────────────────────────────────────────────────
     code = ''.join(ch for ch in supplier_name.upper() if ch.isalnum())[:32]
@@ -119,6 +120,9 @@ def import_po_workbook(file_obj, supplier_name: str, po_number: str,
     c_uni = _pick(cm, 'units')
     c_fob = _pick(cm, 'fob')
     c_amt = _pick(cm, 'total amount', 'amount')
+    # 'Number of Pcs' was always a duplicate of Units and nothing ever read it,
+    # so it is no longer part of the upload. Still tolerated if an older
+    # workbook carries it, but Units is the figure that counts.
     c_pcs = _pick(cm, 'number of pcs', 'pcs')
 
     groups: dict[str, object] = {}
@@ -136,7 +140,8 @@ def import_po_workbook(file_obj, supplier_name: str, po_number: str,
             boxes=_int(ws.cell(r, c_box).value) if c_box else 0,
             ordered_units=units,
             total_amount=round(_num(ws.cell(r, c_amt).value), 2) if c_amt else 0,
-            pcs=_int(ws.cell(r, c_pcs).value) if c_pcs else 0,
+            # Falls back to Units — they were always the same number.
+            pcs=(_int(ws.cell(r, c_pcs).value) if c_pcs else units),
             sort_order=res['groups'])
         groups[cat.lower()] = g
         res['groups'] += 1
@@ -152,6 +157,11 @@ def import_po_workbook(file_obj, supplier_name: str, po_number: str,
     if hrow is None:
         raise ValueError('Production Plan sheet: no header row containing "SKU".')
     cm = _col_map(cells)
+    # Category is no longer part of the Production Plan sheet. It is looked up
+    # from the SKU catalogue, because the SKU already knows its category and
+    # typing it a second time only created a way for the two sheets to
+    # disagree. Still honoured when an older workbook carries the column, so
+    # existing files keep importing.
     c_cat = _pick(cm, 'category')
     c_nam = _pick(cm, 'name', 'description')
     c_sku = _pick(cm, 'sku')
@@ -163,13 +173,26 @@ def import_po_workbook(file_obj, supplier_name: str, po_number: str,
     c_dat = _pick(cm, 'pp date')
     c_wst = _pick(cm, 'wasteage', 'wastage')
 
+    # SKU → category, from the catalogue. Case-insensitive because a packing
+    # list and the catalogue rarely agree on capitalisation.
+    from .models import PlanningSku
+    cat_of_sku = {s.upper(): c for s, c in
+                  PlanningSku.objects.values_list('sku', 'category') if s}
+
     seq = 0
     for r in range(hrow + 1, ws.max_row + 1):
         sku = _txt(ws.cell(r, c_sku).value) if c_sku else ''
         units = _int(ws.cell(r, c_uni).value) if c_uni else 0
         if not sku or units <= 0:
             continue
-        cat = _txt(ws.cell(r, c_cat).value) if c_cat else ''
+        # Typed value wins when present (old workbooks); otherwise the
+        # catalogue answers. A SKU the catalogue has never seen leaves this
+        # blank and falls into the Uncategorised group below, which is
+        # reported back rather than swallowed.
+        cat = (_txt(ws.cell(r, c_cat).value) if c_cat else '') \
+            or cat_of_sku.get(sku.upper(), '')
+        if not cat and sku not in res['unknown_skus']:
+            res['unknown_skus'].append(sku)
         g = groups.get(cat.lower())
         if g is None:                      # SKU with no matching Summary row
             if cat and cat not in res['unmatched_categories']:

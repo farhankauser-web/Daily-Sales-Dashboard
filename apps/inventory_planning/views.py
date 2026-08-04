@@ -671,42 +671,48 @@ def _xlsx_response(wb, filename):
 def po_workbook_template(request):
     """Template for the ops PO workbook — Summary + Production Plan sheets.
 
-    The two sheets are joined on Category: every SKU row's Category must match
-    a Summary row, because the FOB rate and the Production Plan both hang off
-    the Summary group. A SKU whose category has no Summary row still imports,
-    but lands in an 'Uncategorised' group with no FOB — which is why the
-    importer reports unmatched_categories back.
+    The Production Plan sheet carries no Category column: the SKU already
+    knows its category in the catalogue, and typing it a second time only gave
+    the two sheets a way to disagree. Summary keeps Category because that IS
+    the row — it is the product group the FOB rate belongs to.
     """
     from openpyxl import Workbook
     wb = Workbook()
 
     ws = wb.active; ws.title = 'Summary'
     _xlsx_header(ws, ['PO Number', 'Category', 'Boxes', 'Per Box', 'Units',
-                      'FOB', 'Total Amount', 'Number of Pcs'],
-                 [14, 26, 9, 10, 11, 10, 14, 14])
-    ws.append(['AKT PO#12', 'Bath Towel 4 Pack', 60, 24, 1440, 6.20, 8928.00, 1440])
-    ws.append(['AKT PO#12', 'Kitchen Towel 6 Pack', 100, 24, 2400, 3.85, 9240.00, 2400])
+                      'FOB', 'Total Amount'],
+                 [14, 26, 9, 10, 11, 10, 14])
+    ws.append(['AKT PO#12', 'Towel-BTH-4', 60, 24, 1440, 6.20, 8928.00])
+    ws.append(['AKT PO#12', 'Kitchen Towel-6', 100, 24, 2400, 3.85, 9240.00])
 
     pp = wb.create_sheet('Production Plan')
-    _xlsx_header(pp, ['Category', 'Name', 'SKU', 'Per Box', 'Boxes', 'Units',
+    _xlsx_header(pp, ['Name', 'SKU', 'Per Box', 'Boxes', 'Units',
                       'CBM per Box', 'Total CBM', 'PP Date', 'Wastage'],
-                 [26, 32, 22, 10, 9, 11, 13, 11, 12, 10])
-    pp.append(['Bath Towel 4 Pack', 'Bath Towel - 4 Pack - White',
+                 [32, 22, 10, 9, 11, 13, 11, 12, 10])
+    pp.append(['Bath Towel - 4 Pack - White',
                'TW-WHT-BTH-4', 24, 40, 960, 0.21, 8.4, '2026-09-15', 0])
-    pp.append(['Bath Towel 4 Pack', 'Bath Towel - 4 Pack - Dark Grey',
+    pp.append(['Bath Towel - 4 Pack - Dark Grey',
                'TW-DK-BTH-4', 24, 20, 480, 0.21, 4.2, '2026-09-15', 0])
-    pp.append(['Kitchen Towel 6 Pack', 'Kitchen Towel - Grey',
+    pp.append(['Kitchen Towel - Grey',
                'TW-GRY-KTH-6', 24, 100, 2400, 0.18, 18.0, '2026-09-22', 0])
 
     _xlsx_notes(wb, 'Purchase Order workbook', [
         ['Two sheets', 'Both are required. Summary is one row per product '
-                       'category; Production Plan is one row per SKU.'],
-        ['Category', 'This is the join. Every Production Plan row must carry a '
-                     'Category that also appears on Summary — that is where the '
-                     'FOB rate lives, and one Production Plan (PP-1, PP-2 …) is '
-                     'created per Summary row. A SKU whose category has no '
-                     'Summary row still imports, but into an "Uncategorised" '
-                     'group with no FOB, and the import reports it back.'],
+                       'group, carrying the FOB rate; Production Plan is one '
+                       'row per SKU.'],
+        ['No Category on the SKU sheet', 'Each SKU\'s category is read from the '
+                                         'catalogue, so you do not type it '
+                                         'twice and the two sheets cannot '
+                                         'disagree. A SKU the catalogue has '
+                                         'never seen is named back to you in '
+                                         'the result message.'],
+        ['Summary Category', 'Must be the category the catalogue holds for '
+                             'those SKUs — e.g. "Towel-BTH-4", "Bath Sheet '
+                             'PK-2". Case and spacing do not matter. A '
+                             'Summary row no SKU resolves to simply carries no '
+                             'lines; SKUs resolving to a category with no '
+                             'Summary row land in "Uncategorised" with no FOB.'],
         ['Units', 'Required on both sheets. Rows with no Units, or a Category '
                   'reading "Total" / "Grand total", are skipped. If the SKU '
                   'rows do not add up to the Summary total the import warns '
@@ -719,12 +725,17 @@ def po_workbook_template(request):
         ['Wastage', 'Optional. Known factory loss at order time. Wastage found '
                     'later goes through the separate Wastage upload.'],
         [''],
+        ['"Number of Pcs" has been dropped — it was always the same figure as '
+         'Units and nothing read it. Units is the only quantity.'],
         ['Supplier, PO number, order date and payment terms come from the '
          'upload form, not the file.'],
         ['Re-uploading the same PO number REPLACES its lines — but only while '
          'nothing has been allocated to a container. Once units are allocated '
          'the import refuses and keeps the existing lines, so a re-import '
          'cannot silently pull the ground out from under a shipped container.'],
+        ['Older workbooks that still carry Category on the Production Plan '
+         'sheet, or Number of Pcs on Summary, keep importing — the typed '
+         'value simply wins.'],
         ['Delete the example rows before uploading.'],
     ])
     return _xlsx_response(wb, 'po_workbook_template.xlsx')
@@ -1263,6 +1274,16 @@ def import_po(request):
     msg = (f'{r["po_number"]}: {r["groups"]} products ({r["plans"]} production '
            f'plans), {r["lines"]} SKU lines, {r["ordered_units"]:,} units, '
            f'FOB ${r["fob_value"]:,.2f}.')
+    if r.get('unknown_skus'):
+        # Category now comes from the SKU catalogue, so a SKU the catalogue has
+        # never seen is the one thing that can still land in Uncategorised.
+        # Name them — "some rows are uncategorised" is not actionable.
+        shown = ', '.join(r['unknown_skus'][:8])
+        more = (f' +{len(r["unknown_skus"]) - 8} more'
+                if len(r['unknown_skus']) > 8 else '')
+        msg += (f' ⚠ {len(r["unknown_skus"])} SKU(s) are not in the catalogue, '
+                f'so no category could be looked up and they landed in '
+                f'"Uncategorised" with no FOB: {shown}{more}.')
     if r['warnings']:
         msg += ' ⚠ ' + ' '.join(r['warnings'])
     return JsonResponse({'status': 'ok', **r, 'message': msg})
