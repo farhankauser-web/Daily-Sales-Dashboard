@@ -3,6 +3,15 @@
 {% block nav_inv_receiving %}active{% endblock %}
 {% block page_title %}Receiving — containers Amazon is counting in{% endblock %}
 
+{% block topbar_controls %}
+<div class="mp-selector" id="regionSel">
+  <button class="mp-btn active" onclick="setRegion('usa',this)">🇺🇸 USA</button>
+  <button class="mp-btn" onclick="setRegion('uk',this)">🇬🇧 UK</button>
+  <button class="mp-btn" onclick="setRegion('ae',this)">🇦🇪 UAE</button>
+  <button class="mp-btn" onclick="setRegion('sa',this)">🇸🇦 KSA</button>
+</div>
+{% endblock %}
+
 {% block topbar_actions %}
 <button class="btn btn-secondary btn-sm" onclick="load()">↻ Refresh</button>
 {% endblock %}
@@ -71,14 +80,34 @@
 {% block extra_js %}
 <script>
 const U = "{% url 'inventory_planning:api_receiving' %}";
-let ROWS = [], OPEN = new Set();
+let REGION = 'usa', ROWS = [], OPEN = new Set();
 function n(v){ return (v==null?'–':Number(v).toLocaleString()); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
 
+function setRegion(r, btn){
+  REGION = r;
+  document.querySelectorAll('#regionSel .mp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  load();
+}
+
 async function load(){
   const show = document.getElementById('fShow').value;
-  const r = await fetch(`${U}?region=${encodeURIComponent(REGION||'usa')}&show=${show}`);
-  const j = await r.json();
+  let j;
+  try {
+    const r = await fetch(`${U}?region=${encodeURIComponent(REGION)}&show=${show}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    j = await r.json();
+  } catch (err) {
+    // Never leave the page sitting on "Loading…" — a silent failure here is
+    // indistinguishable from "no containers", which is a very different fact.
+    document.getElementById('list').innerHTML =
+      `<div style="padding:30px;text-align:center;color:var(--crit-ink)">
+         Could not load receiving data — ${esc(err.message)}.
+         <div style="margin-top:6px"><button class="btn btn-secondary btn-sm"
+              onclick="load()">Retry</button></div></div>`;
+    return;
+  }
   ROWS = j.rows||[];
   // Only count containers Amazon has actually started — a container still at
   // sea has "variance = everything", which is not a shortfall.
