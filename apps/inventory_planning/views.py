@@ -15,10 +15,36 @@ from apps.core.decorators import permission_required
 from .models import DemandInput, InTransitShipment, PlanningSku, Warehouse
 from .planning import build_projection
 
-# Statuses that must NOT appear in the Containers — In Transit list.
-# 'received'/'cancelled' are finished; 'receiving' has moved on to the
-# Receiving tab, where the shipped-vs-counted picture lives.
-_NOT_IN_TRANSIT = ['received', 'cancelled', 'receiving']
+# Finished containers — gone from both the In Transit and Receiving lists.
+_TERMINAL = ['received', 'cancelled']
+
+
+def _receiving_pks(region) -> set:
+    """PKs of the containers that belong to Receiving rather than In Transit.
+
+    A container moves the moment Amazon starts counting it in. That shows up
+    two ways, and both must count:
+
+      * status == 'receiving' — set by sync_awd_receipts, but only when it is
+        run with --advance-status, which is off by default;
+      * any line with amazon_received_units > 0 — the receipts themselves,
+        which are recorded on every run regardless of that flag.
+
+    Keying off the receipts as well as the status is what makes In Transit and
+    Receiving a genuine partition instead of two filters that happen to agree.
+    Status alone is not enough: a linked container whose status was never
+    advanced has real receipts against it and would otherwise appear in both
+    lists at once.
+    """
+    from django.db.models import Q
+    from .models import InTransitShipment
+    return set(
+        InTransitShipment.objects
+        .filter(region=region)
+        .exclude(status__in=_TERMINAL)
+        .filter(Q(status='receiving') | Q(lines__amazon_received_units__gt=0))
+        .values_list('pk', flat=True)
+    )
 
 
 @login_required
@@ -47,13 +73,13 @@ def api_containers(request):
           .select_related('destination').prefetch_related('lines')
           .order_by('eta_destination', 'eta_port'))
     if show == 'active':
-        # 'receiving' is deliberately excluded here as well as the terminal
-        # states: once Amazon starts counting a container in it belongs to the
-        # Receiving tab, not In Transit. Leaving it in both would show the same
-        # container twice, which is the duplication this stage exists to end.
+        # Containers Amazon has started counting in are excluded as well as the
+        # finished ones: they belong to the Receiving tab. Listing them in both
+        # is the duplication that stage exists to end.
         # The planner is unaffected — it keys off its own exclude() of
         # received/cancelled and still counts the un-received remainder.
-        qs = qs.exclude(status__in=_NOT_IN_TRANSIT)
+        qs = (qs.exclude(status__in=_TERMINAL)
+                .exclude(pk__in=_receiving_pks(region)))
     rows = []
     for sh in qs:
         rows.append({
@@ -70,11 +96,14 @@ def api_containers(request):
             'lines': [{'sku': l.sku, 'units': l.units}
                       for l in sh.lines.all()],
         })
+    # KPIs count what this list shows, so they cannot disagree with the rows.
+    _recv = _receiving_pks(region)
     kpi = {
         'active': (InTransitShipment.objects.filter(region=region)
-                   .exclude(status__in=_NOT_IN_TRANSIT).count()),
+                   .exclude(status__in=_TERMINAL)
+                   .exclude(pk__in=_recv).count()),
         'units': sum(r['units'] for r in rows
-                     if r['status'] not in _NOT_IN_TRANSIT),
+                     if r['status'] not in _TERMINAL and r['id'] not in _recv),
     }
     # SKU metadata (name/type/category) for the matrix view
     from .models import PlanningSku
@@ -134,6 +163,14 @@ def api_receiving(request):
           .order_by('-amazon_synced_at', 'eta_destination'))
     show = (request.GET.get('show') or 'active')
     if show == 'active':
+        # Only the containers Amazon has actually started counting in. Merely
+        # having a Shipment ID is not enough — a linked container still at sea
+        # belongs to In Transit, and showing it here as well was putting the
+        # same container in two tabs at once.
+        qs = qs.filter(pk__in=_receiving_pks(region))
+    elif show == 'linked':
+        # Everything carrying a Shipment ID, started or not, minus the closed
+        # ones — useful for checking a link took effect before receipts arrive.
         qs = qs.exclude(status='received')
 
     rows = []
