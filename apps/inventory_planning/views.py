@@ -558,6 +558,56 @@ def warehouses(request):
 @login_required
 @permission_required('can_manage_cogs')
 @require_POST
+def api_warehouse_save(request):
+    """Add a 3PL / factory location without leaving the shipment form.
+
+    Amazon's own FBA and AWD warehouses are created by the stock sync and are
+    not editable here — inventing one would produce a destination the sync
+    never feeds. This is only for the locations we arrange ourselves.
+    """
+    from .models import Warehouse
+    try:
+        d = json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'status': 'failed', 'error': 'Bad payload.'},
+                            status=400)
+
+    name = (d.get('name') or '').strip()
+    region = (d.get('region') or 'usa').strip().lower()
+    kind = (d.get('kind') or '3pl').strip().lower()
+    if not name:
+        return JsonResponse({'status': 'failed',
+                             'error': 'Warehouse name is required.'}, status=400)
+    if kind not in ('3pl', 'factory'):
+        return JsonResponse({'status': 'failed',
+                             'error': 'Only 3PL and Factory locations can be '
+                                      'added here — FBA and AWD come from '
+                                      'Amazon.'}, status=400)
+
+    # Code is unique across ALL regions, so scope it by region — the same 3PL
+    # used for USA and UK is two rows, because stock and containers are both
+    # region-scoped and mixing them would move units between marketplaces.
+    code = (d.get('code') or '').strip().upper() or (
+        ''.join(ch for ch in name.upper() if ch.isalnum())[:24]
+        + '-' + region.upper())
+    existing = Warehouse.objects.filter(code=code).first()
+    if existing:
+        return JsonResponse(
+            {'status': 'failed',
+             'error': f'Code "{code}" is already {existing.name} '
+                      f'({existing.region.upper()}). Give this one a different '
+                      f'code.'}, status=400)
+
+    w = Warehouse.objects.create(code=code, name=name, region=region,
+                                 kind=kind, is_active=True)
+    return JsonResponse({'status': 'ok', 'id': w.pk, 'code': w.code,
+                         'name': w.name, 'kind': w.kind, 'region': w.region,
+                         'message': f'{w.name} added for {region.upper()}.'})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
 def import_master(request):
     """File 1: SKU + PDS + 3PL inventory."""
     from .importer import import_master_file

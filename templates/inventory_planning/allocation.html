@@ -12,7 +12,7 @@
 {% block extra_head %}
 <style>
   .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:14px; }
-  .panel h3 { margin:0; padding:10px 14px; font-size:13px; border-bottom:1px solid #EDEFF1; }
+  .panel h3 { margin:0; padding:10px 14px; font-size:13px; border-bottom:1px solid var(--border); }
   .body { padding:14px; }
   .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
   .f label { display:block; font-size:11px; color:var(--text2); margin-bottom:3px; }
@@ -22,25 +22,36 @@
   table.t th { background:var(--surface2); text-align:right; padding:7px 10px; font-size:11px;
                border-bottom:1px solid var(--border); white-space:nowrap; }
   table.t th.l, table.t td.l { text-align:left; }
-  table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid #EDEFF1;
+  table.t td { padding:6px 10px; text-align:right; border-bottom:1px solid var(--border);
                white-space:nowrap; font-variant-numeric:tabular-nums; vertical-align:top; }
-  tr.bad td { background:#FEF2F2; }
-  tr.warn td { background:#FFFBEB; }
+  tr.bad td { background:var(--crit-weak,#FEF2F2); }
+  tr.warn td { background:var(--warn-weak,#FFFBEB); }
   .msg { font-size:11px; margin-top:3px; }
-  .msg.e { color:#B42318; } .msg.w { color:#8A5A00; }
-  .muted { color:#8A94A0; }
+  .msg.e { color:var(--crit-ink,#B42318); } .msg.w { color:var(--warn-ink,#8A5A00); }
+  .muted { color:var(--text3,#8A94A0); }
   .chip { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px;
-          font-weight:600; background:var(--info-weak); color:#0B4FA8; }
+          font-weight:600; background:var(--info-weak); color:var(--info-ink,#0B4FA8); }
   .stat { display:inline-block; margin-right:18px; font-size:12px; }
   .stat b { font-size:16px; display:block; }
   .bar { height:8px; border-radius:4px; background:var(--surface2); overflow:hidden; width:180px; margin-top:4px; }
-  .bar i { display:block; height:100%; background:#1E9E52; }
-  .bar i.over { background:#D92D20; }
+  .bar i { display:block; height:100%; background:var(--green,#1E9E52); }
+  .bar i.over { background:var(--red,#D92D20); }
   .banner { padding:9px 12px; border-radius:6px; font-size:12px; margin-bottom:12px; }
-  .banner.e { background:#FEF2F2; color:#B42318; border:1px solid #FECDCA; }
-  .banner.w { background:#FFFBEB; color:#8A5A00; border:1px solid #FDE68A; }
-  .banner.k { background:#ECFDF3; color:#1E6B34; border:1px solid #A6F4C5; }
+  .banner.e { background:var(--crit-weak,#FEF2F2); color:var(--crit-ink,#B42318); border:1px solid var(--border); }
+  .banner.w { background:var(--warn-weak,#FFFBEB); color:var(--warn-ink,#8A5A00); border:1px solid var(--border); }
+  .banner.k { background:var(--good-weak,#ECFDF3); color:var(--good-ink,#1E6B34); border:1px solid var(--border); }
   select.posel { font-size:11px; padding:2px 4px; border:1px solid var(--border); border-radius:4px; }
+  /* Same shape as the modals on Containers and Suppliers, off theme
+     variables so it reads correctly in dark mode too. */
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+           z-index:99; align-items:center; justify-content:center; }
+  .modal.on { display:flex; }
+  .modal-card { background:var(--bg2); color:var(--text); border:1px solid var(--border);
+                border-radius:10px; padding:20px 24px; width:460px; max-width:94vw;
+                max-height:88vh; overflow-y:auto; }
+  .modal-card h3 { margin:0 0 12px; font-size:15px; padding:0; border:0; }
+  .modal-card .f { margin-bottom:10px; }
+  .inline-add { float:right; font-weight:400; cursor:pointer; color:var(--info-ink,#2456A6); }
 </style>
 {% endblock %}
 
@@ -80,7 +91,8 @@
           </select></div>
       </div>
       <div class="grid" style="margin-bottom:12px" id="shipFields">
-        <div class="f"><label>Destination warehouse</label>
+        <div class="f"><label>Destination warehouse
+            {% if can_edit %}<span class="inline-add" onclick="openWh()">+ 3PL</span>{% endif %}</label>
           <select name="warehouse" id="f_wh"><option value="">— none —</option></select></div>
         <div class="f"><label>Departure date</label><input type="date" id="f_dep"></div>
         <div class="f"><label>ETA port</label><input type="date" id="f_etap"></div>
@@ -135,6 +147,39 @@
     </div>
   </div>
 </div>
+
+<div class="modal" id="whModal" onclick="if(event.target===this)this.classList.remove('on')">
+  <div class="modal-card">
+    <h3>Add a 3PL warehouse</h3>
+    <div class="f"><label>Name</label>
+      <input id="w_name" placeholder="Vantage Logistics — Carteret NJ"></div>
+    <div class="f"><label>Region</label>
+      <select id="w_reg">
+        <option value="usa">🇺🇸 USA</option><option value="uk">🇬🇧 UK</option>
+        <option value="ae">🇦🇪 UAE</option><option value="sa">🇸🇦 KSA</option>
+      </select></div>
+    <div class="f"><label>Type</label>
+      <select id="w_kind">
+        <option value="3pl">3PL Warehouse</option>
+        <option value="factory">Factory / Origin</option>
+      </select></div>
+    <div class="f"><label>Code <span class="muted">(optional — derived from the
+      name and region if left blank)</span></label>
+      <input id="w_code" placeholder="VANTAGE-USA"></div>
+    <div class="muted" style="font-size:11px;line-height:1.5">
+      Warehouses are per region: the same 3PL used for USA and UK is two
+      entries, because stock and containers are both region-scoped.
+      Amazon's own FBA and AWD locations are created by the stock sync and
+      cannot be added here.
+    </div>
+    <div style="text-align:right;margin-top:14px">
+      <button class="btn btn-ghost btn-sm"
+              onclick="whModal.classList.remove('on')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btnWh" style="margin-left:6px"
+              onclick="saveWh()">Add warehouse</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -154,12 +199,54 @@ async function boot(){
   modeChanged();
 }
 
-async function loadWarehouses(){
+async function loadWarehouses(keepCode){
   const w = await (await fetch(
     `{% url "inventory_planning:warehouses" %}?region=${f_reg.value}`)).json();
   f_wh.innerHTML = '<option value="">— none —</option>' +
     (w.warehouses || []).map(x =>
       `<option value="${x.code}">${x.name} — ${x.kind.toUpperCase()}</option>`).join('');
+  // After adding one, select it — otherwise you add a warehouse and still
+  // have to hunt for it in the list.
+  if (keepCode) f_wh.value = keepCode;
+}
+
+// ── add a 3PL without leaving the form ────────────────────────────────────
+// The dropdown is region-scoped, so a warehouse that exists for the USA is
+// simply not there when you switch to UK. Rather than sending someone off to
+// find an admin screen (there wasn't one), add it in place.
+function openWh(){
+  document.getElementById('w_name').value = '';
+  document.getElementById('w_code').value = '';
+  document.getElementById('w_kind').value = '3pl';
+  document.getElementById('w_reg').value = f_reg.value;   // default to the
+                                                          // region in the form
+  document.getElementById('whModal').classList.add('on');
+  document.getElementById('w_name').focus();
+}
+
+async function saveWh(){
+  const btn = document.getElementById('btnWh');
+  const payload = {name: w_name.value, region: w_reg.value,
+                   kind: w_kind.value, code: w_code.value};
+  if (!payload.name.trim()){ ixAlert('Give the warehouse a name.'); return; }
+  btn.disabled = true; btn.textContent = 'Adding…';
+  try {
+    const r = await fetch('{% url "inventory_planning:api_warehouse_save" %}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+      body: JSON.stringify(payload)});
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || j.status !== 'ok'){
+      ixAlert((j && j.error) || `Could not add it (HTTP ${r.status}).`);
+    } else {
+      document.getElementById('whModal').classList.remove('on');
+      // Only refresh the list if it belongs to the region on screen; adding a
+      // UK warehouse while the form says USA should not silently change it.
+      if (j.region === f_reg.value) await loadWarehouses(j.code);
+      ixAlert(j.message);
+    }
+  } catch(err){ ixAlert('Could not add it: ' + err); }
+  btn.disabled = false; btn.textContent = 'Add warehouse';
 }
 
 // ── append mode ───────────────────────────────────────────────────────────

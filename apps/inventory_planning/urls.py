@@ -33,6 +33,8 @@ urlpatterns = [
     path('api/delete-container/', views.delete_container, name='delete_container'),
     path('api/container/<int:pk>/', views.container_detail, name='container_detail'),
     path('api/warehouses/',  views.warehouses,     name='warehouses'),
+    path('api/warehouse/save/', views.api_warehouse_save,
+         name='api_warehouse_save'),
     path('import/master/',   views.import_master,  name='import_master'),
     path('import/containers/', views.import_containers_view, name='import_containers'),
     path('import/workbook/', views.import_workbook, name='import_workbook'),
