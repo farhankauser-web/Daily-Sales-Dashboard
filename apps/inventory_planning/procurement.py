@@ -357,16 +357,25 @@ def import_opening_balance(file_obj, supplier_id, as_of) -> dict:
 
     SupplierOpeningBalance.objects.filter(supplier=supplier,
                                           as_of=as_of).delete()
-    cat_of = dict(PlanningSku.objects.values_list('sku', 'category'))
-    res = {'rows': 0, 'units': 0, 'as_of': str(as_of), 'supplier': supplier.name}
+    # Case-insensitive: now that the file no longer carries a Category column,
+    # this lookup is the ONLY source, so a lower-case SKU in the sheet would
+    # otherwise leave every row uncategorised.
+    cat_of = {s.upper(): c for s, c in
+              PlanningSku.objects.values_list('sku', 'category') if s}
+    res = {'rows': 0, 'units': 0, 'as_of': str(as_of), 'supplier': supplier.name,
+           'unknown_skus': []}
     for r in range(hrow + 1, ws.max_row + 1):
         sku = _txt(ws.cell(r, c_sku).value)
         if not sku or sku.lower() in ('total', 'grand total'):
             continue
         qty = _int(ws.cell(r, c_qty).value)
-        cat = _txt(ws.cell(r, c_cat).value) if c_cat else ''
+        # A typed Category still wins, so an older file reads as before.
+        cat = (_txt(ws.cell(r, c_cat).value) if c_cat else '') \
+            or cat_of.get(sku.upper(), '')
+        if not cat and sku not in res['unknown_skus']:
+            res['unknown_skus'].append(sku)
         SupplierOpeningBalance.objects.create(
-            supplier=supplier, sku=sku, category=cat or cat_of.get(sku, ''),
+            supplier=supplier, sku=sku, category=cat,
             units=qty, as_of=as_of)
         res['rows'] += 1
         res['units'] += qty

@@ -65,7 +65,7 @@ class WalmartOrderAdmin(admin.ModelAdmin):
             try:
                 if order.status in (S.ERROR, S.HOLD, S.CANCELLED) and \
                         transition(order, S.NEW,
-                                   f'admin:{request.user.username}',
+                                   f'admin:{request.user.email}',
                                    {'action': 'reprocess'},
                                    error_reason=''):
                     done += 1
@@ -80,7 +80,7 @@ class WalmartOrderAdmin(admin.ModelAdmin):
     def action_retry_tracking(self, request, queryset):
         done = 0
         for order in queryset.filter(status=S.TRACKING_UPLOADED):
-            if transition(order, S.SHIPPED, f'admin:{request.user.username}',
+            if transition(order, S.SHIPPED, f'admin:{request.user.email}',
                           {'action': 'retry tracking upload'}):
                 done += 1
         messages.success(request, f'{done} order(s) will re-run tracking '

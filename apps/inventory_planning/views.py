@@ -828,9 +828,11 @@ def opening_balance_template(request):
     from openpyxl import Workbook
     wb = Workbook()
     ws = wb.active; ws.title = 'Opening Balance'
-    _xlsx_header(ws, ['SKU', 'Category', 'Units'], [24, 26, 12])
-    ws.append(['TW-WHT-BTH-4', 'Bath Towel 4 Pack', 1200])
-    ws.append(['TW-GRY-KTH-6', 'Kitchen Towel 6 Pack', 3600])
+    # SKU and Units only. Category is looked up from the catalogue, same rule
+    # as the PO workbook and the packing list.
+    _xlsx_header(ws, ['SKU', 'Units'], [24, 12])
+    ws.append(['TW-WHT-BTH-4', 1200])
+    ws.append(['TW-GRY-KTH-6', 3600])
 
     _xlsx_notes(wb, 'Opening Balance', [
         ['What this is', 'Units this supplier still owed you before Pulse went '
@@ -840,8 +842,10 @@ def opening_balance_template(request):
                 'containing "SKU"; it does not have to be row 1.'],
         ['Units', 'Required. The column may also be headed Qty, Quantity, '
                   'Opening or Balance.'],
-        ['Category', 'Optional. Filled in from the SKU catalogue when left '
-                     'blank.'],
+        ['No category', 'The SKU already carries its category in the '
+                        'catalogue, so it is filled in for you. A Category '
+                        'column on an older file is still read, and the typed '
+                        'value wins.'],
         [''],
         ['The supplier and the "as at" date come from the upload form. The '
          'date matters: the balance is stored against it so it back-dates '
@@ -1562,6 +1566,14 @@ def import_opening_view(request):
                             status=400)
     msg = (f'{r["supplier"]}: opening balance of {r["units"]:,} units across '
            f'{r["rows"]} SKUs, as at {r["as_of"]}.')
+    if r.get('unknown_skus'):
+        # Category is derived now, so a SKU the catalogue has never seen is the
+        # only way a row ends up uncategorised. Name them.
+        shown = ', '.join(r['unknown_skus'][:8])
+        more = (f' +{len(r["unknown_skus"]) - 8} more'
+                if len(r['unknown_skus']) > 8 else '')
+        msg += (f' ⚠ {len(r["unknown_skus"])} SKU(s) are not in the catalogue, '
+                f'so no category could be looked up: {shown}{more}.')
     return JsonResponse({'status': 'ok', **r, 'message': msg})
 
 

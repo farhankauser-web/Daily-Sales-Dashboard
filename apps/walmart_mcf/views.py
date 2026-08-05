@@ -211,8 +211,12 @@ def api_walmart_reprocess(request):
     except (ValueError, WalmartOrder.DoesNotExist):
         return JsonResponse({'error': 'order not found'}, status=404)
     try:
+        # This project's User is email-based and has no `username` — reading it
+        # raised AttributeError, Django returned its HTML 500 page, and the
+        # page reported "Session expired" because the response was not JSON.
+        # The button had therefore never worked.
         if order.status in (S.ERROR, S.HOLD, S.CANCELLED) and \
-                transition(order, S.NEW, f'web:{request.user.username}',
+                transition(order, S.NEW, f'web:{request.user.email}',
                            {'action': 'reprocess'}, error_reason=''):
             return JsonResponse({'status': 'ok'})
     except IllegalTransition:
