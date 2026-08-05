@@ -173,6 +173,20 @@ LOG=/Users/farhankauser/Desktop/project/infinitee_app/logs
 # RFQ 24h TAT breaches, PO stage TAT breaches, refill-due articles (hourly)
 20 * * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE atlas_alerts >> $LOG/atlas.log 2>&1
 
+# ── INVENTORY PLANNING — Amazon stock into the planner ───────────────────────
+# FBA for every marketplace; AWD is USA-only (it does not exist in UK/AE/SA).
+#
+# Runs TEN MINUTES BEFORE the receipt syncs below, and that order is the whole
+# point. A receipt sync subtracts counted units from In Transit; the units only
+# reappear once this has refreshed AWD/FBA on-hand. Run them far apart and the
+# planner spends the gap with those units in NEITHER column, understating cover
+# and inviting a reorder that is not needed. Adjacent, the inconsistency lasts
+# minutes and errs towards over- rather than under-stating.
+#
+# Was previously not scheduled at all — stock only refreshed when somebody
+# pressed "⟳ Refresh Amazon Stock" on the planner.
+10 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_planning_inventory --all >> $LOG/planning_stock.log 2>&1
+
 # ── INVENTORY PLANNING — container receipts ──────────────────────────────────
 # Pull Amazon's expected/received per SKU for every open container carrying an
 # Amazon shipment ID (STAR-… for AWD). Amazon counts in CASES; the command
@@ -183,13 +197,13 @@ LOG=/Users/farhankauser/Desktop/project/infinitee_app/logs
 # warehouse stock — so without this sync they are double-counted, which left
 # 45,088 phantom units on the books while five landed containers sat "at port".
 # Twice daily is plenty; AWD receipts move over days, not minutes.
-20 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_awd_receipts --marketplace usa --apply >> $LOG/container_receipts.log 2>&1
 #
-# Stage transitions (in_transit → receiving on first receipt, → received when
-# Amazon CLOSES the shipment) are NOT enabled above. Closing a container is an
-# accounting act: shipped-minus-received books as shortage. Watch a couple of
-# containers land first, then swap the line above for this one:
-# 20 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_awd_receipts --marketplace usa --apply --advance-status >> $LOG/container_receipts.log 2>&1
+# --advance-status is ON: first receipt moves a container In Transit →
+# Receiving, and Amazon CLOSING the shipment moves it → Container History
+# (Received & Archived). Safe because nothing is valued here — units short are
+# left on the line (packed vs counted) for the COGS system to pick up, and no
+# write-off is booked by the app.
+20 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_awd_receipts --marketplace usa --apply --advance-status >> $LOG/container_receipts.log 2>&1
 #
 # ── FC containers — the same job for shipments consigned to a fulfilment
 # centre rather than AWD. A different API entirely: FBA… ids live in
@@ -201,8 +215,5 @@ LOG=/Users/farhankauser/Desktop/project/infinitee_app/logs
 # NOTE: this API reports EACHES, not cases. No case-pack conversion happens in
 # sync_fba_receipts, deliberately — applying the AWD one here would multiply
 # every figure by the pack size.
-25 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_fba_receipts --marketplace usa --apply >> $LOG/container_receipts.log 2>&1
-#
-# Same opt-in stage transitions as AWD; swap the line above for this one once
-# you have watched an FC container land:
-# 25 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_fba_receipts --marketplace usa --apply --advance-status >> $LOG/container_receipts.log 2>&1
+25 7,19 * * * cd /Users/farhankauser/Desktop/project/infinitee_app && $PYTHON $MANAGE sync_fba_receipts --marketplace usa --apply --advance-status >> $LOG/container_receipts.log 2>&1
+

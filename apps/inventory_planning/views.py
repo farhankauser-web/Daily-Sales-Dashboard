@@ -232,8 +232,11 @@ def container_view(request, pk):
         p = meta.get(l.sku.upper())
         lines.append({'type': p.sku_type if p else '', 'name': p.name if p else '',
                       'sku': l.sku, 'units': l.units,
-                      'received': l.received_units,
-                      'disc': l.received_units - l.units})
+                      # Same fallback as the history list — this per-SKU view
+                      # is what feeds the lost-units figures into the COGS
+                      # system, so it has to read Amazon's count too.
+                      'received': l.counted_units,
+                      'disc': l.counted_units - l.units})
     lines.sort(key=lambda x: (x['name'] or x['sku']))
     return render(request, 'inventory_planning/container_view.html',
                   {'sh': sh, 'lines': lines, 'archived': sh.is_archived})
@@ -266,7 +269,10 @@ def api_container_history(request):
         qs = qs.filter(received_date__lte=to)
     rows = []
     for sh in qs[:500]:
-        disc = sum(l.received_units - l.units for l in sh.lines.all())
+        # Counted minus packed: negative is a shortfall. counted_units prefers
+        # a human count and falls back to Amazon's, so a container the API
+        # closed by itself does not report as a total loss.
+        disc = sum(l.counted_units - l.units for l in sh.lines.all())
         rows.append({
             'id': sh.pk, 'container_no': sh.container_no,
             'shipment_id': sh.shipment_id, 'po_number': sh.po_number,

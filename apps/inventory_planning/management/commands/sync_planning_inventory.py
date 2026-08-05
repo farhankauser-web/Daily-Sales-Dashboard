@@ -90,23 +90,38 @@ def sync_region(region: str) -> dict:
             as_of=now, source='api')
     res['fba_skus'] = len(fresh)
 
-    # ── AWD (US-only today; API errors elsewhere are non-fatal) ──
+    # ── AWD — USA only. Amazon Warehousing and Distribution does not exist in
+    # the UK/AE/SA marketplaces, so calling there just earns a 403 we then have
+    # to explain away in the log. Skipping outright is both faster and honest.
+    if region != 'usa':
+        return res
+
     awd, _ = Warehouse.objects.get_or_create(
         code=f'AWD-{region.upper()}',
         defaults={'name': f'Amazon AWD {region.upper()}',
                   'region': region, 'kind': 'awd'})
     try:
+        # Collected first, then written in one replace — same as FBA above.
+        # update_or_create per SKU left a row behind forever once Amazon
+        # stopped reporting a SKU, so a discontinued line kept showing stock
+        # it no longer had.
+        awd_fresh: dict[str, dict] = {}
         for item in client.get_awd_inventory_all():
             sku = _norm_sku(item.get('sku'))
             if not sku or _is_amazon_alias(sku):
                 continue
-            onhand = int(item.get('totalOnhandQuantity') or 0)
-            WarehouseStock.objects.update_or_create(
-                warehouse=awd, sku=sku,
-                defaults={'units': onhand,
-                          'detail': {'inbound_to_awd':
-                                     int(item.get('totalInboundQuantity') or 0)},
-                          'as_of': now, 'source': 'api'})
+            awd_fresh[sku] = {
+                'units': int(item.get('totalOnhandQuantity') or 0),
+                'inbound': int(item.get('totalInboundQuantity') or 0),
+            }
+        # Only replace once the call has fully succeeded — a mid-pagination
+        # failure must not leave the region with a half-empty AWD snapshot.
+        WarehouseStock.objects.filter(warehouse=awd).delete()
+        for sku, v in awd_fresh.items():
+            WarehouseStock.objects.create(
+                warehouse=awd, sku=sku, units=v['units'],
+                detail={'inbound_to_awd': v['inbound']},
+                as_of=now, source='api')
             res['awd_skus'] += 1
     except Exception as exc:
         msg = str(exc)
@@ -126,7 +141,36 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--region', default='usa')
+        parser.add_argument('--all', action='store_true',
+                            help='Every configured marketplace in turn.')
 
     def handle(self, *args, **opts):
-        res = sync_region(opts['region'])
-        self.stdout.write(str(res))
+        import fcntl
+        import os
+        import tempfile
+
+        # Single instance. sync_region DELETES a region's FBA rows before
+        # rewriting them, so two runs — or a run racing the "⟳ Refresh Amazon
+        # Stock" button — can leave the planner reading zero stock for every
+        # SKU mid-window. Cheap lock, expensive failure.
+        lock_path = os.path.join(tempfile.gettempdir(),
+                                 'ix_sync_planning_inventory.lock')
+        with open(lock_path, 'w') as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                self.stdout.write('another sync is already running — skipping.')
+                return
+            self._run(opts)
+
+    def _run(self, opts):
+        from apps.amazon_api.models import AmazonAPIConfig
+        if opts['all']:
+            regions = list(AmazonAPIConfig.objects
+                           .filter(is_active=True)
+                           .values_list('marketplace', flat=True))
+        else:
+            regions = [opts['region']]
+        for r in regions:
+            res = sync_region(r)
+            self.stdout.write(str(res))

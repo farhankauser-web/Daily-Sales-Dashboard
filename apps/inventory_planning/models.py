@@ -171,7 +171,16 @@ class InTransitShipment(models.Model):
 
     @property
     def total_received(self):
-        return sum(l.received_units for l in self.lines.all())
+        """Units counted in — a person's count where there is one, otherwise
+        Amazon's.
+
+        A container received through the Goods Receipt screen has
+        received_units filled by hand. One that Amazon counted in and closed by
+        itself never gets that, only amazon_received_units. Reading received_units
+        alone made every auto-closed container look like a 100% loss.
+        Human count wins where it exists; the API is never allowed to overwrite it.
+        """
+        return sum(l.counted_units for l in self.lines.all())
 
     @property
     def is_archived(self):
@@ -212,6 +221,24 @@ class InTransitLine(models.Model):
                        ('other', 'Other')]
     variance_reason = models.CharField(max_length=16, blank=True,
                                        choices=RECEIPT_REASONS)
+
+    @property
+    def counted_units(self) -> int:
+        """What was actually counted in — the human figure, else Amazon's.
+
+        Two sources, deliberately kept in separate columns so neither can
+        overwrite the other: received_units is filled on the Goods Receipt
+        screen, amazon_received_units by the AWD/FBA receipt syncs. A container
+        Amazon closed by itself only ever has the second, so anything reporting
+        a shortfall has to fall back to it or the whole container reads as lost.
+        """
+        return int(self.received_units or 0) or int(self.amazon_received_units or 0)
+
+    @property
+    def shortfall_units(self) -> int:
+        """Packed minus counted. Never declared minus counted — we always
+        declare at least what we pack, so that would invent a loss."""
+        return max(0, int(self.units or 0) - self.counted_units)
 
     class Meta:
         indexes = [models.Index(fields=['sku'])]

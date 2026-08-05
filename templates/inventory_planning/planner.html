@@ -431,13 +431,22 @@ async function syncStock(btn){
     const r = await fetch("{% url 'inventory_planning:api_sync_stock' %}", {method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
       body: JSON.stringify({region: curRegion})});
-    const j = await r.json();
-    if (j.status==='ok'){
+    // A 500 returns Django's HTML error page, and r.json() would throw a
+    // SyntaxError that reads as gibberish. Check the status first and say
+    // something a person can act on.
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j){
+      ixAlert(`Sync failed — the server returned HTTP ${r.status}. `
+              + `Stock is refreshed automatically at 07:10 and 19:10, so the `
+              + `figures on this page are at most half a day old.`);
+    } else if (j.status === 'ok'){
       let msg = `Synced ${j.fba_skus} FBA SKUs`;
       if (j.awd_skus) msg += `, ${j.awd_skus} AWD SKUs`;
       else if (j.awd_error) msg += `. AWD unavailable (${j.awd_error.slice(0,60)}) — AWD stock comes from the ops workbook until the AWD role is enabled.`;
       ixAlert(msg); load();
-    } else ixAlert('Sync failed: ' + (j.error||''));
+    } else if (j.error && j.error.includes('already running')){
+      ixAlert('A scheduled stock sync is running right now — try again in a minute.');
+    } else ixAlert('Sync failed: ' + (j.error || 'unknown error'));
   }catch(e){ ixAlert('Sync failed: '+e); }
   btn.disabled=false; btn.textContent=old;
 }
