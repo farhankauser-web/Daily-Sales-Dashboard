@@ -1586,12 +1586,12 @@ def api_packing_preview(request):
     if f is None:
         return JsonResponse({'status': 'failed', 'message': 'No file.'},
                             status=400)
-    supplier_id = request.POST.get('supplier')
+    # Supplier is no longer asked for on the form — the packing list names it
+    # per row, which is what lets one file describe a container loaded from two
+    # factories. Still accepted, as a fallback for a file with no Supplier
+    # column; a row with neither is refused by the preview, by name.
+    supplier_id = request.POST.get('supplier') or None
     region = request.POST.get('region') or 'usa'
-    if not supplier_id:
-        return JsonResponse({'status': 'failed',
-                             'message': 'Choose the supplier this container '
-                                        'is loading from.'}, status=400)
     # On a REPLACE re-upload the container's own lines are about to be deleted,
     # so they must be released back into the open balance before checking it —
     # otherwise the container competes with itself and reports a false
@@ -1638,7 +1638,7 @@ def api_packing_commit(request):
     mode = 'append' if d.get('mode') == 'append' else 'replace'
     try:
         res = commit_packing_list(container, allocs,
-                                  supplier_id=d['supplier_id'],
+                                  supplier_id=d.get('supplier_id'),
                                   region=d.get('region') or 'usa',
                                   mode=mode)
     except Exception as exc:

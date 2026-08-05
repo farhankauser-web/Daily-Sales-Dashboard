@@ -543,7 +543,10 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
     """
     from .models import PlanningSku, Supplier
 
-    supplier = Supplier.objects.get(pk=supplier_id)
+    # supplier_id is now optional — the packing list names the supplier on each
+    # row, so the form no longer asks. It survives as a fallback for a file
+    # that has no Supplier column at all.
+    supplier = Supplier.objects.filter(pk=supplier_id).first() if supplier_id else None
     fnskus = dict(PlanningSku.objects.filter(region=region)
                   .values_list('sku', 'fnsku'))
     fn_ci = {k.upper(): v for k, v in fnskus.items()}
@@ -555,7 +558,8 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
                .values_list('sku', 'name') if s}
     sup_idx = supplier_index()
 
-    out = {'supplier': supplier.name, 'supplier_id': supplier.pk,
+    out = {'supplier': supplier.name if supplier else '',
+           'supplier_id': supplier.pk if supplier else None,
            'region': region, 'rows': [], 'errors': 0, 'warnings': 0,
            'total_units': 0, 'total_cbm': 0.0, 'blocking': False,
            'suppliers': []}
@@ -567,7 +571,12 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
         #    can carry a whole container. An unknown name is refused rather
         #    than guessed — a typo must not create a duplicate factory.
         row_sup, named, sup_ok = supplier, _txt(r.get('supplier')), True
-        if named:
+        if not named and supplier is None:
+            sup_ok = False
+            row['errors'].append(
+                'No supplier on this row. Put the factory in the Supplier '
+                'column — the template has a dropdown of the ones on record.')
+        elif named:
             hit = sup_idx.get(_match_key(named))
             if hit is None:
                 sup_ok = False
@@ -581,9 +590,9 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
                        else ' — add it under Suppliers first.'))
             else:
                 row_sup = hit
-        row['supplier'] = row_sup.name if sup_ok else named
-        row['supplier_id'] = row_sup.pk if sup_ok else None
-        if sup_ok and row_sup.name not in out['suppliers']:
+        row['supplier'] = row_sup.name if (sup_ok and row_sup) else named
+        row['supplier_id'] = row_sup.pk if (sup_ok and row_sup) else None
+        if sup_ok and row_sup and row_sup.name not in out['suppliers']:
             out['suppliers'].append(row_sup.name)
 
         sku = r['sku']
@@ -609,7 +618,7 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
         # would otherwise look allocated. Leave it unallocated instead.
         lines = (_open_lines_for(sku, row_sup.pk, r.get('po_number', ''),
                                  release_container_id=exclude_container_id)
-                 if sup_ok else [])
+                 if (sup_ok and row_sup) else [])
         if not sup_ok:
             pass                      # the supplier error already says why
         elif not lines:
@@ -664,7 +673,7 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
 
 
 @transaction.atomic
-def commit_packing_list(container, allocs, supplier_id, region,
+def commit_packing_list(container, allocs, supplier_id=None, region='usa',
                         mode='replace') -> dict:
     """Write the confirmed allocations.
 
@@ -692,7 +701,10 @@ def commit_packing_list(container, allocs, supplier_id, region,
     from .models import (InTransitLine, InTransitShipment, POLine, Supplier,
                          Warehouse)
 
-    supplier = Supplier.objects.get(pk=supplier_id)
+    # Optional: the vendor on the container is derived from the PO lines the
+    # units are drawn from, so this is only a last-resort label for the odd
+    # case where nothing resolved to a PO line at all.
+    supplier = Supplier.objects.filter(pk=supplier_id).first() if supplier_id else None
 
     def _date(v):
         try:
@@ -727,7 +739,7 @@ def commit_packing_list(container, allocs, supplier_id, region,
         pk__in=[int(a['po_line_id']) for a in allocs if a.get('po_line_id')]
     ).select_related('po__supplier')
     new_vendors = sorted({l.po.supplier.name for l in _po_lines})
-    if not new_vendors:
+    if not new_vendors and supplier:
         new_vendors = [supplier.name]
 
     if mode == 'append':
