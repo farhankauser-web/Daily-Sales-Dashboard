@@ -32,8 +32,7 @@ docs/
 │   ├── README.md
 │   ├── planner.md                 projection, runway, reorder, loading plan
 │   ├── suppliers.md               suppliers, opening balance
-│   ├── purchase-orders.md         PO workbook, sourcing, balances
-│   ├── production.md              production plans, PP numbering
+│   ├── purchase-orders.md         PO workbook, production plans, sourcing
 │   ├── allocation-workbench.md    packing list → container
 │   ├── containers.md              in transit, statuses, history
 │   ├── receiving.md               AWD + FC receipts, shortfall

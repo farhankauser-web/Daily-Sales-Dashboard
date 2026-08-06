@@ -28,6 +28,7 @@ code change alone would close them. See [inventory/gaps.md](inventory/gaps.md).
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | [inventory](inventory/gaps.md) |
 | `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | [inventory](inventory/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |
+| `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | [inventory](inventory/gaps.md) |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | [inventory](inventory/gaps.md) |
 | `FIN-001` | Referral fee computed on gross revenue, never checked against a settlement | P2 | *(financials pending)* |
 | `BA-001` | Three Brand Analytics reports submitted, never collected | P2 | *(brand-analytics pending)* |

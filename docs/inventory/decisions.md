@@ -22,6 +22,8 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `INV-D-012` | Amazon's case pack wins over ours | 2026-08-05 | accepted |
 | `INV-D-013` | One receipt sync per Amazon API, never merged | 2026-08-05 | accepted |
 | `INV-D-014` | Units draw FIFO — oldest purchase order first | 2026-08-04 | accepted |
+| `INV-D-015` | Suppliers are never created implicitly | 2026-08-05 | accepted, PO upload not yet compliant |
+| `INV-D-016` | Wastage closes balance permanently | 2026-07-27 | accepted |
 
 ---
 
@@ -52,7 +54,7 @@ factory, and it is the number a claim is argued from.
 and that difference must be explained rather than reconciled away. Over-declaring
 is reported separately so it is visible but harmless.
 
-**Affected documents** — [containers.md](containers.md), receiving.md *(pending)*
+**Affected documents** — [containers.md](containers.md), [receiving.md](receiving.md)
 
 ---
 
@@ -82,7 +84,7 @@ should match the document.
 **Consequences** — Re-upload replaces (`INV-D-010`), so the file must always be
 complete. An unrecognised supplier is refused by name rather than guessed.
 
-**Affected documents** — allocation-workbench.md *(pending)*, [containers.md](containers.md)
+**Affected documents** — [allocation-workbench.md](allocation-workbench.md), [containers.md](containers.md)
 
 ---
 
@@ -111,7 +113,7 @@ be wrong.
 **Consequences** — A SKU the catalogue has never seen cannot be enriched, so it
 is named back to the user rather than landing blank.
 
-**Affected documents** — allocation-workbench.md *(pending)*, purchase-orders.md *(pending)*, suppliers.md *(pending)*
+**Affected documents** — [allocation-workbench.md](allocation-workbench.md), [purchase-orders.md](purchase-orders.md), [suppliers.md](suppliers.md)
 
 ---
 
@@ -141,7 +143,7 @@ is ever converted.
 **Consequences** — Rates are typed for every container. The template header
 names the currency it expects. FOB must never be summed across regions.
 
-**Affected documents** — allocation-workbench.md *(pending)*, cashflow.md *(pending)*
+**Affected documents** — [allocation-workbench.md](allocation-workbench.md), cashflow.md *(pending)*
 
 ---
 
@@ -200,7 +202,7 @@ side destroys it.
 not the manual field. Reading the manual field alone made every auto-closed
 container look like a total loss.
 
-**Affected documents** — [containers.md](containers.md), receiving.md *(pending)*
+**Affected documents** — [containers.md](containers.md), [receiving.md](receiving.md)
 
 ---
 
@@ -258,7 +260,7 @@ system that already classifies loss types.
 **Consequences** — Shortfall is visible in history but never valued in this app.
 A container that Amazon never closes needs a stall alert — `INV-CONT-003`.
 
-**Affected documents** — [containers.md](containers.md), receiving.md *(pending)*
+**Affected documents** — [containers.md](containers.md), [receiving.md](receiving.md)
 
 ---
 
@@ -288,7 +290,7 @@ In Transit is everything else active.
 its status says. The planner is unaffected — it counts the un-received remainder
 either way.
 
-**Affected documents** — [containers.md](containers.md), receiving.md *(pending)*
+**Affected documents** — [containers.md](containers.md), [receiving.md](receiving.md)
 
 ---
 
@@ -317,7 +319,7 @@ allocation.
 what it omits. The form says so, and re-upload releases the container's own
 units first so it does not compete with itself.
 
-**Affected documents** — allocation-workbench.md *(pending)*
+**Affected documents** — [allocation-workbench.md](allocation-workbench.md)
 
 ---
 
@@ -348,7 +350,7 @@ commitments first.
 needs allocation tracking, and re-uploading a balance that has been drawn against
 must be refused rather than replacing it. Tracked as `INV-CONT-002`.
 
-**Affected documents** — suppliers.md *(pending)*, allocation-workbench.md *(pending)*
+**Affected documents** — [suppliers.md](suppliers.md), [allocation-workbench.md](allocation-workbench.md)
 
 ---
 
@@ -452,4 +454,73 @@ own supplier — an unfiltered list would let a line be drawn against the wrong
 factory's balance. Once `INV-D-011` is built, opening balance is consumed ahead
 of any PO, and FIFO applies within each tier.
 
-**Affected documents** — [allocation-workbench.md](allocation-workbench.md), purchase-orders.md *(pending)*
+**Affected documents** — [allocation-workbench.md](allocation-workbench.md), [purchase-orders.md](purchase-orders.md)
+
+---
+
+## `INV-D-015` · Suppliers are never created implicitly
+
+| | |
+|---|---|
+| **Date** | 2026-08-05 · **Status** accepted — PO upload not yet compliant (`INV-SUP-004`) |
+
+**Context** — Suppliers used to come into existence as a side effect of
+importing a PO workbook, keyed on a code derived from the typed name. A typo
+minted a second factory, and there was no way to add one deliberately.
+
+**Decision** — A supplier is created only **explicitly**, through Add Supplier.
+Everywhere else an unknown name is **refused by name**, with near-matches
+suggested. All creation paths derive the code from the name identically, so an
+explicit add and any legacy implicit path land on the same record.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Keep implicit creation everywhere | A typo silently strands a PO or packing list against a phantom factory, and the error surfaces weeks later as a balance nobody recognises |
+| Fuzzy-match instead of refusing | Guessing between "Roomi" and "Rustam" wrongly is worse than asking; the near-match suggestion gives the human the same speed without the risk |
+
+**Reason** — A supplier is an attribution anchor: balances, allocations and
+cash all hang off it. Minting one from a typo corrupts attribution silently,
+and the cost of refusal is one trip to Add Supplier.
+
+**Consequences** — A genuinely new factory must be added before its first
+document imports. The PO upload still violates the rule (`INV-SUP-004`) and is
+brought in line rather than the rule being weakened.
+
+**Affected documents** — [suppliers.md](suppliers.md), [allocation-workbench.md](allocation-workbench.md)
+
+---
+
+## `INV-D-016` · Wastage closes balance permanently
+
+| | |
+|---|---|
+| **Date** | 2026-07-27 · **Status** accepted |
+
+**Context** — Factories report fault units against an order. Something has to
+happen to the balance those units represented: it is either still owed, or it
+is not.
+
+**Decision** — Wastage **permanently reduces the outstanding balance**:
+remaining = ordered − wastage − allocated. We do not pay for the units and the
+factory does not remake them under the same order. Wastage lands FIFO across
+the scoped open lines, oldest PO first — the same draw order as allocation.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Keep balance open until remade | The factory does not remake under the same PO; the balance would sit open forever and overstate what is owed |
+| Track wastage but exclude it from balance | Reported and ignored is worse than absent — every consumer of "remaining" would need to know to subtract it |
+
+**Reason** — Business call: it matches the commercial arrangement. A remake, if
+negotiated, arrives as new units on a new or existing order, not as the old
+balance reopening.
+
+**Consequences** — Outstanding-to-supplier falls the moment a wastage file is
+uploaded, with no money movement — the value column falls with it. Short-close
+then distinguishes what remains: a closed line's unallocated remainder is
+production shortage, never wastage.
+
+**Affected documents** — [purchase-orders.md](purchase-orders.md), [suppliers.md](suppliers.md)

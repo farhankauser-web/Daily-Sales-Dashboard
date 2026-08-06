@@ -82,8 +82,9 @@ If two documents describe the same rule, one of them is wrong — and it will be
 the one nobody remembers to update.
 
 **A document that does not exist yet is named, not linked.** Write
-`receiving.md *(pending)*`, never a link to a missing file — a broken link
-teaches readers to stop trusting the links that work.
+`planner.md *(pending)*`, never a link to a missing file — a broken link
+teaches readers to stop trusting the links that work. When the document is
+written, upgrade every mention to a link in the same commit.
 
 ## Identifiers
 

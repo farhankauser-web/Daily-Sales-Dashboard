@@ -25,8 +25,8 @@ what we will pay out (`ARCH-005`).
 | [containers.md](containers.md) | container lifecycle, statuses, in transit, history | a container is in the wrong place, or units are miscounted |
 | [receiving.md](receiving.md) | Amazon's count vs our packing list, shortfall | Amazon received less than we shipped |
 | [allocation-workbench.md](allocation-workbench.md) | packing list → container, PO drawdown | an upload is refused or allocates wrongly |
-| suppliers.md *(pending)* | suppliers, opening balance | supplier balances look wrong |
-| purchase-orders.md *(pending)* | PO workbook, production plans, balances | a PO import misbehaves |
+| [suppliers.md](suppliers.md) | suppliers, opening balance | supplier balances look wrong |
+| [purchase-orders.md](purchase-orders.md) | PO workbook, production plans, balances | a PO import misbehaves |
 | planner.md *(pending)* | projection, runway, reorder, loading plan | cover days or reorder dates look wrong |
 | transfers.md *(pending)* | FBA transfers, goods-receipt variance | stock moves between our own locations |
 | cashflow.md *(pending)* | the region ledger — forecast | a container's payment is missing or wrong |
@@ -59,7 +59,7 @@ Two relationships are not obvious from the chain and cause most confusion:
 |---|---|
 | a container in the wrong tab | `CLAUDE.md` · this README · [containers.md](containers.md) · `gaps.md` |
 | a shortfall or Amazon's count | `CLAUDE.md` · this README · [receiving.md](receiving.md) · [containers.md](containers.md) · `gaps.md` |
-| a packing-list upload | `CLAUDE.md` · this README · [allocation-workbench.md](allocation-workbench.md) · purchase-orders.md *(pending)* · `gaps.md` |
+| a packing-list upload | `CLAUDE.md` · this README · [allocation-workbench.md](allocation-workbench.md) · [purchase-orders.md](purchase-orders.md) · `gaps.md` |
 | container payments | `CLAUDE.md` · this README · cashflow.md *(pending)* · [containers.md](containers.md) · `gaps.md` |
 
 ## Current priorities

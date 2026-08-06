@@ -29,16 +29,17 @@ does not follow from the cause is how a register turns into a wishlist.
 | `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | bug | open |
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | bug | open |
 | `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | bug | open |
-| `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | — | open |
+| `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | missing implementation | open |
+| `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | bug | open |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | — | open |
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | bug | open |
 | `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | missing implementation · configuration | open |
 | `INV-ALLOC-004` | Append mode is unreachable and its docstring misleads | P3 | bug | open |
-| `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | — | open |
+| `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | legacy schema | open |
 
 `—` means the cause has not been established yet. Those gaps predate the
-Classification field and get one when the Suppliers and Cash Flow documents are
-written; a guess would be worse than a blank.
+Classification field and get one when their section's document is written; a
+guess would be worse than a blank.
 
 Closed gaps are at the end. They keep their ids and their rows.
 
@@ -128,7 +129,7 @@ replacing it.
 **Recommendation** — Build the two-tier supply pool. Mirror the PO-line pattern
 exactly — remaining = units − allocations — so nothing new has to be invented.
 
-**Related documents** — suppliers.md *(pending)*, allocation-workbench.md *(pending)*
+**Related documents** — [suppliers.md](suppliers.md), [allocation-workbench.md](allocation-workbench.md)
 **Related decisions** — `INV-D-011`
 
 ---
@@ -480,11 +481,14 @@ total loss.
 **Expected behaviour** — Everything reporting a shortfall reads the same derived
 figure. See `INV-D-006`.
 
-**Evidence** — In `api_container_history`, the row's `discrepancy` sums
-`l.counted_units - l.units` while its `lines[].received` is `l.received_units`.
-`build_variance` computes `disc = l.received_units - l.units` for the same
-reason. This is the failure `INV-CONT-006` closed at container level, left in
-place everywhere below it.
+**Evidence** — source: **code**. In `api_container_history`, the row's
+`discrepancy` sums `l.counted_units - l.units` while its `lines[].received` is
+`l.received_units`. `build_variance` computes `disc = l.received_units - l.units`
+for the same reason. And the model layer itself: `POLine.transit_shortage`,
+`over_receipt` and `receipt_variance` all sum `a.received_units` over received
+containers — so an auto-closed container reports its whole allocation as
+transit shortage on the Goods Receipt variance screens. This is the failure
+`INV-CONT-006` closed at container level, left in place everywhere below it.
 
 **Business impact** — None today: no container carries an Amazon count, so
 neither figure exists. It becomes visible the moment `INV-RECV-001` is fixed and
@@ -494,8 +498,9 @@ reason gets attributed, so a wrong figure there becomes a wrong claim.
 **Technical impact** — Two readings of one concept, one of them inside a single
 function, which is what `counted_units` exists to prevent.
 
-**Recommendation** — Read `counted_units` at both sites. Do the history change
-with `INV-RECV-002`, which touches the same response.
+**Recommendation** — Read `counted_units` at every site: the history drawer,
+`build_variance`, and the three `POLine` shortage properties. Do the history
+change with `INV-RECV-002`, which touches the same response.
 
 **Related documents** — [receiving.md](receiving.md), [containers.md](containers.md)
 **Related decisions** — `INV-D-006`
@@ -697,6 +702,8 @@ append exists only for corrections. Deleting is preferable — nothing calls it.
 |---|---|
 | **Priority** | P2 |
 | **Status** | open |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | mostly — the field and aggregation are code; the rates themselves must come from ops in the upload |
 | **Dependencies** | none |
 
 **Current behaviour** — Opening-balance units count toward a supplier's Balance
@@ -705,6 +712,11 @@ them at.
 
 **Expected behaviour** — Opening balance carries a per-unit rate, and the money
 column matches the units column.
+
+**Root cause** — The opening-balance record was designed to answer "how many
+units is the factory behind on", and it does. Money was added to the supplier
+ledger later, priced from PO groups — which backlog has none of. No rate field
+was ever added; nothing was removed or broken.
 
 **Evidence** — In `api_suppliers`, `remaining` includes the opening figure while
 `value` accumulates only from PO lines.
@@ -719,8 +731,62 @@ template, and the value rolled into two aggregations.
 that is solved by the packing-list FOB (`INV-D-004`) — so this is purely about
 the Suppliers page.
 
-**Related documents** — suppliers.md *(pending)*
+**Related documents** — [suppliers.md](suppliers.md)
 **Related decisions** — `INV-D-004`
+
+---
+
+## `INV-SUP-004` · The PO upload takes free text for the supplier and mints one on a typo
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open |
+| **Classification** | bug — an inconsistency with the intended rule |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — The PO upload form asks for the supplier as a free-text
+field, and the import `get_or_create`s a supplier from whatever was typed. The
+opening-balance and wastage uploads on the same page use a dropdown of existing
+suppliers, and the packing list refuses an unknown name outright.
+
+**Expected behaviour** — One rule everywhere: a supplier exists before anything
+references it, and an unknown name is refused with near-matches suggested. See
+`INV-D-015`.
+
+**Root cause** — The PO import predates the rule. Implicit creation was the
+convenience that bootstrapped the registry; the packing list then adopted
+refusal (`0cd9e7a`), and Add Supplier made refusal workable by giving new
+factories a front door (`d885737`). The PO path was never brought in line.
+
+**Evidence** — source: **code**.
+```python
+# procurement.py, import_po_workbook()
+code = ''.join(ch for ch in supplier_name.upper() if ch.isalnum())[:32]
+supplier, _ = Supplier.objects.get_or_create(code=code, defaults={'name': supplier_name})
+```
+`suppliers.html` renders `<input name="supplier" placeholder="AKT" required>`
+for the PO upload, against a `<select>` of known suppliers for the other two.
+The code derivation absorbs punctuation and case ("J.Sons" and "j sons" both
+fold to `JSONS`) but not a real typo: "Jsonss" mints `JSONSS`.
+
+**Business impact** — A misspelt PO upload creates a phantom factory carrying a
+real purchase order. Its balance appears under a name nobody recognises, the
+genuine supplier's balance understates, and the packing list — which resolves
+suppliers correctly — cannot draw against the misfiled PO.
+
+**Technical impact** — Two contradictory answers to "what happens to an unknown
+supplier name" in one module, one of which the docstring of `supplier_index`
+explicitly forbids.
+
+**Recommendation** — Replace the free-text field with the same dropdown the
+other uploads use. `import_po_workbook` keeps `get_or_create` semantics for
+callers but should refuse a name that resolves to no existing supplier, naming
+near-matches the way the packing list does.
+
+**Related documents** — [suppliers.md](suppliers.md), [purchase-orders.md](purchase-orders.md)
+**Related decisions** — `INV-D-015`
 
 ---
 
@@ -730,6 +796,8 @@ the Suppliers page.
 |---|---|
 | **Priority** | P3 |
 | **Status** | open |
+| **Classification** | legacy schema — dead field, no wrong behaviour |
+| **Code alone fixes it** | yes — one migration |
 | **Dependencies** | none |
 
 **Current behaviour** — The PO import writes a `pcs` value that no view,
@@ -747,7 +815,7 @@ longer asks for it and falls back to Units.
 **Recommendation** — Drop the column in a migration next time the PO models are
 touched.
 
-**Related documents** — purchase-orders.md *(pending)*
+**Related documents** — [purchase-orders.md](purchase-orders.md)
 
 ---
 
@@ -778,7 +846,7 @@ units ship, in which case it reaches cash flow via the container that carries
 them and this closes itself once `INV-CONT-002` is built. Confirm before
 building anything.
 
-**Related documents** — cashflow.md *(pending)*, suppliers.md *(pending)*
+**Related documents** — cashflow.md *(pending)*, [suppliers.md](suppliers.md)
 
 ---
 
