@@ -7,6 +7,18 @@ Inventory, extended by each section that follows.
 like. **This file says how the work is done**, and it is the one to read before
 opening a new section.
 
+## The bar for adding anything here
+
+A pattern is promoted only once it has **demonstrated value in two independent
+sections, or prevented a real error**. Not because it might be useful. Each
+entry below names where it earned its place; an entry that cannot is either
+removed or marked as unproven until a second section confirms it.
+
+The same bar applies to tooling. `check_docs.py` exists because the review was
+being retyped every section and it caught three real problems on its first run —
+not because a linter seemed like a good idea. **Prefer keeping the process
+simple**; a standard nobody needed is a cost paid every section forever.
+
 ---
 
 ## The section process
@@ -68,19 +80,19 @@ what executes against it.
 **Read the function, not the docstring.** Three docstrings in this codebase
 describe behaviour their own functions do not implement, and one of them put a
 wrong rule into two documents before it was caught. A comment is not code, and a
-stale one is worse than none because it is trusted.
+stale one is worse than none because it is trusted. *(Inventory, Marketing.)*
 
 **Grep the templates before assessing severity.** A routed endpoint is not a
-live endpoint. Two priority calls have turned on whether any page links it.
+live endpoint. Two priority calls have turned on whether any page links it. *(Inventory; prevented a P1 misfiling.)*
 
 **Fingerprint data provenance.** Contiguous primary-key ranges, clustered
 `updated_at`, and a derived field equalling its source identify
 machine-generated rows in seconds — and separate "the business did this" from
-"an importer did this". One such check reframed four gaps.
+"an importer did this". One such check reframed four gaps. *(Inventory; prevented four wrong classifications.)*
 
 **Two sources for one fact is always a defect.** Found four times so far: lead
 times in two places, a human count read where a derived figure belongs, and two
-docstrings against their own functions. Worth actively hunting in every section.
+docstrings against their own functions, and an allocator reading a superseded copy of its own data. Worth actively hunting. *(Inventory, Marketing.)*
 
 **Absence of data is not a defect.** Establish why the state exists before
 recommending anything: missing implementation · bug · configuration · missing
@@ -94,29 +106,28 @@ operational process · legacy data.
 document answers one question. **Split on discovery**: the moment a second
 machine appears while writing, split immediately rather than finishing something
 that will need splitting later. Applied twice — Inventory's planner became
-three documents, Marketing's hourly table turned out to have two writers.
+three documents, Marketing's hourly table turned out to have two writers. *(Inventory, Marketing.)*
 
 **State the intended business rule; link the gap where the code disagrees.** The
 document stays a description of the business; the register carries the debt.
 Writing today's quirk as though it were the rule makes the defect permanent by
-describing it as intent.
+describing it as intent. *(Inventory, Marketing.)*
+
+**Carry the failure that settles it.** In a rule: "AWD reports cases, FBA
+reports eaches — applying the AWD conversion to an FBA payload reads 1,440 units
+as 34,560." In a decision: the day that collapsed from $7,618 to $289 when a
+replacing upsert overwrote a complete day. The number is what stops a future
+session simplifying the rule away. *(Inventory, Marketing.)*
 
 **Document the disagreements that look like bugs.** Where two correct machines
-legitimately produce different numbers, say so as an edge case. It pre-empts a
-bug report and explains a design at once.
-
-**Carry the failure in the rule.** "AWD reports cases, FBA reports eaches —
-applying the AWD conversion to an FBA payload reads 1,440 units as 34,560." The
-number is what makes a rule stick.
+legitimately produce different numbers — reorder against the loading plan — say
+so as an edge case. It pre-empts a bug report and explains a design at once.
+*(Inventory only; unproven until a second section confirms it.)*
 
 **Record observations that are not gaps.** A striking data finding that turns
 out to be correct behaviour belongs in the document under *Observations — not
 gaps*, with its source and why it is not a defect. Otherwise the next reader
-rediscovers it and files it.
-
-**Cite the incident that settles a decision.** A decision record carrying the
-real failure it prevents — a day that collapsed from $7,618 to $289 — survives
-a future simplification. One that only states the rule does not.
+rediscovers it and files it. *(Inventory, Marketing.)*
 
 **A pending document is named, never linked.** Broken links teach readers to
 distrust the links that work.
