@@ -115,6 +115,14 @@ operational process · legacy data.
 
 ## Documentation patterns
 
+**Document in this order: business purpose · data source · business rules ·
+implementation.** A reader who does not know where a number comes from cannot
+judge the rules that shape it, and cannot tell an intentional difference from a
+defect. Where several pipelines feed one machine, the data-source section
+carries the **precedence** and what happens when they disagree — that is a
+reconciliation rule *inside* the domain, never cross-domain duplication.
+*(Directed 2026-08-06; applied from Financials onward.)*
+
 **One machine, one document.** The test is not length — it is whether the
 document answers one question. **Split on discovery**: the moment a second
 machine appears while writing, split immediately rather than finishing something

@@ -40,7 +40,7 @@ names its source. See the domain-boundary rule in
 
 | Document | Covers | Open here when |
 |---|---|---|
-| pnl.md *(pending)* | the management P&L statement | a month's profit looks wrong |
+| [pnl.md](pnl.md) | the management P&L statement | a month's profit looks wrong |
 | cogs.md *(pending)* | the cost base — COGS upload, FBA rates, recalculation | a product's cost is wrong or missing |
 | fee-drift.md *(pending)* | settlement actuals against uploaded fee assumptions | Amazon charged more than we modelled |
 | payouts.md *(pending)* | money that actually arrived · `ARCH-005` | a disbursement is missing |
@@ -88,7 +88,7 @@ pipelines write the same table and something has to decide which wins.
 
 | Working on… | Load |
 |---|---|
-| a month's profit | `CLAUDE.md` · this README · pnl.md *(pending)* · `gaps.md` |
+| a month's profit | `CLAUDE.md` · this README · [pnl.md](pnl.md) · `gaps.md` |
 | a product's cost | `CLAUDE.md` · this README · cogs.md *(pending)* · `gaps.md` |
 | a fee that looks wrong | `CLAUDE.md` · this README · fee-drift.md *(pending)* · `gaps.md` |
 

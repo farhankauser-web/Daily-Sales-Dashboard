@@ -20,6 +20,22 @@ verified against: <commit> · <date>
 
 <!-- What it exists to accomplish, and what would break without it. -->
 
+## Data source
+
+<!-- REQUIRED where the machine's source is not obvious, or where more than one
+     pipeline feeds it. Name the source, its grain, and what it is authoritative
+     for. Where several sources contribute, state the PRECEDENCE and what
+     happens when they disagree — that is a reconciliation rule inside this
+     domain, not duplication to be removed.
+
+     Order matters in a feature document: business purpose, then data source,
+     then business rules, then implementation. A reader who does not know where
+     a number comes from cannot judge the rules that shape it. -->
+
+| Source | Grain | Authoritative for |
+|---|---|---|
+| <source> | <per what> | <which figures> |
+
 ## Scope
 
 <!-- What this document covers and, where readers get it wrong, what it does
