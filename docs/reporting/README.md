@@ -22,8 +22,8 @@ margin; that one reconciles them to the bank.
 
 | Document | Covers | Open here when |
 |---|---|---|
-| daily.md *(pending)* | the daily dashboard and its KPI tiles | today's headline figures look wrong |
-| product-performance.md *(pending)* | the SKU table · `ARCH-007` | a SKU's revenue, margin or ad cost looks wrong |
+| [daily.md](daily.md) | the daily dashboard and its KPI tiles | today's headline figures look wrong |
+| [product-performance.md](product-performance.md) | the SKU table · `ARCH-007` | a SKU's revenue, margin or ad cost looks wrong |
 | hourly.md *(pending)* | hourly patterns and the completeness gates | an hour is missing or the heatmap has holes |
 | historical.md *(pending)* | multi-day and multi-month trends | a period comparison looks wrong |
 | command-center.md *(pending)* | the widget dashboard | a widget is empty or stale |
@@ -68,8 +68,8 @@ Marketplaces carrying data: `usa` 84 days · `uk` 78 · `ae` 47 · `sa` 47.
 
 | Working on… | Load |
 |---|---|
-| a headline figure | `CLAUDE.md` · this README · daily.md *(pending)* · `gaps.md` |
-| a SKU's margin or ad cost | `CLAUDE.md` · this README · product-performance.md *(pending)* · `gaps.md` |
+| a headline figure | `CLAUDE.md` · this README · [daily.md](daily.md) · `gaps.md` |
+| a SKU's margin or ad cost | `CLAUDE.md` · this README · [product-performance.md](product-performance.md) · `gaps.md` |
 | a missing hour | `CLAUDE.md` · this README · hourly.md *(pending)* · `gaps.md` |
 
 ## Method

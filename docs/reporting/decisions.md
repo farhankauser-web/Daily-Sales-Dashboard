@@ -8,7 +8,77 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 
 | ID | Decision | Date | Status |
 |---|---|---|---|
+| `REP-D-001` | Figures are served from the freshest sufficient source | 2026-06-20 | accepted |
+| `REP-D-002` | The allocator's output is preferred; the fallback is deliberate | 2026-06-20 | accepted |
 
-*No decisions recorded yet.* Expect most to be backfilled from code and commit
-history as the leaves are written — that is how all 11 of Marketing's and 9 of
-Inventory's were recovered.
+---
+
+## `REP-D-001` · Figures are served from the freshest sufficient source
+
+| | |
+|---|---|
+| **Date** | 2026-06-20 · **Status** accepted |
+
+**Context** — The dashboard can get its numbers three ways: stored daily
+figures, hourly snapshots written through the day, or a live call to Amazon.
+They differ in speed, freshness and reliability, and no single one is best for
+every window.
+
+**Decision** — A fixed tier order, tried in sequence, each falling through to
+the next **on failure as well as on absence**: stored daily figures → hourly
+snapshots → a live call. A live call is the last resort, never the default.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Always call Amazon live | Slow and rate limited; the page becomes unusable exactly when several people open it at once |
+| Always serve the cache and show nothing when it is empty | Today would be blank until the first sync of the day, which is when the page is most watched |
+| Pick the tier per window at configuration time | The right tier depends on whether a job has run, which configuration cannot know |
+
+**Reason** — Freshness and speed are both real requirements, and the cheapest
+sufficient answer is different at different times of day. Falling through on
+*failure* as well as absence is what makes the page degrade to slow-but-correct
+rather than to an error.
+
+**Consequences** — The same window can be served by different code on two
+consecutive requests, so a figure can change slightly on refresh as a better
+tier becomes available. It also means a bug in one tier is invisible while
+another is serving — which is how a table built by two paths came to disagree
+(`ARCH-007`).
+
+**Affected documents** — [daily.md](daily.md), [product-performance.md](product-performance.md)
+
+---
+
+## `REP-D-002` · The allocator's output is preferred; the fallback is deliberate
+
+| | |
+|---|---|
+| **Date** | 2026-06-20 · **Status** accepted |
+
+**Context** — Per-SKU advertising cost can come from the allocator, which
+reconciles to campaign spend exactly and records how each figure was derived, or
+from the older campaign-name attribution that predates it.
+
+**Decision** — Where the allocator has produced rows for a date, **those are
+used everywhere**. Where it has not, the older attribution is used and the row
+says which it is. The fallback is never silently equivalent to the allocator.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Use the allocator only, showing zero where it has not run | A zero ad cost is a wrong number that inflates margin, which is worse than an approximate one |
+| Keep the legacy attribution as primary | It does not reconcile to campaign spend and carries no confidence, so every figure derived from it is unqualified |
+| Blend them | Two attribution methods averaged is a third method nobody chose |
+
+**Reason** — An attributed figure that records its own provenance is worth more
+than one that does not, and a labelled approximation is worth more than a zero.
+
+**Consequences** — Ad cost for a date can change when the allocator later runs
+for it, which is correct and can surprise. The per-row source is what makes the
+change explicable, so anything that drops it makes the table less trustworthy
+rather than simpler.
+
+**Affected documents** — [product-performance.md](product-performance.md), [sku-allocation.md](../marketing/sku-allocation.md)
