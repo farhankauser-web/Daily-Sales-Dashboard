@@ -18,7 +18,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Brand Analytics | `brand-analytics.md` | search-query performance, market share, baskets |
 | Walmart | `walmart.md` | Walmart orders → Amazon MCF |
 | Supply Chain | `supply-chain.md` | **Atlas — the B2B arm.** Quotes, RFQs, B2B POs, invoices |
-| Inventory | `inventory/` | planner, suppliers, POs, containers, receiving — see that folder's README |
+| Inventory | [`inventory/`](inventory/README.md) | planner, suppliers, POs, containers, receiving — see that folder's README |
 | Intelligence | `intelligence.md` | AI recommendations, profit alerts |
 | Settings | `settings.md` | API credentials, users, roles, catalog |
 | — | `map.md` | the full documentation map and build order |
@@ -65,6 +65,13 @@ verified against: <commit> · <date>
 
 ## What exists so far
 
-`map.md`, `architecture-mismatches.md`, `gaps.md` and this index. Leaves are
-written as we work through each section — `inventory/` is next, since that is
-where the current work is. See `map.md` for the build order.
+`map.md`, `architecture-mismatches.md`, `gaps.md`, `templates/` and this index.
+
+Of the sections, only **[inventory](inventory/README.md)** has been started, and
+only partly: its README, [containers.md](inventory/containers.md), and its
+decision and gap registers. Receiving, suppliers, purchase orders, the
+allocation workbench, the planner, transfers and cash flow are named there as
+pending. Every other section in the table above is still unwritten.
+
+Leaves are written as we work through each section. See `map.md` for the build
+order.
