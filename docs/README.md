@@ -21,7 +21,9 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Inventory | `inventory/` | planner, suppliers, POs, containers, receiving — see that folder's README |
 | Intelligence | `intelligence.md` | AI recommendations, profit alerts |
 | Settings | `settings.md` | API credentials, users, roles, catalog |
+| — | `map.md` | the full documentation map and build order |
 | — | `architecture.md` | how the six apps fit together, and how data flows |
+| — | `architecture-mismatches.md` | technical-debt register — where code and business disagree |
 | — | `deployment.md` | EC2, nginx, gunicorn, cron, TLS |
 | — | **`gaps.md`** | **every open gap across all sections — the backlog** |
 
@@ -50,9 +52,15 @@ verified against: <commit> · <date>
 - **Gaps carry evidence** — a query or a `file:line`, never an assertion.
 - **Aspiration lives in "How it should work"**, never in "How it works today".
   Mixing them is how a doc stops being trusted.
+- **Documents describe the business, not the code.** Where the implementation
+  does not match the business boundary, say what should be true and link the
+  `ARCH-` id — do not bend the documentation to fit today's file layout.
+- **Every change updates its docs in the same commit**: the feature document,
+  the gap log, the decision log where a choice was made, and the mismatch
+  register where one was created or closed.
 
 ## What exists so far
 
-`gaps.md` and this index. The leaves get written as we work through them —
-`inventory/containers.md` and `inventory/suppliers-pos.md` are next, since
-that is where the current work is.
+`map.md`, `architecture-mismatches.md`, `gaps.md` and this index. Leaves are
+written as we work through each section — `inventory/` is next, since that is
+where the current work is. See `map.md` for the build order.
