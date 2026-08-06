@@ -33,6 +33,7 @@ change alone would close them. See [inventory/gaps.md](inventory/gaps.md) and
 | `MKT-ALLOC-001` | The campaign → product-group map is hardcoded in a view module | P2 | [marketing](marketing/gaps.md) |
 | `MKT-AMS-001` | A dataset that stops delivering is silent | P2 | [marketing](marketing/gaps.md) |
 | `MKT-ADS-001` | A report day that never resolves is invisible | P2 | [marketing](marketing/gaps.md) |
+| `MKT-CAMP-001` | Nothing flags a campaign whose profit rests mostly on fallback margins | P2 | [marketing](marketing/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |
 | `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | [inventory](inventory/gaps.md) |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | [inventory](inventory/gaps.md) |
@@ -51,6 +52,7 @@ change alone would close them. See [inventory/gaps.md](inventory/gaps.md) and
 | `MKT-ALLOC-004` | The smoothing docstring describes a blend the code does not perform | P3 | [marketing](marketing/gaps.md) |
 | `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | [marketing](marketing/gaps.md) |
 | `MKT-UPL-001` | An unmatched campaign name on upload is logged, never reported | P3 | [marketing](marketing/gaps.md) |
+| `MKT-TERM-001` | Signal thresholds are fixed in code and identical across marketplaces | P3 | [marketing](marketing/gaps.md) |
 | `INFRA-002` | Kernel upgrade pending, needs a reboot | P3 | *(deployment.md pending)* |
 | `INFRA-003` | HSTS still 86400 | P3 | *(deployment.md pending)* |
 | `INT-001` | Command Center phase 3 — per-widget config, resize | P3 | *(intelligence pending)* |

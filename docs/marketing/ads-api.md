@@ -27,8 +27,8 @@ completeness is recorded.
 
 **Not covered:**
 - the hourly, intra-day figures — [ams-stream.md](ams-stream.md)
-- what the stored rows are shown as — campaigns.md *(pending)*,
-  search-terms.md *(pending)*, placements.md *(pending)*
+- what the stored rows are shown as — [campaigns.md](campaigns.md),
+  [search-terms.md](search-terms.md), [placements.md](placements.md)
 - which source wins when they disagree — `MKT-D-002`
 
 ## Business workflow
@@ -160,4 +160,4 @@ so these describe structure and history rather than production health.*
 
 - [ams-stream.md](ams-stream.md) — the intra-day figures this is measured against
 - [sku-allocation.md](sku-allocation.md) — the largest consumer, and `ARCH-009`
-- campaigns.md *(pending)* — where these rows are shown
+- [campaigns.md](campaigns.md) — where these rows are shown

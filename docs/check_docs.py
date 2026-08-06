@@ -192,6 +192,11 @@ def check_duplicate_rules(section: str) -> None:
         blk = s.split('## Business rules')[1].split('\n## ')[0]
         for m in re.finditer(r'^\d+\.\s+(.+?)(?=^\d+\.|\Z)', blk, re.M | re.S):
             txt = ' '.join(m.group(1).split())
+            # A rule that links to a sibling document is a POINTER to the rule's
+            # single home, not a restatement of it — that is the pattern
+            # methodology.md asks for, so it must not read as duplication.
+            if re.search(r'\]\([\w./-]+\.md\)', txt):
+                continue
             key = frozenset(w.lower().strip('*.,—:()')
                             for w in txt.split()
                             if len(w) > 4

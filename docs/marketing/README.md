@@ -26,9 +26,9 @@ that one decides what it means.
 | [ams-stream.md](ams-stream.md) | S3 + Firehose → hourly campaign figures | hourly data is missing or a subscription fails |
 | [hourly-upload.md](hourly-upload.md) | Seller Central hourly CSV → the same table | an uploaded day disagrees with the stream |
 | [sku-allocation.md](sku-allocation.md) | campaign spend → SKU | per-SKU ad cost or TACoS looks wrong |
-| campaigns.md *(pending)* | campaign centre, profit, detail tabs | a campaign's figures look wrong |
-| search-terms.md *(pending)* | search-term performance and summaries | a term's spend or conversion looks wrong |
-| placements.md *(pending)* | placement performance | placement multipliers or splits look wrong |
+| [campaigns.md](campaigns.md) | campaign centre, profit, detail tabs | a campaign's figures look wrong |
+| [search-terms.md](search-terms.md) | search-term performance and summaries | a term's spend or conversion looks wrong |
+| [placements.md](placements.md) | placement performance | placement multipliers or splits look wrong |
 
 ## Relationships
 
@@ -82,7 +82,7 @@ Staleness is not evidence of a defect in this section.
 | per-SKU ad cost or TACoS | `CLAUDE.md` · this README · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
 | missing hourly data | `CLAUDE.md` · this README · [ams-stream.md](ams-stream.md) · `gaps.md` |
 | a report that never arrived | `CLAUDE.md` · this README · [ads-api.md](ads-api.md) · `gaps.md` |
-| a campaign's figures | `CLAUDE.md` · this README · campaigns.md *(pending)* · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
+| a campaign's figures | `CLAUDE.md` · this README · [campaigns.md](campaigns.md) · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
 
 ## Method
 

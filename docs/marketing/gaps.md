@@ -27,7 +27,9 @@ legacy data — a root cause, and whether a code change alone would close it.
 | `MKT-AMS-001` | A dataset that stops delivering is silent | P2 | missing implementation | open |
 | `MKT-ADS-001` | A report day that never resolves is invisible | P2 | missing implementation | open |
 | `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | missing implementation | open |
+| `MKT-CAMP-001` | Nothing flags a campaign whose profit rests mostly on fallback margins | P2 | missing implementation | open |
 | `MKT-UPL-001` | An unmatched campaign name on upload is logged, never reported | P3 | missing implementation | open |
+| `MKT-TERM-001` | Signal thresholds are fixed in code and identical across marketplaces | P3 | missing implementation | open |
 
 ---
 
@@ -436,6 +438,99 @@ re-key command already exists to fix them once the names resolve; this is only
 about knowing.
 
 **Related documents** — [hourly-upload.md](hourly-upload.md)
+
+---
+
+## `MKT-CAMP-001` · Nothing flags a campaign whose profit rests mostly on fallback margins
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — Every campaign profit row carries an attribution
+coverage percentage: the share of the campaign's sales that matched to a SKU we
+hold real costs for. Where coverage is low, the margin is computed from a
+fallback — referral percentage only, with no SKU-specific cost of goods or
+fulfilment fee. The figure is stored and displayed as a column. Nothing sorts,
+filters, warns or thresholds on it.
+
+**Expected behaviour** — A campaign whose profit is mostly estimated is visibly
+distinguished from one whose profit is measured, without the reader having to
+compare a column they may not know the meaning of.
+
+**Root cause** — Coverage was added as an honesty measure and it does its job at
+the row level. The step from "the number is present" to "the number changes how
+the row reads" was never taken, because at the time every campaign had good
+coverage and the distinction was theoretical.
+
+**Evidence** — source: **code**. `compute_campaign_profit` computes
+`attribution_coverage_pct` and documents it as flagging campaigns whose profit
+relies on fallback estimates; `api_campaigns_list` returns it as one column
+among twenty. No threshold, ordering or styling references it.
+
+**Business impact** — A campaign's profit can be largely estimated and read
+exactly like one that is measured. Decisions to scale or cut are taken on the
+profit figure, so an estimate presented with the same authority as a measurement
+is the kind of error that compounds.
+
+**Technical impact** — The value that qualifies every other value on the row is
+inert.
+
+**Recommendation** — Threshold it: below a coverage level, mark the row and
+qualify the profit figure in the UI the way "not started" qualifies a container
+variance in Inventory. The threshold is a business judgement — 80% is a
+reasonable start — and should be confirmed rather than assumed.
+
+**Related documents** — [campaigns.md](campaigns.md)
+**Related decisions** — `MKT-D-009`
+
+---
+
+## `MKT-TERM-001` · Signal thresholds are fixed in code and identical across marketplaces
+
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | open |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — The five search-term signals fire on fixed constants:
+spend above $5 with no orders, click-through above 0.5% with conversion below
+2%, return on ad spend above 5, and a losing-money floor of −$20. The same
+numbers apply to every marketplace, ad product and product category.
+
+**Expected behaviour** — Thresholds are business settings, adjustable without a
+deploy, and at minimum expressed per marketplace since they are money amounts in
+different currencies.
+
+**Root cause** — They were chosen to make the signals useful on the USA account
+and hard-coded, which was the right first move. Nothing has yet forced the
+question, because Sponsored Products USA is the only account the page is used
+against in anger.
+
+**Evidence** — source: **code**. Five module-level constants in
+`compute_campaign_profit`, referenced directly in the tagging loop with no
+per-marketplace lookup.
+
+**Business impact** — A $5 spend threshold is a different judgement in GBP, and
+a very different one for a £40 product than a £6 one. On a single-marketplace,
+single-currency account it is invisible; it misleads quietly the moment UK
+advertising is managed from this page.
+
+**Technical impact** — Business configuration in module constants — the same
+shape as `MKT-ALLOC-001` and the Inventory supplier-mapping gaps.
+
+**Recommendation** — Move to per-marketplace settings with the current values as
+defaults. Do it when UK advertising starts being managed here, not before.
+
+**Related documents** — [search-terms.md](search-terms.md)
+**Related decisions** — `MKT-D-010`
 
 ---
 

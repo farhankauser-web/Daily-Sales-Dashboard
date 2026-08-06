@@ -27,7 +27,7 @@ settlement.
 
 **Not covered:**
 - where campaign spend comes from — [ads-api.md](ads-api.md), [ams-stream.md](ams-stream.md)
-- what the allocated cost is used for — campaigns.md *(pending)*, and
+- what the allocated cost is used for — [campaigns.md](campaigns.md), and
   `docs/financials/` *(pending)*
 
 ## Business workflow
@@ -168,4 +168,4 @@ weaker copy. `MKT-ALLOC-002` and `MKT-ALLOC-003` are both symptoms of it.
 
 - [ads-api.md](ads-api.md) — where the daily reports come from
 - [ams-stream.md](ams-stream.md) — where the hourly figures come from
-- campaigns.md *(pending)* — what the allocated cost is shown against
+- [campaigns.md](campaigns.md) — what the allocated cost is shown against

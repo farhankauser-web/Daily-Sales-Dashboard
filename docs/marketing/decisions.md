@@ -16,6 +16,9 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `MKT-D-006` | Attribution windows differ by ad product and are not reconciled | 2026-06-08 | accepted |
 | `MKT-D-007` | An incomplete day is suppressed, never estimated | 2026-05-13 | accepted |
 | `MKT-D-008` | An uploaded hour replaces the stream; the stream accumulates | 2026-06-14 | accepted |
+| `MKT-D-009` | Profit is always shown, always qualified by coverage | 2026-05-13 | accepted |
+| `MKT-D-010` | Search terms are signalled on fixed shared thresholds | 2026-05-13 | accepted |
+| `MKT-D-011` | Breakdowns inherit the campaign's margin rate | 2026-05-13 | accepted |
 
 ---
 
@@ -295,3 +298,113 @@ covering an hour the stream is still receiving events for will be topped up
 again by those events — so uploads are for settled periods.
 
 **Affected documents** — [hourly-upload.md](hourly-upload.md), [ams-stream.md](ams-stream.md)
+
+---
+
+## `MKT-D-009` · Profit is always shown, always qualified by coverage
+
+| | |
+|---|---|
+| **Date** | 2026-05-13 · **Status** accepted |
+
+**Context** — Campaign profit needs each sold SKU's cost of goods and fees. Some
+sales attribute to SKUs we hold no costs for — a new product, a SKU absent from
+the cost upload — so the margin for part of a campaign has to be estimated from
+the referral percentage alone.
+
+**Decision** — Show the profit **always**, and publish an **attribution
+coverage** figure beside it: the share of the campaign's sales backed by real
+per-SKU costs. Never suppress the profit for low coverage, and never silently
+substitute an estimate.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Suppress profit below a coverage threshold | The most interesting campaigns are often the newest, which have the worst coverage — the rule would blank exactly the rows someone came to read |
+| Show the estimate without saying so | Presents a guess with the authority of a measurement, which is the failure the coverage figure exists to prevent |
+| Show only the covered portion | A partial profit figure with no denominator is harder to reason about than a full one with a caveat |
+
+**Reason** — An estimate that says it is an estimate is useful. The alternative
+to showing it is not showing something better; it is showing nothing.
+
+**Consequences** — Coverage has to be read to interpret profit, and nothing yet
+forces that — `MKT-CAMP-001`. It also means improving cost coverage improves the
+reported numbers without any campaign changing, which must be remembered when
+comparing periods.
+
+**Affected documents** — [campaigns.md](campaigns.md)
+
+---
+
+## `MKT-D-010` · Search terms are signalled on fixed shared thresholds
+
+| | |
+|---|---|
+| **Date** | 2026-05-13 · **Status** accepted |
+
+**Context** — A day's search-term table can exceed 100,000 rows. Sorting by
+spend surfaces the biggest terms, which are usually the ones already being
+managed. The terms worth acting on are defined by a *pattern*, not a size.
+
+**Decision** — Five signals, computed on **fixed thresholds applied identically
+to every campaign**: high spend with no sales, high click-through with low
+conversion, losing money, scaling opportunity, high profit.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Thresholds relative to each campaign's own distribution | Every campaign then has outliers by construction, including healthy ones, and the counts stop being comparable between campaigns |
+| Rank terms instead of signalling them | A ranking always has a top ten, whether or not anything is wrong |
+| Let the user set thresholds per view | Nobody tunes five numbers before reading a page; the defaults would be the answer anyway |
+
+**Reason** — A shared line makes the counts comparable — "this campaign has
+fourteen wasteful terms and that one has two" is a sentence worth saying, and it
+is only true if the line is the same.
+
+**Consequences** — The thresholds are money amounts applied across marketplaces
+and currencies, which is wrong the moment a second marketplace is managed here
+(`MKT-TERM-001`). They also encode a view about what "high spend" means that
+will drift as the account grows, so they are worth revisiting annually rather
+than never.
+
+**Affected documents** — [search-terms.md](search-terms.md), [campaigns.md](campaigns.md)
+
+---
+
+## `MKT-D-011` · Breakdowns inherit the campaign's margin rate
+
+| | |
+|---|---|
+| **Date** | 2026-05-13 · **Status** accepted |
+
+**Context** — Campaign profit is real: it is built from the cost of goods and
+fees of the SKUs Amazon says the campaign sold. Beneath a campaign sit search
+terms and placements, and Amazon attributes **no** cost of goods at those
+levels — only spend, orders and sales.
+
+**Decision** — A search term's or placement's profit is **its sales at the
+campaign's contribution-margin rate, less its spend**. It is a proxy, labelled
+as one wherever it appears, and the rule lives in
+[campaigns.md](campaigns.md) rather than being restated in each breakdown.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Show no profit below campaign level | Spend and sales alone cannot separate a term that is profitable from one that is not, which is the entire purpose of the page |
+| Re-derive margin per term from the SKUs it sold | Amazon does not report which SKU a search term sold, so there is nothing to derive it from |
+| Use a single account-wide margin rate | Cheaper and worse: a term in a high-margin campaign and one in a low-margin campaign would read identically |
+
+**Reason** — The campaign is the finest level at which a real margin exists, so
+it is the finest level whose rate can honestly be inherited. Inheriting it is an
+approximation; inventing one would not be.
+
+**Consequences** — A term selling an unusually high- or low-margin SKU within a
+mixed campaign is mis-stated in proportion to how mixed the campaign is. The
+proxy is only as good as campaign coverage (`MKT-D-009`), so a campaign resting
+on fallback margins passes that weakness down to every term and placement
+beneath it.
+
+**Affected documents** — [campaigns.md](campaigns.md), [search-terms.md](search-terms.md), [placements.md](placements.md)
