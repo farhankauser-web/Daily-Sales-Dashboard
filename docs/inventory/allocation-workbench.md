@@ -28,7 +28,7 @@ Covers the packing list, its validation, and the allocation it produces.
 - the container's life once created — [containers.md](containers.md)
 - Amazon's count against the packed figure — [receiving.md](receiving.md)
 - where the open balance comes from — [purchase-orders.md](purchase-orders.md)
-- what the FOB rate does once captured — cashflow.md *(pending)*
+- what the FOB rate does once captured — [cashflow.md](cashflow.md)
 
 ## Business workflow
 
@@ -183,4 +183,4 @@ workbench — *provisional; re-measure on production.*
 - [containers.md](containers.md) — what the container does once it exists
 - [receiving.md](receiving.md) — the packed figure every count is measured against
 - [purchase-orders.md](purchase-orders.md) — where the open balance comes from
-- cashflow.md *(pending)* — what the snapshotted rate pays for
+- [cashflow.md](cashflow.md) — what the snapshotted rate pays for

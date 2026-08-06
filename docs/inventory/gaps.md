@@ -32,16 +32,15 @@ does not follow from the cause is how a register turns into a wishlist.
 | `INV-PLAN-001` | Lead times exist twice, and the two disagree | P2 | bug | open |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | missing implementation | open |
 | `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | bug | open |
-| `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | — | open |
+| `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | missing implementation · blocked | blocked |
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | bug | open |
 | `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | missing implementation · configuration | open |
 | `INV-ALLOC-004` | Append mode is unreachable and its docstring misleads | P3 | bug | open |
 | `INV-PLAN-002` | The supplier-choice docstring describes a rule the code does not follow | P3 | bug | open |
 | `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | legacy schema | open |
 
-`—` means the cause has not been established yet. Those gaps predate the
-Classification field and get one when their section's document is written; a
-guess would be worse than a blank.
+Every gap carries a classification and says whether a code change alone would
+close it.
 
 Closed gaps are at the end. They keep their ids and their rows.
 
@@ -95,7 +94,7 @@ Fix `INV-CONT-011` first. The re-upload creates exactly the fields the
 status-workbook import deletes, so doing it in the other order risks losing the
 work to a single upload.
 
-**Related documents** — [containers.md](containers.md), cashflow.md *(pending)*
+**Related documents** — [containers.md](containers.md), [cashflow.md](cashflow.md)
 **Related decisions** — `INV-D-004`, `INV-D-005`, `INV-D-007`
 
 ---
@@ -198,7 +197,8 @@ count feeds AWD stock, and would build on that.
 **Recommendation** — Restrict the write to `3pl` and `factory`, and say in the
 UI that AWD comes from Amazon.
 
-**Related documents** — [receiving.md](receiving.md), transfers.md *(pending)*
+**Related documents** — [receiving.md](receiving.md), [transfers.md](transfers.md)
+**Related decisions** — `INV-D-018` (the rule this path breaks)
 
 ---
 
@@ -945,8 +945,16 @@ touched.
 | | |
 |---|---|
 | **Priority** | P2 |
-| **Status** | open |
-| **Dependencies** | `INV-SUP-001` |
+| **Status** | blocked — needs a business rule before anything is built |
+| **Classification** | missing implementation, blocked on a business decision |
+| **Code alone fixes it** | no — nobody has decided when backlog is paid, and no record holds a date |
+| **Dependencies** | `INV-SUP-001` (a rate to value it), `INV-CONT-002` (may close this outright) |
+
+**Root cause** — The forecast is assembled from containers because a container
+is the only thing in the section carrying a payment date. Opening balance is
+units owed with an as-of date, not a due date; no record anywhere states when
+that money leaves the bank. This is not an oversight in the ledger — the
+information does not exist to put in it.
 
 **Current behaviour** — Cash-flow outflows are built from containers. Opening
 balance has no container and no PO, so no payment is ever scheduled for it.
@@ -967,7 +975,7 @@ units ship, in which case it reaches cash flow via the container that carries
 them and this closes itself once `INV-CONT-002` is built. Confirm before
 building anything.
 
-**Related documents** — cashflow.md *(pending)*, [suppliers.md](suppliers.md)
+**Related documents** — [cashflow.md](cashflow.md), [suppliers.md](suppliers.md)
 
 ---
 

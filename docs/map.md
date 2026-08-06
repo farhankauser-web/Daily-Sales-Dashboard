@@ -38,7 +38,7 @@ docs/
 │   ├── allocation-workbench.md    packing list → container
 │   ├── containers.md              in transit, statuses, history
 │   ├── receiving.md               AWD + FC receipts, shortfall
-│   ├── transfers.md               FBA transfers, goods-receipt variance
+│   ├── transfers.md               FBA transfers — warehouse → Amazon FC
 │   ├── cashflow.md                the region ledger — forecast   ⚠ ARCH-005
 │   ├── gaps.md
 │   └── decisions.md

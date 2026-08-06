@@ -16,7 +16,10 @@ confusing and worth remembering: in this app, *Supply Chain* means B2B.
 
 It does not own money that has already arrived. Amazon payouts and the
 marketplace balance belong to **financials** *(pending)*; this section forecasts
-what we will pay out (`ARCH-005`).
+what we will pay out. Both are called "cash flow" today — `ARCH-005`.
+
+**This section is complete.** All ten features are documented; the registers
+below are the backlog, not unwritten work.
 
 ## Features
 
@@ -30,8 +33,8 @@ what we will pay out (`ARCH-005`).
 | [planner.md](planner.md) | position, cover days, stockout and order-by | cover days or a stockout date look wrong |
 | [loading-plan.md](loading-plan.md) | how much to ship on the next container | a container's mix looks wrong |
 | [reorder.md](reorder.md) | suggestions → draft POs | what to buy, and from whom |
-| transfers.md *(pending)* | FBA transfers, goods-receipt variance | stock moves between our own locations |
-| cashflow.md *(pending)* | the region ledger — forecast | a container's payment is missing or wrong |
+| [transfers.md](transfers.md) | warehouse → Amazon FC replenishment | stock moves between our own locations |
+| [cashflow.md](cashflow.md) | the region ledger — forecast · `ARCH-005` | a container's payment is missing or wrong |
 
 ## Relationships
 
@@ -44,12 +47,14 @@ Supplier → Purchase order → Production plan
                                   ↓                 ↓
                             Cash flow          Warehouse stock
                                                     ↓
+                                              FBA transfer ──→ Amazon FC
+                                                    ↓
                                                  Planner
                                                     ↓
                                     Loading plan  ·  Reorder ──→ draft PO
 ```
 
-Two relationships are not obvious from the chain and cause most confusion:
+Three relationships are not obvious from the chain and cause most confusion:
 
 - **A container belongs to no supplier.** Ownership lives on each line, via the
   PO line the units were drawn from, so one container routinely carries goods
@@ -67,7 +72,8 @@ Two relationships are not obvious from the chain and cause most confusion:
 | a container in the wrong tab | `CLAUDE.md` · this README · [containers.md](containers.md) · `gaps.md` |
 | a shortfall or Amazon's count | `CLAUDE.md` · this README · [receiving.md](receiving.md) · [containers.md](containers.md) · `gaps.md` |
 | a packing-list upload | `CLAUDE.md` · this README · [allocation-workbench.md](allocation-workbench.md) · [purchase-orders.md](purchase-orders.md) · `gaps.md` |
-| container payments | `CLAUDE.md` · this README · cashflow.md *(pending)* · [containers.md](containers.md) · `gaps.md` |
+| container payments | `CLAUDE.md` · this README · [cashflow.md](cashflow.md) · [containers.md](containers.md) · `gaps.md` |
+| stock into an Amazon FC | `CLAUDE.md` · this README · [transfers.md](transfers.md) · [planner.md](planner.md) · `gaps.md` |
 | a cover day or stockout date | `CLAUDE.md` · this README · [planner.md](planner.md) · `gaps.md` |
 | what to put on the next container | `CLAUDE.md` · this README · [loading-plan.md](loading-plan.md) · [planner.md](planner.md) · `gaps.md` |
 | what to buy | `CLAUDE.md` · this README · [reorder.md](reorder.md) · [purchase-orders.md](purchase-orders.md) · `gaps.md` |

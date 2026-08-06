@@ -30,7 +30,7 @@ a container occupies while that is happening.
 - the container's own lifecycle and statuses — [containers.md](containers.md)
 - how a container comes to exist — [allocation-workbench.md](allocation-workbench.md)
 - PO-line goods-receipt variance, ordered vs received against a purchase order
-  — transfers.md *(pending)*
+  — [purchase-orders.md](purchase-orders.md)
 - what a lost unit costs. The app values nothing; see `INV-D-008`.
 
 ## Business workflow
@@ -247,4 +247,4 @@ feature. See [gaps.md](gaps.md).
 - [containers.md](containers.md) — the container, its statuses and its history
 - [allocation-workbench.md](allocation-workbench.md) — where the packed quantity comes from
 - [planner.md](planner.md) — what the un-received remainder does to cover
-- transfers.md *(pending)* — goods-receipt variance against the purchase order
+- [transfers.md](transfers.md) — goods-receipt variance against the purchase order

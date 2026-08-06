@@ -66,8 +66,8 @@ Opening balance upload            Drill: supplier → category → PO → produc
    group's agreed rate, **in the supplier's currency**. It is a different figure
    in a different currency from a container's FOB (`INV-D-004`) and the two are
    never mixed.
-6. **Wastage closes balance permanently.** We do not pay for factory-fault
-   units and the factory does not remake them. See `INV-D-016`.
+6. **Wastage reduces the balance this ledger reports.** The rule and its
+   consequences live in [purchase-orders.md](purchase-orders.md); `INV-D-016`.
 7. **Lead time is production + sea + port-to-warehouse**, per supplier. The
    reorder engine dates its proposals from these; the planner's order-by date
    does not yet read them — `INV-PLAN-001`.

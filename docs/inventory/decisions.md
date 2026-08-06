@@ -25,6 +25,9 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `INV-D-015` | Suppliers are never created implicitly | 2026-08-05 | accepted, PO upload not yet compliant |
 | `INV-D-016` | Wastage closes balance permanently | 2026-07-27 | accepted |
 | `INV-D-017` | Demand is PDS where set, otherwise the 7-day average | 2026-07-21 | accepted |
+| `INV-D-018` | Amazon stock is never written by hand | 2026-07-24 | accepted |
+| `INV-D-019` | Amazon inflows are projected from settlements, not sales | 2026-07-24 | accepted |
+| `INV-D-020` | A human edit locks a generated cash-flow row | 2026-07-24 | accepted |
 
 ---
 
@@ -144,7 +147,7 @@ is ever converted.
 **Consequences** — Rates are typed for every container. The template header
 names the currency it expects. FOB must never be summed across regions.
 
-**Affected documents** — [allocation-workbench.md](allocation-workbench.md), cashflow.md *(pending)*
+**Affected documents** — [allocation-workbench.md](allocation-workbench.md), [cashflow.md](cashflow.md)
 
 ---
 
@@ -173,7 +176,7 @@ lets a line be priced when it resolves to no PO at all.
 **Consequences** — Correcting a rate means re-uploading the packing list. Two
 containers can legitimately carry different rates for the same SKU.
 
-**Affected documents** — [containers.md](containers.md), cashflow.md *(pending)*
+**Affected documents** — [containers.md](containers.md), [cashflow.md](cashflow.md)
 
 ---
 
@@ -231,7 +234,7 @@ rates.
 lists are re-uploaded. Tracked as `INV-CONT-001` so the understatement is known
 rather than discovered.
 
-**Affected documents** — cashflow.md *(pending)*, [gaps.md](gaps.md)
+**Affected documents** — [cashflow.md](cashflow.md), [gaps.md](gaps.md)
 
 ---
 
@@ -560,3 +563,100 @@ shown next to it for comparison. PDS is dated, so a seasonal plan projects
 correctly rather than flattening to one number.
 
 **Affected documents** — [planner.md](planner.md), [loading-plan.md](loading-plan.md), [reorder.md](reorder.md)
+
+---
+
+## `INV-D-018` · Amazon stock is never written by hand
+
+| | |
+|---|---|
+| **Date** | 2026-07-24 · **Status** accepted |
+
+**Context** — Shipping an FBA transfer, or receiving a container at an Amazon
+warehouse, is the moment units become Amazon's. The obvious move is to add them
+to the Amazon stock figure there and then.
+
+**Decision** — **Nothing writes Amazon stock except Amazon's own sync.** A
+transfer draws down the source warehouse and stops there. The units are
+invisible until Amazon reports them as inbound, and then as fulfillable.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Add to FBA stock on ship | The sync replaces the figure wholesale on its next run, so the write survives hours at most — and during those hours the units are counted in both places |
+| Add to FBA, and teach the sync to merge | Requires reconciling our guess against Amazon's count on every run, to produce a number Amazon already tells us |
+
+**Reason** — Amazon's warehouse is Amazon's record. A second writer to a figure
+one system owns produces a disagreement with no tiebreak.
+
+**Consequences** — Units are briefly in neither column: drawn from the source,
+not yet reported by Amazon. That gap is real and is shown as in-transit units
+on the transfers page rather than hidden by an optimistic write. The container
+goods-receipt path still violates this rule — `INV-CONT-004`.
+
+**Affected documents** — [transfers.md](transfers.md), [planner.md](planner.md)
+
+---
+
+## `INV-D-019` · Amazon inflows are projected from settlements, not sales
+
+| | |
+|---|---|
+| **Date** | 2026-07-24 · **Status** accepted |
+
+**Context** — The forecast needs to know what Amazon will pay us and when. Sales
+data is richer and more current than payout history.
+
+**Decision** — Inflows are projected from **actual settlement events**: the
+average of recent real disbursements, at the cadence those disbursements
+actually arrive. Sales are not used.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Project from sales less estimated fees | Requires modelling fees, refunds, reserves and Amazon's holdback — every one an assumption, and the answer is a number Amazon will contradict |
+| Use a run rate over all payouts | Reserve releases and partial disbursements drag the average below a typical settlement, making the forecast pessimistic and the low point unreliable |
+
+**Reason** — Business call: the forecast is a bank-balance question, and the
+only figures that answer it are the ones that hit the bank.
+
+**Consequences** — A region with no payout history projects no inflows at all,
+and its ledger is worst-case by construction. Same-cycle top-ups are collapsed
+into one event before averaging, and tiny off-cycle disbursements are excluded,
+or the cadence and the amount would both be wrong.
+
+**Affected documents** — [cashflow.md](cashflow.md)
+
+---
+
+## `INV-D-020` · A human edit locks a generated cash-flow row
+
+| | |
+|---|---|
+| **Date** | 2026-07-24 · **Status** accepted |
+
+**Context** — Container payments and inflow estimates are generated and
+refreshed. Finance also knows things the generator does not — a renegotiated
+payment date, a part-payment, a settlement already agreed.
+
+**Decision** — Editing a generated row **locks** it. Refresh never touches a
+locked row again; everything unlocked is regenerated freely.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Regenerate everything, always | Destroys the correction the moment anyone presses refresh, and the loss is silent |
+| Never regenerate once a ledger exists | The estimates are the point of the ledger; a stale forecast is not a forecast |
+| Keep both and show the difference | A two-value ledger nobody can total |
+
+**Reason** — A person editing a forecast row knows something the generator does
+not. That knowledge is the more valuable of the two.
+
+**Consequences** — A locked row can go stale: later changes to the container's
+FOB or freight no longer reach it. The lock is visible in the ledger so it can
+be unlocked deliberately, and the count of skipped rows is reported on refresh.
+
+**Affected documents** — [cashflow.md](cashflow.md)

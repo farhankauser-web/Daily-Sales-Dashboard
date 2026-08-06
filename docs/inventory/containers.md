@@ -22,7 +22,7 @@ Covers the container's life from creation to archive, and its statuses.
 **Not covered:**
 - how a container is created from a packing list — [allocation-workbench.md](allocation-workbench.md)
 - Amazon's counting and shortfall — [receiving.md](receiving.md)
-- when the payment lands in the ledger — cashflow.md *(pending)*
+- when the payment lands in the ledger — [cashflow.md](cashflow.md)
 
 ## Business workflow
 
@@ -63,15 +63,16 @@ Amazon closes the shipment, it moves to history and stops being planned for.
    Never two. See `INV-D-009`.
 7. Units on a container count as **inbound** to the planner until Amazon counts
    them; only the un-received remainder is inbound after that.
-8. Containers bound for a **fulfilment centre** are netted out of Amazon's own
-   inbound figure, because Amazon reports the same cartons and the container is
-   the more detailed record.
+8. A container bound for a **fulfilment centre** is the more detailed record of
+   cartons Amazon also reports as inbound. How the planner avoids counting both
+   is stated in [planner.md](planner.md).
 9. **Re-uploading a packing list replaces the container's lines.** Always send
    the complete list. See `INV-D-010`.
 10. Deleting a container **releases its units** back to their production plans;
     the outstanding PO balance rises by exactly what was on it.
-11. The app **books no financial loss**. Units short stay on the line as packed
-    minus counted, for the COGS system to value. See `INV-D-008`.
+11. A container archives **without anything being valued**. What "short" means
+    and why nothing is booked is stated in [receiving.md](receiving.md);
+    `INV-D-008`.
 
 ## States
 
@@ -144,10 +145,10 @@ payload multiplies every figure by the case pack.
 
 ## Dependencies
 
-Draws on purchase orders for balances, and the allocation workbench for
-creation. Feeds cash flow, the planner and [receiving](receiving.md).
-*(purchase-orders.md, allocation-workbench.md, cashflow.md and planner.md are
-all pending.)*
+Draws on [purchase-orders.md](purchase-orders.md) for balances and
+[allocation-workbench.md](allocation-workbench.md) for creation. Feeds
+[cashflow.md](cashflow.md), [planner.md](planner.md) and
+[receiving.md](receiving.md).
 
 ## Edge cases
 
@@ -186,5 +187,5 @@ all pending.)*
 
 - [receiving.md](receiving.md) — what Amazon counted and what is short
 - [allocation-workbench.md](allocation-workbench.md) — how a container comes into being
-- cashflow.md *(pending)* — when its payment falls due
+- [cashflow.md](cashflow.md) — when its payment falls due
 - [architecture-mismatches.md](../architecture-mismatches.md) — `ARCH-005`
