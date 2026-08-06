@@ -15,8 +15,14 @@ attribution belong to [marketing](../marketing/README.md); this section
 *consumes* the per-SKU ad cost that produces.
 
 It does not own money. P&L, COGS, settlements and payouts belong to
-**financials** *(pending)*. This section reports revenue and contribution
-margin; that one reconciles them to the bank.
+**financials** *(pending)*.
+
+**The overlap with Financials is intentional.** This section is built from the
+**daily order reports** and answers *what is happening in the business* —
+trends, KPIs, hourly shape, operational monitoring. Financials is built from
+Amazon's **Flat File V2** and answers *what Amazon financially recognised and
+settled*. Both expose Revenue, Profit and Margin; they are different
+measurements of the same trade and must not be merged.
 
 **This section is complete and frozen** except for future feature changes. Six
 features are documented; the registers are the backlog, not unwritten work. The

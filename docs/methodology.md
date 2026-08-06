@@ -168,6 +168,20 @@ would not have been recoverable.
 **Ordering constraints belong in the recommendation.** Where one fix creates the
 data another latent defect destroys, say which comes first.
 
+**Two domains may measure the same thing on purpose.** Before calling anything
+duplication, ask whether the two answer **different business questions from
+different sources**. Reporting is built from the daily order reports and answers
+*what is happening in the business*; Financials is built from Amazon's Flat File
+V2 and answers *what did Amazon financially recognise and settle*. Both expose
+Revenue, Profit and Margin, and they are **not** the same numbers — they are
+different measurements of the same trade, and merging them would destroy both.
+
+Where a business term appears in more than one domain, document it **inside each
+machine**, stating its **data source** and **purpose** there. Treat apparent
+duplication across domains as **intentional** unless the implementation itself
+shows unnecessary duplication — the same code producing the same number for the
+same question. *(Reporting/Financials; stated by Farhan 2026-08-06.)*
+
 **Name the canonical implementation before recommending any refactor.** When the
 same fact is produced or stored twice, the first question is not "how do we
 merge these" but **"which one is already right?"** Consolidate onto the existing
@@ -175,8 +189,10 @@ source of truth; do not design a third. In Marketing this turned an expensive
 recommendation — re-request the report from Amazon and re-fetch history — into a
 one-line repoint, because the canonical table was already ingested daily. The
 canonical one is usually the newer, wider, more granular one, and usually
-already has a consumer. *(Marketing; prevented an expensive wrong
-recommendation.)*
+already has a consumer. **This applies within a domain** — across domains, apply
+the rule above first, because two machines answering different questions from
+different sources are not candidates for consolidation at all.
+*(Marketing; prevented an expensive wrong recommendation.)*
 
 ---
 

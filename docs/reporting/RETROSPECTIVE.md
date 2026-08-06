@@ -86,6 +86,11 @@ exception is easier to defend than one buried among behaviours.
    gaps.
 2. Expect the canonical-first question to change a recommendation, not just
    confirm it. It has now done so twice.
-3. Financials is next and carries `ARCH-001` and `ARCH-005`. Reporting has
-   already established that `product_line_analysis` may duplicate the Financials
-   P&L — start there rather than discovering it late.
+3. Financials is next and carries `ARCH-001` and `ARCH-005`. **Do not go
+   looking for duplication between the two.** Reporting is built from the daily
+   order reports and answers *what is happening*; Financials is built from
+   Amazon's Flat File V2 and answers *what Amazon recognised and settled*. Both
+   expose Revenue, Profit and Margin, and those are different measurements of
+   the same trade, not copies. An earlier draft of this file suggested
+   `product_line_analysis` might duplicate the Financials P&L; that framing was
+   wrong and is corrected in [methodology.md](../methodology.md).

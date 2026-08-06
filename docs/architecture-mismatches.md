@@ -280,8 +280,11 @@ straggler is where that risk now lives, and it is one path rather than three.
 2. Move `_build_cached_skus` out of `amazon_api/views.py` into Reporting, keeping
    the function intact. That is `ARCH-004`'s concern, and it should not be done
    in the same commit as step 1.
-3. Leave `product_line_analysis` alone. If it is later found to duplicate
-   something, it duplicates the Financials P&L, not this table.
+3. Leave `product_line_analysis` alone. It belongs to Reporting and answers an
+   operational question from the daily order reports. It is **not** a candidate
+   for merging with the Financials P&L either — that machine measures a
+   different thing from a different source. See the domain-boundary rule in
+   [methodology.md](methodology.md).
 
 **Do not design a third builder.** The earlier entry here recommended extracting
 a new `sku_table.py` with one builder and migrating four callers; that was
