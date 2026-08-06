@@ -51,6 +51,12 @@ units stay fully inbound, and it sits past its ETA with no signal. That is the
 commonest cause of a "stuck" container, and today it is the normal case
 (`INV-RECV-001`).
 
+**Nothing described in this document has ever run against a real container.**
+Every mechanism below is built and correct; none of it has been exercised,
+because no active container carries the ID it all keys off. That is a gap in the
+operational process, not a defect in the software — the distinction matters,
+because no amount of code changes it.
+
 ## Actors
 
 | Actor | Does |
@@ -214,13 +220,19 @@ remainder is what stays inbound — and container history.
 
 ## Known gaps
 
-- `INV-RECV-001` — no active container carries an Amazon shipment ID, so nothing reaches Receiving
-- `INV-RECV-002` — archived containers with no count report as a total loss
-- `INV-RECV-003` — per-SKU variance views ignore Amazon's count
-- `INV-RECV-004` — a SKU with nothing received reports no shortfall
-- `INV-RECV-005` — the receipt syncs are neither region-filtered nor scheduled outside the USA
-- `INV-CONT-003` — no stall alert for a container stuck in Receiving
-- `INV-CONT-004` — goods receipt writes AWD stock the sync then overwrites
+Each carries a classification, because most of these are not defects in this
+feature. See [gaps.md](gaps.md).
+
+| Gap | | Classification |
+|---|---|---|
+| `INV-RECV-001` | no active container carries an Amazon shipment ID | missing operational process |
+| `INV-RECV-002` | archived containers with no count report as a total loss | legacy data |
+| `INV-RECV-003` | per-SKU variance views ignore Amazon's count | bug |
+| `INV-RECV-004` | a SKU with nothing received reports no shortfall | bug |
+| `INV-RECV-005` | receipt syncs are neither region-filtered nor scheduled outside the USA | missing implementation · configuration |
+| `INV-CONT-003` | no stall alert for a container stuck in Receiving | missing implementation |
+| `INV-CONT-004` | goods receipt writes AWD stock the sync then overwrites | bug |
+| `INV-CONT-011` | the status-workbook import deletes every container in the region | bug |
 
 ## Related decisions
 

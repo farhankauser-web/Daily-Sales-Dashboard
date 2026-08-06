@@ -172,6 +172,7 @@ all pending.)*
 - `INV-CONT-002` — opening balance is not consumable
 - `INV-CONT-003` — no stall alert for a container stuck in Receiving
 - `INV-CONT-004` — goods receipt writes AWD stock the sync then overwrites
+- `INV-CONT-011` — the status-workbook import deletes every container in the region
 - `INV-RECV-001` — no active container carries an Amazon shipment ID
 - `INV-RECV-002` — archived containers with no count report as a total loss
 - `INV-RECV-003` — per-SKU variance views ignore Amazon's count

@@ -68,6 +68,7 @@ Two relationships are not obvious from the chain and cause most confusion:
 - `INV-CONT-002` — opening balance is not consumable; packing lists never draw it down · P1
 - `INV-RECV-001` — no active container carries an Amazon shipment ID, so nothing reaches Receiving · P1
 - `INV-RECV-002` — 116 archived containers have no count; history reports 1,245,478 units lost · P1
+- `INV-CONT-011` — the status-workbook import deletes every container in the region · P2
 - `INV-SUP-001` — opening balance has no rate, so Outstanding FOB understates · P2
 
 ## Related sections

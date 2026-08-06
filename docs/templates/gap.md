@@ -15,6 +15,8 @@ nobody will trust enough to act on.
 |---|---|
 | **Priority** | P1 / P2 / P3 |
 | **Status** | open · in progress · blocked · closed (`<commit>`) |
+| **Classification** | missing implementation · bug · configuration · missing operational process · legacy data |
+| **Code alone fixes it** | yes · no — <what else has to happen> |
 | **Dependencies** | `<other id>`, or none |
 
 **Current behaviour**
@@ -22,6 +24,23 @@ nobody will trust enough to act on.
 
 **Expected behaviour**
 <!-- What should happen. If a decision fixed this expectation, cite it. -->
+
+**Root cause**
+<!-- WHY the system is in this state, with evidence. Absence of data is not
+     itself a defect: a feature can be correct and unused, correct and never
+     configured, or correct and fed by a process nobody performs. Decide which
+     before recommending anything.
+
+       missing implementation      the code to do it was never written
+       bug                         the code is wrong or destroys data
+       configuration               built, correct, not switched on or not scheduled
+       missing operational process the software works; nobody performs the step
+       legacy data                 rows that predate the mechanism; code is fine
+
+     More than one may apply — say which is primary. If two causes compound,
+     say which must be fixed first, because fixing the other alone will not
+     hold. -->
+
 
 **Evidence**
 <!-- The query, count or file path that proves the gap, so anyone can re-check
@@ -36,8 +55,10 @@ nobody will trust enough to act on.
      hit, a silent failure mode. -->
 
 **Recommendation**
-<!-- The fix, specific enough to start from. If it is deliberately deferred,
-     say what has to be true before it is worth doing. -->
+<!-- The fix, specific enough to start from. It must follow from the root
+     cause: a code change cannot close a process gap, and a process change
+     cannot survive a defect that erases its work. If it is deliberately
+     deferred, say what has to be true before it is worth doing. -->
 
 **Related documents** — [<doc>](<doc>.md)
 **Related decisions** — `<SECTION>-D-<nnn>`

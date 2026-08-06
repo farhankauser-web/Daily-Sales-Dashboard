@@ -9,6 +9,10 @@ it rather than maintain it by hand.
 
 Last reconciled: 2026-08-06.
 
+Inventory gaps carry a **Classification** — missing implementation, bug,
+configuration, missing operational process or legacy data — and say whether a
+code change alone would close them. See [inventory/gaps.md](inventory/gaps.md).
+
 ## Open
 
 | ID | Title | Priority | Section |
@@ -19,6 +23,7 @@ Last reconciled: 2026-08-06.
 | `INV-RECV-002` | Archived containers with no count report as a total loss | P1 | [inventory](inventory/gaps.md) |
 | `INFRA-001` | `deploy/crontab.txt` cannot be installed on EC2; scheduled jobs never run | P1 | *(deployment.md pending)* |
 | `INV-CONT-003` | No stall alert for a container stuck in Receiving | P2 | [inventory](inventory/gaps.md) |
+| `INV-CONT-011` | The status-workbook import deletes every container in the region | P2 | [inventory](inventory/gaps.md) |
 | `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | [inventory](inventory/gaps.md) |
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | [inventory](inventory/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |

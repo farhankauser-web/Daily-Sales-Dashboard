@@ -2,20 +2,41 @@
 
 Source of truth for this section. The root [gaps.md](../gaps.md) indexes these.
 
-| ID | Title | Priority | Status |
-|---|---|---|---|
-| `INV-CONT-001` | In-transit lines carry no FOB rate | P1 | open |
-| `INV-CONT-002` | Opening balance is not consumable | P1 | open |
-| `INV-RECV-001` | No active container carries an Amazon shipment ID | P1 | open |
-| `INV-RECV-002` | Archived containers with no count report as a total loss | P1 | open |
-| `INV-CONT-003` | No stall alert for a container stuck in Receiving | P2 | open |
-| `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | open |
-| `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | open |
-| `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | open |
-| `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | open |
-| `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | open |
-| `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | open |
-| `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | open |
+**Where the evidence comes from.** Every count in this file was measured against
+the **local SQLite database**, not production Postgres. That database is a
+development copy seeded on 2026-07-20 and lightly used since: no container in it
+was created through the Allocation Workbench, and 128 of its 131 containers have
+not been written to since the seed. Findings about *code* transfer to production
+unchanged. Findings about *data* — how many containers carry a shipment ID, how
+many were received by hand — describe this copy and must be re-measured on
+production before anyone acts on them. Each such gap says so.
+
+**Absence of data is not a defect.** Before recommending anything, establish why
+the state exists: code that was never written, code that is wrong, code that
+works but was never switched on, software that works but a step nobody performs,
+or rows that predate the mechanism. Each gap carries that as **Classification**,
+and says whether a code change alone would resolve it. A recommendation that
+does not follow from the cause is how a register turns into a wishlist.
+
+| ID | Title | Priority | Classification | Status |
+|---|---|---|---|---|
+| `INV-CONT-001` | In-transit lines carry no FOB rate | P1 | legacy data | open |
+| `INV-CONT-002` | Opening balance is not consumable | P1 | missing implementation | open |
+| `INV-RECV-001` | No active container carries an Amazon shipment ID | P1 | missing operational process | open |
+| `INV-RECV-002` | Archived containers with no count report as a total loss | P1 | legacy data | open |
+| `INV-CONT-003` | No stall alert for a container stuck in Receiving | P2 | missing implementation | open |
+| `INV-CONT-011` | The status-workbook import deletes every container in the region | P2 | bug | open |
+| `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | bug | open |
+| `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | bug | open |
+| `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | — | open |
+| `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | — | open |
+| `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | bug | open |
+| `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | missing implementation · configuration | open |
+| `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | — | open |
+
+`—` means the cause has not been established yet. Those gaps predate the
+Classification field and get one when the Suppliers and Cash Flow documents are
+written; a guess would be worse than a blank.
 
 Closed gaps are at the end. They keep their ids and their rows.
 
@@ -27,7 +48,9 @@ Closed gaps are at the end. They keep their ids and their rows.
 |---|---|
 | **Priority** | P1 |
 | **Status** | open — deliberate, see `INV-D-007` |
-| **Dependencies** | none |
+| **Classification** | legacy data |
+| **Code alone fixes it** | no — the packing lists must be re-uploaded, and `INV-CONT-011` fixed first |
+| **Dependencies** | `INV-CONT-011` (would erase the re-uploaded rates) |
 
 **Current behaviour** — 188 of 188 active USA container lines have no FOB rate
 and no PO link, so every container in transit prices at zero in cash flow.
@@ -35,10 +58,20 @@ and no PO link, so every container in transit prices at zero in cash flow.
 **Expected behaviour** — Every container line carries a rate, so the region
 ledger shows what we actually owe.
 
+**Root cause** — Legacy data, and more completely so than first recorded. These
+lines do not merely predate the FOB column: **no container in this database was
+ever created through the Allocation Workbench.** All 131 were created by the
+seed import, which carries units and dates and nothing else. A rate, a PO link
+and an FNSKU are all produced by the packing-list path, and that path has never
+run here. The mechanism is correct and unexercised — see `INV-D-007`.
+
 **Evidence**
 ```python
 InTransitLine.objects.filter(shipment__in=active_usa, po_line__isnull=True).count()
-# 188, of 188 total
+# 188, of 188 active
+InTransitLine.objects.filter(fob_rate__gt=0).count()      # 0 of 2,615
+InTransitLine.objects.exclude(po_line=None).count()       # 0 of 2,615
+InTransitLine.objects.exclude(fnsku='').count()           # 0 of 2,615
 ```
 
 **Business impact** — Cash flow understates outflows by the full value of
@@ -53,6 +86,10 @@ Allocation Workbench with FOB in the file. That gives real attribution, real
 rates and drawn-down balances. A backfilled rate by SKU would produce a number
 without the mechanism and is not worth doing.
 
+Fix `INV-CONT-011` first. The re-upload creates exactly the fields the
+status-workbook import deletes, so doing it in the other order risks losing the
+work to a single upload.
+
 **Related documents** — [containers.md](containers.md), cashflow.md *(pending)*
 **Related decisions** — `INV-D-004`, `INV-D-005`, `INV-D-007`
 
@@ -64,6 +101,8 @@ without the mechanism and is not worth doing.
 |---|---|
 | **Priority** | P1 |
 | **Status** | open — decided, not built |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | yes |
 | **Dependencies** | `INV-SUP-001` (a rate makes the drawdown valuable) |
 
 **Current behaviour** — A packing list draws only from PO lines. Opening balance
@@ -98,7 +137,9 @@ exactly — remaining = units − allocations — so nothing new has to be inven
 |---|---|
 | **Priority** | P2 |
 | **Status** | open — threshold undecided |
-| **Dependencies** | none |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | no — the threshold is a business judgement, and see `INFRA-001` for the schedule |
+| **Dependencies** | `INV-RECV-001` (nothing reaches Receiving to stall) |
 
 **Current behaviour** — A container Amazon starts counting but never closes
 stays in Receiving indefinitely, with nothing drawing attention to it.
@@ -130,6 +171,8 @@ the threshold is a business judgement about how long Amazon reasonably takes.
 |---|---|
 | **Priority** | P3 |
 | **Status** | open |
+| **Classification** | bug — harmless today |
+| **Code alone fixes it** | yes |
 | **Dependencies** | none |
 
 **Current behaviour** — Confirming a goods receipt adds the counted units to the
@@ -154,13 +197,105 @@ UI that AWD comes from Amazon.
 
 ---
 
+## `INV-CONT-011` · The status-workbook import deletes every container in the region
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open — latent; has not run since 2026-07-20 |
+| **Classification** | bug — data loss, not currently firing |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — Uploading ops' status workbook destroys and recreates
+every container in the region from the Transit sheet, where each container is a
+column. Only what the sheet carries survives: container number, vendor,
+destination, two dates and the shipment ID from row 6. Everything Pulse knows
+that the workbook does not is deleted with the row —
+
+| Lost | Which decision or mechanism it belongs to |
+|---|---|
+| Amazon shipment ID typed in Pulse or set by the backfill | `INV-RECV-001` |
+| FOB rate snapshotted onto each line | `INV-D-004`, `INV-D-005` |
+| PO line attribution, and with it the PO's drawn-down balance | `INV-D-011`, allocation |
+| Human receipt counts, and the `received_by` / `received_at` audit trail | `INV-D-006` |
+| Amazon's counted units and case packs | receiving |
+| Variance reasons | goods receipt |
+| Any status ops set by hand | [containers.md](containers.md) |
+
+**Expected behaviour** — The import updates the containers the sheet describes
+and leaves everything else intact, as `import_containers` already does: it
+upserts by container number, replaces only that container's lines, and never
+touches a field the file does not carry.
+
+**Root cause** — A deliberate simplification that predates every mechanism now
+hanging off a container. The Transit sheet is a wide, positional layout with no
+stable key, so a full replace was the cheap way to make re-imports idempotent —
+`# full replace for the region` sits directly above the delete. When it was
+written a container held units and dates and nothing else, so there was nothing
+to lose. Seven mechanisms have since been attached to the container record, and
+the delete was never revisited.
+
+**Evidence**
+```python
+# apps/inventory_planning/importer.py, inside the Transit-sheet branch
+InTransitShipment.objects.filter(region=region).delete()
+```
+`InTransitLine.shipment` cascades, so the lines go with it; `POLine.allocations`
+is derived from surviving lines, so `allocated_units` falls and `remaining_units`
+rises by the same amount — PO balances silently inflate.
+
+The current rows carry the fingerprint of exactly this: 131 containers occupy a
+contiguous primary-key range of 392–523, one creation batch, with ids 1–391
+consumed and deleted. 120 of the 131 statuses reproduce the importer's date rule
+exactly, and 116 of the 120 archived containers have `received_date` equal to
+`eta_destination`, which only the importer writes.
+
+**Why it is P2 and not P1** — It is not firing. The endpoint is routed but no
+template links it, so it is reachable only by a direct POST; 128 of the 131
+containers have not been written to since the seed import on 2026-07-20 16:01.
+Nothing it would destroy currently exists either: 0 of 2,615 container lines
+carry a FOB rate, a PO link or an FNSKU, because no container in this database
+was created through the Allocation Workbench.
+
+**Business impact** — None so far. The exposure is entirely forward-looking, and
+it is aimed squarely at the two remedies this register recommends: re-uploading
+packing lists to fix `INV-CONT-001` produces FOB rates and PO attribution, and
+`INV-RECV-001` produces shipment IDs — precisely the fields the sheet does not
+carry and the import therefore erases. PO balances would rise with no entry
+explaining why, so a supplier would look owed goods that had already shipped.
+
+**Technical impact** — The container has become the join point for procurement,
+cash flow and receipts, and one upload truncates it. Nothing warns; the import
+reports a success count for the rows it created, not a loss count for the rows
+it removed.
+
+**Recommendation** — Upsert by container number instead of deleting, matching
+`import_containers`, which already solves the same problem for the long-format
+file. Never write a field the sheet does not carry: a blank row 6 must leave an
+existing shipment ID alone rather than clearing it. Containers in the region
+that the sheet omits should be reported, not deleted — a container missing from
+one upload is far more likely to be a workbook edit than a cancelled shipment.
+
+The window matters more than the severity: this must land **before** the
+`INV-CONT-001` and `INV-RECV-001` remedies, not after, because those two create
+the data it destroys. Until it does, treat a status-workbook upload as
+destructive.
+
+**Related documents** — [containers.md](containers.md), [receiving.md](receiving.md)
+**Related decisions** — `INV-D-004`, `INV-D-005`, `INV-D-006`, `INV-D-010`
+
+---
+
 ## `INV-RECV-001` · No active container carries an Amazon shipment ID
 
 | | |
 |---|---|
 | **Priority** | P1 |
 | **Status** | open |
-| **Dependencies** | none |
+| **Classification** | missing operational process |
+| **Code alone fixes it** | no — a command that exists has to be run, and ops have to record the ID when a container is booked |
+| **Dependencies** | none. `INV-CONT-011` would destroy the result if it ever runs again |
 
 **Current behaviour** — Both receipt syncs iterate open containers that carry an
 Amazon shipment ID. There are none. Every container that has ever been linked is
@@ -170,6 +305,46 @@ has ever been reconciled against Amazon's count.
 **Expected behaviour** — Every container dispatched under an Amazon shipment
 carries that shipment's ID from creation, so its receipts arrive on the next
 sync.
+
+**Root cause** — Not a defect in receiving. The capability is complete and
+correct: the field has existed since the app's first migration, the container
+form captures it, `backfill_container_shipment_ids` links it in bulk from ops'
+Containers Summary workbook, and both syncs work. It has never had anything to
+act on, for two compounding reasons.
+
+*Primary — the step is not part of anyone's process.* All 11 active containers
+are consigned to Amazon AWD USA, so each one does have a STAR- shipment,
+and ops record those IDs — in the Containers Summary workbook, not in Pulse.
+Until 2026-08-03 the field was labelled "Shipment ID / optional (FBA STA)",
+which nobody read as applying to AWD containers, and AWD is all of them
+(`8205fb1`). The backfill written that day reported 63 containers to link; 14
+carry an ID today, and all 14 are archived.
+
+*The backfill has never been run with `--apply`.* All 14 IDs that exist arrived
+in the original seed import on 2026-07-20 at 16:01, from row 6 of the Transit
+sheet — they are primary keys 392–406, the leftmost and oldest columns of the
+sheet. 128 of the 131 containers have not been written to since that moment. Had
+the backfill been applied on 2026-08-03, 63 containers would carry IDs and would
+show it in their timestamps.
+
+So the ID is knowable, recorded by ops, and reachable by a command that was
+written for exactly this — and the command has never been run.
+
+**Evidence**
+```python
+active = (InTransitShipment.objects.filter(region='usa')
+          .exclude(status__in=['received', 'cancelled']))
+active.count()                            # 11
+active.exclude(shipment_id='').count()    # 0  — nothing for either sync to poll
+InTransitShipment.objects.exclude(shipment_id='').count()          # 14, all archived
+InTransitLine.objects.filter(amazon_received_units__gt=0).count()  # 0 of 2,615
+InTransitShipment.objects.exclude(amazon_synced_at=None).count()   # 0
+# every active container is AWD-bound, so every one of them has a STAR- shipment
+{sh.destination.code for sh in active}                             # {'AWD-USA'}
+```
+`8205fb1` records the backfill's dry run: 73 usable rows, 63 to link, 7 already
+set. Migration `0010`, which adds the receipt fields, was applied 2026-08-03 —
+the machinery is three days old.
 
 **Evidence**
 ```python
@@ -187,17 +362,32 @@ InTransitShipment.objects.exclude(amazon_synced_at=None).count()   # 0
 **Business impact** — 92,130 units across 188 lines are counted as fully inbound
 until somebody receives them by hand, which overstates cover and suppresses
 reorder suggestions exactly when they are needed. No shortfall can be measured,
-so a claim against Amazon has no supporting number.
+so a claim against Amazon has no supporting number. Five of the 11 are already
+past their ETA.
 
-**Technical impact** — None. The mechanism works; it has nothing to work on.
-The consequence is that every receiving code path is unexercised in production,
-so `INV-RECV-003` and `INV-RECV-004` sit undiscovered rather than visible.
+**Technical impact** — None from receiving itself. The mechanism works; it has
+nothing to work on. The consequence is that every receiving code path is
+unexercised, so `INV-RECV-003` and `INV-RECV-004` sit undiscovered rather than
+visible.
 
-**Recommendation** — Two parts. Make the shipment ID part of creating a
-container rather than an edit afterwards, and run
-`backfill_container_shipment_ids` against the current Containers Summary
-workbook for the 11 open containers. The backfill reports before it writes and
-never replaces an existing ID.
+**Recommendation** — Confirm against production before doing anything: this
+register's evidence is the local database (see the note at the top of this
+file), and if ops have been entering IDs on the live system there is nothing
+here to fix. If production matches:
+
+1. Run `backfill_container_shipment_ids` against the current Containers Summary
+   workbook. It reports before it writes and never replaces an existing ID, so
+   the dry run costs nothing. This is the whole fix for the 11 containers on the
+   water, and it is an operational step, not a code change.
+2. Have ops record the ID when the inbound is booked, not when the container
+   lands. The Containers Summary workbook already holds it; the Transit sheet's
+   row 6 does not, which is why the seed import could not carry it.
+3. **Then** the code change: warn on an active AWD- or FBA-bound container with
+   no shipment ID. The absence is currently silent, which is how a whole feature
+   came to sit idle without anyone noticing.
+
+Step 3 is the only code in this list, and on its own it fixes nothing — it only
+makes the next occurrence visible.
 
 **Related documents** — [receiving.md](receiving.md), [containers.md](containers.md)
 **Related decisions** — `INV-D-009`
@@ -210,7 +400,9 @@ never replaces an existing ID.
 |---|---|
 | **Priority** | P1 |
 | **Status** | open |
-| **Dependencies** | `INV-RECV-001` (prevents recurrence, does not fix the history) |
+| **Classification** | legacy data, surfaced by a display defect |
+| **Code alone fixes it** | yes — the reported figure is wrong, not the data |
+| **Dependencies** | none |
 
 **Current behaviour** — Container History shows shipped, received and the
 difference. 116 of the 120 archived containers were closed without a count from
@@ -221,24 +413,45 @@ container, in red.
 **not counted**, distinct from a container counted at zero. Only a real count
 produces a discrepancy figure.
 
+**Root cause** — These containers were never received by anybody. The
+status-workbook import synthesises the status from the dates alone — an ETA more
+than 21 days old becomes `received`, with `received_date` set to the estimated
+arrival — and creates lines carrying packed units and nothing else. There was no
+count to record, because the containers landed before the system existed: their
+arrival dates run from 2023-04-10, and the app's first migration is 2026-07-20.
+
+The display then treats "no count recorded" and "counted zero" as the same
+thing, and reports the difference against packed as a loss.
+
 **Evidence**
 ```python
 arch = InTransitShipment.objects.filter(status='received')     # 120
-sum(1 for sh in arch if sh.total_received == 0)                # 116
-sum(sh.total_units for sh in arch if sh.total_received == 0)   # 1,245,478
+zero = [s for s in arch if s.total_received == 0]              # 116
+sum(s.total_units for s in zero)                               # 1,245,478
+sum(1 for s in zero if s.received_by_id is None)               # 116 — no UI receipt
+sum(1 for s in zero if s.received_at is None)                  # 116 — no audit trail
+sum(1 for s in zero if s.received_date == s.eta_destination)   # 116 — the importer's signature
+min(s.received_date for s in zero)                             # 2023-04-10
 ```
+The 4 exceptions each carry a real audit trail — received by Farhan on
+2026-07-21 and 2026-07-24, through the UI — and every one shows counted exactly
+equal to packed. `importer.py` sets `received_date=eta_dest` for anything the
+date rule marks received; that equality is what distinguishes an imported
+container from a received one.
 
 **Business impact** — The history page reports 1,245,478 units lost that were
 not lost. Any figure taken from that page — loss rate, supplier performance,
 claim totals — is wrong by the whole of it.
 
 **Technical impact** — Small. The distinction is between a zero and an absent
-value, which the data already supports: no count exists in either column.
+value, which the data already supports: no count exists in either column, and
+the empty `received_by`/`received_at` pair identifies the rows exactly.
 
 **Recommendation** — Show "—" rather than a discrepancy where neither count
 exists, and exclude those containers from any aggregate over discrepancies.
-Do not backfill counts — the units were received years of containers ago and
-no record of the count survives.
+**Do not backfill counts.** The units were counted, if at all, in a warehouse
+years ago; no record of the count exists anywhere, and a manufactured figure
+would be indistinguishable from a real one.
 
 **Related documents** — [receiving.md](receiving.md), [containers.md](containers.md)
 **Related decisions** — `INV-D-006`, `INV-D-008`
@@ -251,6 +464,8 @@ no record of the count survives.
 |---|---|
 | **Priority** | P2 |
 | **Status** | open |
+| **Classification** | bug |
+| **Code alone fixes it** | yes |
 | **Dependencies** | `INV-RECV-001` (nothing has an Amazon count until it is fixed) |
 
 **Current behaviour** — Two per-SKU views read the human count field alone:
@@ -291,6 +506,8 @@ with `INV-RECV-002`, which touches the same response.
 |---|---|
 | **Priority** | P2 |
 | **Status** | open |
+| **Classification** | bug |
+| **Code alone fixes it** | yes |
 | **Dependencies** | `INV-RECV-001` |
 
 **Current behaviour** — On the Receiving page, a SKU's shortfall is suppressed
@@ -328,6 +545,8 @@ this reason.
 |---|---|
 | **Priority** | P3 |
 | **Status** | open |
+| **Classification** | missing implementation (the filter) and configuration (the schedule) |
+| **Code alone fixes it** | no — the schedule is a cron change, and see `INFRA-001` |
 | **Dependencies** | none |
 
 **Current behaviour** — `--marketplace` selects which SP-API credentials to use
