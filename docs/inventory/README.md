@@ -23,7 +23,7 @@ what we will pay out (`ARCH-005`).
 | Document | Covers | Open here when |
 |---|---|---|
 | [containers.md](containers.md) | container lifecycle, statuses, in transit, history | a container is in the wrong place, or units are miscounted |
-| receiving.md *(pending)* | Amazon's count vs our packing list, shortfall | Amazon received less than we shipped |
+| [receiving.md](receiving.md) | Amazon's count vs our packing list, shortfall | Amazon received less than we shipped |
 | allocation-workbench.md *(pending)* | packing list → container, PO drawdown | an upload is refused or allocates wrongly |
 | suppliers.md *(pending)* | suppliers, opening balance | supplier balances look wrong |
 | purchase-orders.md *(pending)* | PO workbook, production plans, balances | a PO import misbehaves |
@@ -58,7 +58,7 @@ Two relationships are not obvious from the chain and cause most confusion:
 | Working on… | Load |
 |---|---|
 | a container in the wrong tab | `CLAUDE.md` · this README · [containers.md](containers.md) · `gaps.md` |
-| a shortfall or Amazon's count | `CLAUDE.md` · this README · receiving.md *(pending)* · [containers.md](containers.md) · `gaps.md` |
+| a shortfall or Amazon's count | `CLAUDE.md` · this README · [receiving.md](receiving.md) · [containers.md](containers.md) · `gaps.md` |
 | a packing-list upload | `CLAUDE.md` · this README · allocation-workbench.md *(pending)* · purchase-orders.md *(pending)* · `gaps.md` |
 | container payments | `CLAUDE.md` · this README · cashflow.md *(pending)* · [containers.md](containers.md) · `gaps.md` |
 
@@ -66,6 +66,8 @@ Two relationships are not obvious from the chain and cause most confusion:
 
 - `INV-CONT-001` — 188 in-transit lines carry no FOB, so cash flow prices them at zero · P1
 - `INV-CONT-002` — opening balance is not consumable; packing lists never draw it down · P1
+- `INV-RECV-001` — no active container carries an Amazon shipment ID, so nothing reaches Receiving · P1
+- `INV-RECV-002` — 116 archived containers have no count; history reports 1,245,478 units lost · P1
 - `INV-SUP-001` — opening balance has no rate, so Outstanding FOB understates · P2
 
 ## Related sections

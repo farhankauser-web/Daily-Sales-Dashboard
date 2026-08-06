@@ -68,10 +68,11 @@ verified against: <commit> · <date>
 `map.md`, `architecture-mismatches.md`, `gaps.md`, `templates/` and this index.
 
 Of the sections, only **[inventory](inventory/README.md)** has been started, and
-only partly: its README, [containers.md](inventory/containers.md), and its
-decision and gap registers. Receiving, suppliers, purchase orders, the
-allocation workbench, the planner, transfers and cash flow are named there as
-pending. Every other section in the table above is still unwritten.
+only partly: its README, [containers.md](inventory/containers.md),
+[receiving.md](inventory/receiving.md), and its decision and gap registers.
+Suppliers, purchase orders, the allocation workbench, the planner, transfers and
+cash flow are named there as pending. Every other section in the table above is
+still unwritten.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.

@@ -19,6 +19,8 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `INV-D-009` | In Transit and Receiving are a partition, keyed off receipts | 2026-08-04 | accepted |
 | `INV-D-010` | Re-uploading a packing list replaces the lines | 2026-08-05 | accepted |
 | `INV-D-011` | Opening balance is consumed before PO balance | 2026-08-05 | accepted, not built |
+| `INV-D-012` | Amazon's case pack wins over ours | 2026-08-05 | accepted |
+| `INV-D-013` | One receipt sync per Amazon API, never merged | 2026-08-05 | accepted |
 
 ---
 
@@ -346,3 +348,69 @@ needs allocation tracking, and re-uploading a balance that has been drawn agains
 must be refused rather than replacing it. Tracked as `INV-CONT-002`.
 
 **Affected documents** — suppliers.md *(pending)*, allocation-workbench.md *(pending)*
+
+---
+
+## `INV-D-012` · Amazon's case pack wins over ours
+
+| | |
+|---|---|
+| **Date** | 2026-08-05 · **Status** accepted |
+
+**Context** — AWD reports receipts in cases and states the eaches-per-case in
+the same payload. That figure sometimes disagrees with the pack we shipped, and
+one of the two has to be used to convert Amazon's count into units.
+
+**Decision** — Amazon's case pack is used. The disagreement lands inside the
+variance rather than being corrected out of it.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Convert with our own pack size | Produces a unit count Amazon will not recognise, so the number cannot be used in a claim |
+| Refuse to convert where the packs disagree | Loses the receipt entirely, which is worse than a receipt that needs explaining |
+
+**Reason** — Business call: Amazon's count is what can actually be sold, so it
+is the figure the business plans against.
+
+**Consequences** — A pack-size disagreement shows up as a shortfall or an
+over-receipt. The syncs report those two separately, because the remedy differs
+— a claim versus a setup fix. Where Amazon states EACHES, nothing is multiplied.
+
+**Affected documents** — [receiving.md](receiving.md)
+
+---
+
+## `INV-D-013` · One receipt sync per Amazon API, never merged
+
+| | |
+|---|---|
+| **Date** | 2026-08-05 · **Status** accepted |
+
+**Context** — AWD containers and containers consigned straight to a fulfilment
+centre are reconciled through different Amazon APIs. The two look like one job
+doing the same thing twice.
+
+**Decision** — Two separate commands, routed by the shape of the shipment ID.
+`STAR-…` goes to AWD; anything else goes to FBA Inbound, which explicitly skips
+`STAR-`.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| One command that tries both APIs per container | The ids do not resolve across APIs, so every container costs a failed call, and the case-pack conversion would have to be conditional inside shared code — exactly where it would eventually be applied to the wrong payload |
+| Route on the destination warehouse instead of the ID | A container whose destination was never set would be skipped entirely |
+
+**Reason** — The unit difference is the failure mode worth designing against:
+AWD reports cases, FBA Inbound reports eaches, and applying the case conversion
+to an FBA payload multiplies every figure by the pack size. Keeping the
+conversion in a file that only ever sees cases makes that mistake impossible
+rather than merely unlikely.
+
+**Consequences** — Two commands, two cron entries, and a shared reporting format
+that must be kept in step by hand. Routing on the ID prefix means an AWD id
+typed without its prefix is silently sent to the wrong API.
+
+**Affected documents** — [receiving.md](receiving.md), deployment.md *(pending)*

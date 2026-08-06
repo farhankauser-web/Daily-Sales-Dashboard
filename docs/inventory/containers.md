@@ -21,7 +21,7 @@ Covers the container's life from creation to archive, and its statuses.
 
 **Not covered:**
 - how a container is created from a packing list — allocation-workbench.md *(pending)*
-- Amazon's counting and shortfall — receiving.md *(pending)*
+- Amazon's counting and shortfall — [receiving.md](receiving.md)
 - when the payment lands in the ledger — cashflow.md *(pending)*
 
 ## Business workflow
@@ -112,7 +112,7 @@ Terminal — no longer planned for:
 ## System behaviour
 
 - Twice daily the receipt syncs poll Amazon for every container carrying a
-  shipment ID, and record what Amazon has counted. See receiving.md *(pending)*.
+  shipment ID, and record what Amazon has counted. See [receiving.md](receiving.md).
 - A container with any counted units belongs to Receiving, regardless of its
   status field. This is derived, not stored — which is why a container whose
   status was never advanced still appears in the right place.
@@ -145,15 +145,16 @@ payload multiplies every figure by the case pack.
 ## Dependencies
 
 Draws on purchase orders for balances, and the allocation workbench for
-creation. Feeds cash flow, the planner and receiving.
-*(purchase-orders.md, allocation-workbench.md, cashflow.md, planner.md and
-receiving.md are all pending.)*
+creation. Feeds cash flow, the planner and [receiving](receiving.md).
+*(purchase-orders.md, allocation-workbench.md, cashflow.md and planner.md are
+all pending.)*
 
 ## Edge cases
 
 - **No Amazon shipment ID.** The receipt syncs cannot find the container, so it
   never advances and sits in transit past its ETA with no signal. The commonest
-  cause of a "stuck" container.
+  cause of a "stuck" container, and currently true of every active one —
+  `INV-RECV-001`.
 - **Amazon declares more than we packed.** Normal, and not a loss — Amazon
   reconciles against its own declared figure, so its discrepancy report will
   look worse than reality.
@@ -171,6 +172,9 @@ receiving.md are all pending.)*
 - `INV-CONT-002` — opening balance is not consumable
 - `INV-CONT-003` — no stall alert for a container stuck in Receiving
 - `INV-CONT-004` — goods receipt writes AWD stock the sync then overwrites
+- `INV-RECV-001` — no active container carries an Amazon shipment ID
+- `INV-RECV-002` — archived containers with no count report as a total loss
+- `INV-RECV-003` — per-SKU variance views ignore Amazon's count
 
 ## Related decisions
 
@@ -178,7 +182,7 @@ receiving.md are all pending.)*
 
 ## Related documents
 
-- receiving.md *(pending)* — what Amazon counted and what is short
+- [receiving.md](receiving.md) — what Amazon counted and what is short
 - allocation-workbench.md *(pending)* — how a container comes into being
 - cashflow.md *(pending)* — when its payment falls due
 - [architecture-mismatches.md](../architecture-mismatches.md) — `ARCH-005`
