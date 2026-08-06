@@ -239,3 +239,5 @@ and every index and cross-reference affected.
 - [reporting/RETROSPECTIVE.md](reporting/RETROSPECTIVE.md) — where canonical-first
   changed a recorded recommendation before a line was written, and where the
   gap/mismatch distinction did most of the work
+- [financials/RETROSPECTIVE.md](financials/RETROSPECTIVE.md) — a section with no
+  gaps, and what the domain boundary changed

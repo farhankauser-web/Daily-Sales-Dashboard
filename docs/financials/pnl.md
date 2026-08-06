@@ -60,10 +60,10 @@ figure that has not settled, and it will change when it does.
 6. **Tax is excluded entirely.** Collected equals remitted; it is pass-through
    and belongs in neither revenue nor cost.
 7. **The bank transfer is not a P&L item.** A disbursement moves money that has
-   already been recognised. See payouts.md *(pending)*.
+   already been recognised. See [payouts.md](payouts.md).
 8. **Cost of goods is computed as (order units − refund units) × uploaded cost**,
    per SKU, matching how the business itself calculates it. See
-   cogs.md *(pending)*.
+   [cogs.md](cogs.md).
 9. **Advertising prefers the allocator's total** for the month, falling back to
    the operational figure — the same preference the SKU table applies. See
    `REP-D-002`.
@@ -147,7 +147,7 @@ which figures are provisional.
 
 ## Related documents
 
-- cogs.md *(pending)* — the cost base beneath the statement
-- fee-drift.md *(pending)* — whether Amazon's fees match what was modelled
-- payouts.md *(pending)* — money that actually arrived, and why it is not a P&L line
+- [cogs.md](cogs.md) — the cost base beneath the statement
+- [fee-drift.md](fee-drift.md) — whether Amazon's fees match what was modelled
+- [payouts.md](payouts.md) — money that actually arrived, and why it is not a P&L line
 - [reporting/daily.md](../reporting/daily.md) — the operational view, and why it differs

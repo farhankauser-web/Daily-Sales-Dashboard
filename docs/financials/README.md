@@ -14,6 +14,10 @@ Its source is Amazon's **Flat File V2 / transaction reporting via SP-API**:
 settlement reports, the unified transaction report, and the Finances API. Those
 are posted-date, settlement-grade records of money.
 
+**This section is complete and frozen** except for future feature changes. Five
+features are documented; the process lessons are in
+[RETROSPECTIVE.md](RETROSPECTIVE.md).
+
 ## The boundary with Reporting — intentional, not duplication
 
 [Reporting](../reporting/README.md) and this section both expose **Revenue**,
@@ -41,10 +45,10 @@ names its source. See the domain-boundary rule in
 | Document | Covers | Open here when |
 |---|---|---|
 | [pnl.md](pnl.md) | the management P&L statement | a month's profit looks wrong |
-| cogs.md *(pending)* | the cost base — COGS upload, FBA rates, recalculation | a product's cost is wrong or missing |
-| fee-drift.md *(pending)* | settlement actuals against uploaded fee assumptions | Amazon charged more than we modelled |
-| payouts.md *(pending)* | money that actually arrived · `ARCH-005` | a disbursement is missing |
-| targets.md *(pending)* | monthly revenue and margin targets | a target comparison looks wrong |
+| [cogs.md](cogs.md) | the cost base — COGS upload, FBA rates, recalculation | a product's cost is wrong or missing |
+| [fee-drift.md](fee-drift.md) | settlement actuals against uploaded fee assumptions | Amazon charged more than we modelled |
+| [payouts.md](payouts.md) | money that actually arrived · `ARCH-005` | a disbursement is missing |
+| [targets.md](targets.md) | monthly revenue and margin targets | a target comparison looks wrong |
 
 ## Relationships
 
@@ -89,8 +93,15 @@ pipelines write the same table and something has to decide which wins.
 | Working on… | Load |
 |---|---|
 | a month's profit | `CLAUDE.md` · this README · [pnl.md](pnl.md) · `gaps.md` |
-| a product's cost | `CLAUDE.md` · this README · cogs.md *(pending)* · `gaps.md` |
-| a fee that looks wrong | `CLAUDE.md` · this README · fee-drift.md *(pending)* · `gaps.md` |
+| a product's cost | `CLAUDE.md` · this README · [cogs.md](cogs.md) · `gaps.md` |
+| a fee that looks wrong | `CLAUDE.md` · this README · [fee-drift.md](fee-drift.md) · `gaps.md` |
+| a missing disbursement | `CLAUDE.md` · this README · [payouts.md](payouts.md) · `gaps.md` |
+| a target comparison | `CLAUDE.md` · this README · [targets.md](targets.md) · `gaps.md` |
+
+## Current priorities
+
+- `FIN-001` — referral fee never reconciled against a settlement · P2, unclassified
+- `ARCH-005` — "cash flow" names this section's payouts and Inventory's forecast · P3 mismatch
 
 ## Method
 

@@ -13,7 +13,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Section | Doc | Covers |
 |---|---|---|
 | Reporting | [`reporting/`](reporting/README.md) | daily & historical sales, hourly patterns, SKU table, command centre |
-| Financials | `financials.md` | P&L, COGS, FBA fee drift, targets, settlements |
+| Financials | [`financials/`](financials/README.md) | P&L, COGS, FBA fee drift, payouts, targets |
 | Marketing | [`marketing/`](marketing/README.md) | PPC — see that folder's README |
 | Brand Analytics | `brand-analytics.md` | search-query performance, market share, baskets |
 | Walmart | `walmart.md` | Walmart orders → Amazon MCF |
@@ -95,8 +95,13 @@ documents, 1 open gap, 5 decisions, and a
 an oversight: five of its structural problems are recorded as `ARCH-` mismatches
 rather than gaps.
 
-Every other section in the table above is still unwritten. **Financials is
-next**, per the build order.
+**[financials](financials/README.md) is complete and frozen** — five feature
+documents, 0 new gaps, 7 decisions, and a
+[retrospective](financials/RETROSPECTIVE.md). Its zero gap count is the register
+working: everything that looked like a defect was a recorded decision.
+
+Every other section in the table above is still unwritten. **Walmart is next**,
+per the build order.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.

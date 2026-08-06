@@ -162,7 +162,8 @@ tells you which function, not how big the file is.
    and unread* pattern.
 7. `reporting/` — **done**. Six feature documents; `ARCH-007` revised around
    the canonical builder before anything was written.
-8. `financials/`
+8. `financials/` — **done**. Five feature documents, no gaps; the
+   Reporting/Financials boundary is stated in both READMEs.
 9. The rest, as sessions touch them.
 
 `architecture.md` and `deployment.md` are written alongside step 5 —

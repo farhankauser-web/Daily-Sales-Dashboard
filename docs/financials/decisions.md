@@ -11,6 +11,10 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `FIN-D-001` | Settled actuals first; operational fills the lag, labelled | 2026-07-10 | accepted |
 | `FIN-D-002` | One canonical line list defines the statement | 2026-07-10 | accepted |
 | `FIN-D-003` | Consolidation sums additive lines and recomputes the rest | 2026-07-10 | accepted |
+| `FIN-D-004` | Correcting a cost restates every figure derived from it | 2026-07-18 | accepted |
+| `FIN-D-005` | Fee drift is reported, never auto-applied | 2026-07-02 | accepted |
+| `FIN-D-006` | A payout is money received, never a P&L line | 2026-07-10 | accepted |
+| `FIN-D-007` | Monthly targets are pro-rated to the window viewed | 2026-06-20 | accepted |
 
 ---
 
@@ -113,3 +117,141 @@ than wrong, and says so. Regional statements and the consolidated one will not
 tie line-for-line on any percentage, by design.
 
 **Affected documents** — [pnl.md](pnl.md)
+
+---
+
+## `FIN-D-004` · Correcting a cost restates every figure derived from it
+
+| | |
+|---|---|
+| **Date** | 2026-07-18 · **Status** accepted |
+
+**Context** — Cost of goods is frozen into several stored layers at write time:
+the P&L cost line, per-SKU daily margins, daily totals, hourly figures and
+campaign profit. A COGS upload corrects the input after all of them exist.
+
+**Decision** — A COGS upload **restates every derived layer** for the affected
+month, using formulas that mirror the original write path exactly.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Apply new costs forward only | Two margins for the same month depending on when you looked, with nothing saying which is current |
+| Compute margins live from cost rather than storing them | Correct, and it makes every dashboard read join across several tables per SKU per day; the storage exists for a reason |
+| Restate only the P&L | The P&L would then disagree with the SKU table it is meant to summarise |
+
+**Reason** — A cost correction is a correction of a *fact*, and every figure
+that used the wrong fact is wrong until restated. Partial restatement produces
+disagreement between views, which is worse than either state alone.
+
+**Consequences** — The recalculation must mirror the original formulas exactly;
+if the two ever diverge, a correction introduces a discrepancy rather than
+removing one. That coupling is deliberate and is the reason the formulas are
+duplicated rather than approximated. Restating a settled month changes the cost
+line only — settled revenue and fee lines are Amazon's figures and are not ours
+to restate.
+
+**Affected documents** — [cogs.md](cogs.md), [pnl.md](pnl.md)
+
+---
+
+## `FIN-D-005` · Fee drift is reported, never auto-applied
+
+| | |
+|---|---|
+| **Date** | 2026-07-02 · **Status** accepted |
+
+**Context** — The fulfilment fee assumed for each product is uploaded by the
+business. Settlement reports say what Amazon actually charged. Where they
+differ, the system could simply adopt Amazon's figure.
+
+**Decision** — Drift is **reported**, with a severity that combines percentage
+and cash impact, and a corrected schedule is offered as an **export**. The
+assumed fee is never overwritten automatically.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Adopt the settled fee automatically | A temporary adjustment or a one-off charge becomes a permanent assumption, and margins move with no human deciding they should |
+| Alert on percentage alone | A 30% drift on a product selling two units a month buries a 3% drift on the best seller |
+| Alert on cash impact alone | Misses a large proportional error on a product just starting to scale |
+
+**Reason** — The uploaded fee is a business assumption, and changing an
+assumption is a decision. Reporting the difference with its cash impact puts
+that decision in front of someone with the information to make it.
+
+**Consequences** — Drift persists until someone acts on it, so the report is
+only useful if it is read — which is why severity and cash impact exist rather
+than a flat list. Low-volume SKUs are excluded below a unit floor, so a genuine
+drift on a slow product is invisible until it sells enough to matter.
+
+**Affected documents** — [fee-drift.md](fee-drift.md)
+
+---
+
+## `FIN-D-006` · A payout is money received, never a P&L line
+
+| | |
+|---|---|
+| **Date** | 2026-07-10 · **Status** accepted |
+
+**Context** — Amazon disburses money periodically. That disbursement is the most
+tangible financial event the business sees, and the temptation is to treat it as
+the revenue figure.
+
+**Decision** — A payout is recorded as **money received** and is **never** a P&L
+line. The revenue it settles was recognised when Amazon posted it. The bank
+transfer row in the transaction report is excluded from the statement entirely.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Recognise revenue on disbursement | Cash-basis accounting, which the business does not use, and it would put a month's revenue in whichever month Amazon happened to pay |
+| Show payouts as a P&L line for visibility | Double-counts against the revenue already recognised, and no reader could tell which line to trust |
+
+**Reason** — Recognition and payment are different events separated by Amazon's
+reserve and settlement cycle. Conflating them makes the statement unreconcilable
+with the accounts.
+
+**Consequences** — Payout totals and monthly P&L revenue **will not agree**, and
+should not be expected to. Answering "Amazon recognised this in June, where is
+it?" requires reading both views, which is why they are documented as
+neighbours.
+
+**Affected documents** — [payouts.md](payouts.md), [pnl.md](pnl.md)
+
+---
+
+## `FIN-D-007` · Monthly targets are pro-rated to the window viewed
+
+| | |
+|---|---|
+| **Date** | 2026-06-20 · **Status** accepted |
+
+**Context** — Targets are set monthly. The dashboard is read over today,
+yesterday, seven days, thirty days, month-to-date and custom ranges.
+
+**Decision** — A monthly target shown against any window is **pro-rated by
+days**: the monthly figure ÷ days in the month × days in the window. Matching
+between a target and a product group **ignores pack-size formatting**.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Show the monthly target unchanged against any window | A seven-day view compared against a monthly target always reads as catastrophic failure |
+| Show targets only on month-to-date views | Removes the comparison from every view people actually use daily |
+| Weight the pro-rating by historical daily seasonality | More accurate and unexplainable; nobody could reproduce the target by hand |
+
+**Reason** — A flat daily pro-rate is the only division anyone can verify
+mentally, which matters for a number used to judge performance.
+
+**Consequences** — A month with genuine intra-month seasonality is judged
+against an even target, so early-month performance can look weak and recover.
+Pack-size matching being lenient means a mistyped target still applies, which is
+the intended trade — a missed target is worse than a loosely matched one.
+
+**Affected documents** — [targets.md](targets.md), [reporting/daily.md](../reporting/daily.md)
