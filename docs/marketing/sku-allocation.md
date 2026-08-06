@@ -151,9 +151,14 @@ Recorded because each looks like a defect and is not. *Source: dev snapshot.*
 | Gap | | Classification |
 |---|---|---|
 | `MKT-ALLOC-001` | the campaign-name → product-group map is a hardcoded dict in a view module | missing implementation |
-| `MKT-ALLOC-002` | Pass 1 spreads each SP campaign's spend over every ASIN advertised that day | missing implementation |
+| `MKT-ALLOC-002` | the allocator reads a superseded, campaign-blind copy of the advertised-product data | missing implementation |
 | `MKT-ALLOC-003` | Amazon's own SKU attribution is discarded and re-derived | missing implementation |
 | `MKT-ALLOC-004` | the smoothing docstring describes a blend the code does not perform | bug — stale docs |
+
+## Architecture mismatches
+
+`ARCH-009` — advertised-product data is stored twice, and this engine reads the
+weaker copy. `MKT-ALLOC-002` and `MKT-ALLOC-003` are both symptoms of it.
 
 ## Related decisions
 

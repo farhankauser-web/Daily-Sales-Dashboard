@@ -26,6 +26,7 @@ Seeded 2026-08-05 from the codebase at `85e4438`.
 | `ARCH-006` | "MCF" names two different features | P3 | 0.5 | open |
 | `ARCH-007` | Four SKU-table builders produce the same table | P1 | 2–3 | open |
 | `ARCH-008` | Business logic lives in views; no consistent service layer | P2 | ongoing | open |
+| `ARCH-009` | Advertised-product data is stored twice, in two generations of table | P2 | 1 | open |
 
 ---
 
@@ -287,6 +288,49 @@ change. `inventory_planning` is the reference to copy.
 
 **Dependencies** — none
 **Priority** P2 · **Effort** ongoing, absorbed into normal work · **Status** open
+
+---
+
+## ARCH-009 · Advertised-product data is stored twice
+
+**Current implementation**
+Two tables hold per-ASIN advertising spend, written by two commands on two
+schedules:
+
+| | `PPCProductSnapshot` | `AdsAdvertisedProductDailySnapshot` |
+|---|---|---|
+| campaign grain | none | `campaign_id` |
+| SKU | stored | stored |
+| ad products | SP only | SP, SB, SD |
+| written by | `backfill_ppc` | `ingest_ads_detail_reports` |
+
+The second is a strict superset of the first. Both are maintained.
+
+**Desired architecture**
+One table. `AdsAdvertisedProductDailySnapshot` is canonical — it carries the
+campaign grain, covers all three ad products, and is fed by the Phase 1
+pipeline that the rest of the detail reports use.
+
+**Why it matters**
+The SKU allocator, the most consequential consumer of this data, reads the
+weaker table — spreading each campaign's spend across every ASIN advertised that
+day (`MKT-ALLOC-002`) and re-deriving a SKU that Amazon already stated
+(`MKT-ALLOC-003`). Both are symptoms of the duplication rather than independent
+defects. Any future consumer faces the same coin-flip, with nothing in either
+model saying which to prefer.
+
+**Recommended solution**
+1. Repoint the allocator at the canonical table — this is `MKT-ALLOC-002` and
+   delivers the business value on its own.
+2. Repoint the remaining readers (`dashboard/views.py`, `amazon_api/views.py`).
+3. Stop writing `PPCProductSnapshot` in `backfill_ppc`, leave the table in place
+   for a period, then drop it.
+
+Steps 1–2 are reversible. **No business decision here** — the canonical table
+contains everything the other does.
+
+**Dependencies** — none
+**Priority** P2 · **Effort** 1 session · **Status** open
 
 ---
 

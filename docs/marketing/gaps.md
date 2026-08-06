@@ -20,7 +20,7 @@ legacy data — a root cause, and whether a code change alone would close it.
 
 | ID | Title | Priority | Classification | Status |
 |---|---|---|---|---|
-| `MKT-ALLOC-002` | Pass 1 spreads each SP campaign's spend over every ASIN advertised that day | P2 | missing implementation | open |
+| `MKT-ALLOC-002` | The allocator reads a superseded, campaign-blind copy of the advertised-product data | P2 | missing implementation | open |
 | `MKT-ALLOC-001` | The campaign → product-group map is hardcoded in a view module | P2 | missing implementation | open |
 | `MKT-ALLOC-003` | Amazon's own SKU attribution is discarded and re-derived | P3 | missing implementation | open |
 | `MKT-ALLOC-004` | The smoothing docstring describes a blend the code does not perform | P3 | bug — stale docs | open |
@@ -29,60 +29,71 @@ legacy data — a root cause, and whether a code change alone would close it.
 
 ---
 
-## `MKT-ALLOC-002` · Pass 1 spreads each SP campaign's spend over every ASIN advertised that day
+## `MKT-ALLOC-002` · The allocator reads a superseded, campaign-blind copy of the advertised-product data
 
 | | |
 |---|---|
 | **Priority** | P2 |
 | **Status** | open |
-| **Classification** | missing implementation |
-| **Code alone fixes it** | yes — but the report must be re-requested and history re-fetched |
-| **Dependencies** | none |
+| **Classification** | missing implementation — a pipeline was replaced and one consumer was not repointed |
+| **Code alone fixes it** | yes — the data is already ingested daily |
+| **Dependencies** | none. Resolves `MKT-ALLOC-003` in the same change |
 
-**Current behaviour** — For a Sponsored Products campaign, Pass 1 computes ASIN
-weights from the day's advertised-product spend **summed across every SP
-campaign**, then applies that same distribution to each campaign individually. A
-campaign advertising one ASIN therefore has its spend spread across every ASIN
-advertised that day.
+**Current behaviour** — Advertised-product spend is stored **twice**, by two
+generations of pipeline:
+
+| | `PPCProductSnapshot` (older) | `AdsAdvertisedProductDailySnapshot` (current) |
+|---|---|---|
+| campaign grain | **none** | `campaign_id` |
+| SKU | stored, unread | stored |
+| ad products | Sponsored Products only | SP, SB and SD |
+| written by | `backfill_ppc` | `ingest_ads_detail_reports` |
+
+The allocator reads the **older** one. Because it has no campaign column, Pass 1
+computes ASIN weights from the day's spend summed across every Sponsored
+Products campaign, then applies that same distribution to each campaign
+individually — so a campaign advertising one ASIN has its spend spread across
+every ASIN advertised that day.
 
 **Expected behaviour** — A campaign's spend is distributed over the ASINs *that
-campaign* advertised, in that campaign's own proportions.
+campaign* advertised, in that campaign's own proportions, using the table that
+already records exactly that.
 
-**Root cause** — The data is not stored at that grain, and is not requested at
-that grain. `PPCProductSnapshot` is keyed by marketplace, date, ASIN and campaign
-type, with no campaign field; the report that fills it is requested with
-`groupBy: ['advertiser']` and columns that do not include `campaignId`. The
-allocator's own comment states the limitation and calls the day-level
-proportions "the closest defensible weighting" — accurate, and a workaround
-rather than the intent.
+**Root cause** — Not a missing capability. The Phase 1 detail-report pipeline
+landed with a superset table — campaign grain, SKU, all three ad products — and
+the allocator was never repointed from the Phase 0 table it was built against.
+Both are still written, so nothing broke and nothing signalled the duplication.
 
-**Evidence** — source: **code**, so it holds in production.
+**Evidence** — source: **code** for the behaviour, **local data** for the scale.
 ```python
-# ppc_allocator.py, _pass1_sp — no campaign filter on the queryset
+# ppc_allocator.py, _pass1_sp — no campaign filter, because the table has no such column
 qs = (PPCProductSnapshot.objects
       .filter(marketplace=mp, date=d, campaign_type='sp')
       .values('asin').annotate(spend=Sum('spend')))
 
-# services.py, get_advertised_product_summary — campaignId is never requested
-'groupBy':  ['advertiser'],
-'columns':  ['advertisedAsin', 'advertisedSku', 'impressions', 'clicks',
-             'cost', 'purchases7d', 'sales7d', 'unitsSoldClicks7d'],
+# ads_detail_reports.py, sp_advertised_product — campaignId IS requested
+columns=['campaignId', 'adGroupId', 'advertisedAsin', 'advertisedSku', ...]
 ```
+On the development database, *provisional*: the current table holds 40,483 rows
+across 443 campaigns and $468,914 of spend, current to 2026-08-04; the one the
+allocator reads holds 4,624 rows, no campaigns, $179,442, stopping 2026-07-26.
 
-**Business impact** — Per-SKU ad cost is misattributed between SKUs whenever SP
-campaigns target different ASINs, which is the normal case. Campaign totals stay
-correct because reconciliation scales each campaign to its true spend — so the
-error is invisible in any campaign-level view and only distorts the per-SKU
-split. TACoS and contribution margin for individual SKUs inherit it.
+**Business impact** — Per-SKU ad cost is misattributed between SKUs whenever
+Sponsored Products campaigns target different ASINs, which is the normal case.
+Campaign totals stay correct because reconciliation scales each campaign to its
+true spend, so the error is invisible in every campaign-level view and distorts
+only the per-SKU split — which is what TACoS and contribution margin are built
+from. The engine also records `sp_advertised_product` at 1.00 confidence for
+these rows, so the audit trail overstates their quality.
 
-**Technical impact** — The most authoritative path in the engine is degraded to
-an approximation, while still recording `sp_advertised_product` as its source
-and scoring 1.00 confidence for it. The audit trail overstates the quality.
+**Technical impact** — Two tables holding the same fact, one a strict superset
+of the other, with the primary consumer on the weaker one. See `ARCH-009`.
 
-**Recommendation** — Request `campaignId` in the advertised-product report, add
-it to `PPCProductSnapshot`, and filter Pass 1 by campaign. Re-fetch the history
-that matters; older locked days can keep their existing figures. Until then, the
-confidence score for this source should not be 1.00.
+**Recommendation** — Repoint Pass 1 at `AdsAdvertisedProductDailySnapshot`,
+filtering by campaign. The data is already ingested daily and reaches back to
+2026-05-13, so no re-request or backfill from Amazon is needed. Lower the
+confidence for any day that still falls back to the older table. Then resolve
+`ARCH-009` — one of the two tables should stop being written.
 
 **Related documents** — [sku-allocation.md](sku-allocation.md), ads-api.md *(pending)*
 
@@ -140,47 +151,46 @@ have it point at the admin page rather than at a source file.
 | | |
 |---|---|
 | **Priority** | P3 on local evidence — **P1 if production has any multi-SKU ASIN; unverified** |
-| **Status** | open |
+| **Status** | open — resolved by the same change as `MKT-ALLOC-002` |
 | **Classification** | missing implementation |
 | **Code alone fixes it** | yes |
-| **Dependencies** | none |
+| **Dependencies** | `MKT-ALLOC-002` — one edit fixes both |
 
-**Current behaviour** — The Sponsored Products advertised-product report carries
-`advertisedSku`, and it is stored: 4,624 of 4,624 rows have a SKU, covering
-$179,441 of spend. The allocator reads only the ASIN from those rows, then Pass 2
-re-derives the SKU split statistically from revenue and price.
+**Current behaviour** — Amazon states the SKU it charged for. Both the older and
+the current advertised-product tables store it. The allocator reads only the
+ASIN, then Pass 2 re-derives the SKU split statistically from revenue and price.
 
 **Expected behaviour** — Where Amazon states the SKU, that is the answer. Pass 2
 is for the cases where it does not.
 
-**Root cause** — The engine was specified as a two-pass ASIN→SKU model, and the
-report's SKU column was stored but never wired into it. The field exists and is
-fully populated; nothing reads it.
+**Root cause** — Shared with `MKT-ALLOC-002`: the engine was specified as a
+two-pass ASIN→SKU model against a table that, at the time, was the only source.
+The SKU column was stored and never wired in, and the newer table that also
+carries it was never adopted.
 
-**Evidence** — source: **code** for the behaviour, **dev snapshot** for the
-scale. `_load_sp_asin_spend` and `_pass1_sp` both aggregate `.values('asin')`,
-dropping `sku`. `PPCProductSnapshot.sku` is populated on 100% of rows.
+**Evidence** — source: **code** for the behaviour, **local data** for the scale.
+`_load_sp_asin_spend` and `_pass1_sp` both aggregate `.values('asin')`, dropping
+the SKU. On the development database the current table carries a SKU on 38,824
+of 40,483 rows.
 
 **Business impact** — **Unknown, and it hinges on one production query.**
 
 *Local observation:* all 114 active USA ASINs map to exactly one non-excluded
-SKU, and the SP report's 81 ASINs resolve 1:1, so Pass 2's estimate always
-equals Amazon's answer and the impact is nil. **This is the development
-catalogue.** If production carries any ASIN with two active SKUs — a variation
-family, a repackaged size — then **this gap is live right now**, splitting spend
-by estimate while the exact figure sits unread in the same table.
+SKU, so Pass 2's estimate always equals Amazon's answer and the impact is nil.
+**This is the development catalogue.** If production carries any ASIN with two
+active SKUs — a variation family, a repackaged size — this gap is **live now**,
+splitting spend by estimate while the exact figure sits unread.
 
 **Run that query on production before deprioritising this.** Count active ASINs
-with more than one non-excluded SKU. Non-zero makes this P1 today, not "the day
-the catalogue changes".
+with more than one non-excluded SKU. Non-zero makes this P1 today.
 
-**Technical impact** — A correctness landmine that activates silently on a
-catalogue change rather than a code change.
+**Technical impact** — A correctness landmine that arms on a *catalogue* change
+rather than a code change, so nothing in the deploy pipeline would catch it.
 
-**Recommendation** — In Pass 2, use the report's SKU where the row has one, and
-fall back to the revenue-and-price estimate otherwise. Add a check that reports
-any ASIN carrying more than one active SKU, so the day this starts to matter is
-visible.
+**Recommendation** — Fold into the `MKT-ALLOC-002` change: when reading the
+campaign-grain table, take its SKU where present and fall back to the
+revenue-and-price estimate only where it is absent. Add a check reporting any
+ASIN with more than one active SKU, so the day this starts to matter is visible.
 
 **Related documents** — [sku-allocation.md](sku-allocation.md)
 

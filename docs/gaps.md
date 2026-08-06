@@ -29,7 +29,7 @@ change alone would close them. See [inventory/gaps.md](inventory/gaps.md) and
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | [inventory](inventory/gaps.md) |
 | `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | [inventory](inventory/gaps.md) |
 | `INV-PLAN-001` | Lead times exist twice, and the two disagree | P2 | [inventory](inventory/gaps.md) |
-| `MKT-ALLOC-002` | Pass 1 spreads each SP campaign's spend over every ASIN advertised that day | P2 | [marketing](marketing/gaps.md) |
+| `MKT-ALLOC-002` | The allocator reads a superseded, campaign-blind copy of the advertised-product data | P2 | [marketing](marketing/gaps.md) |
 | `MKT-ALLOC-001` | The campaign → product-group map is hardcoded in a view module | P2 | [marketing](marketing/gaps.md) |
 | `MKT-AMS-001` | A dataset that stops delivering is silent | P2 | [marketing](marketing/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |
@@ -60,7 +60,7 @@ written, then moved. They keep their ids.
 
 Structural disagreements between the code and the business are **not** gaps.
 They live in [architecture-mismatches.md](architecture-mismatches.md) —
-`ARCH-001` to `ARCH-008`.
+`ARCH-001` to `ARCH-009`.
 
 ## Recently closed
 
