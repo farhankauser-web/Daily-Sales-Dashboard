@@ -1,5 +1,8 @@
 # Documentation templates
 
+**How the work is done is in [methodology.md](../methodology.md).** This file is
+about what the documents look like.
+
 Copy the skeleton, fill it in, delete what does not apply. Four types:
 
 | Type | Template | Used for |
@@ -12,6 +15,11 @@ Copy the skeleton, fill it in, delete what does not apply. Four types:
 ---
 
 ## Four rules that shape every template
+
+**Two sections earn their place in most feature documents.**
+*Observations — not gaps* records a finding that looks like a defect and is not,
+so the next reader does not file it. *Known gaps* is a table carrying each id's
+**classification**, so nobody assumes every row is a code defect.
 
 **Delete empty sections; never write "N/A".**
 A feature document has seventeen possible headings. Most features need eight or

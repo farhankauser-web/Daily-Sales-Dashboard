@@ -86,10 +86,10 @@ Staleness is not evidence of a defect in this section.
 
 ## Method
 
-This section follows the standard Inventory established. Before writing a rule,
-read the function — not its docstring. Before filing a gap, establish a root
-cause and a classification. Before trusting a count, name its source. See
-[the Inventory retrospective](../inventory/RETROSPECTIVE.md).
+This section follows [methodology.md](../methodology.md) — the project standard,
+distilled from Inventory. In short: read the function, not its docstring;
+establish a root cause and a classification before filing a gap; name the source
+of every count; and remember that nothing runs on a schedule locally.
 
 ## Related sections
 

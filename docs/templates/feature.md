@@ -100,11 +100,30 @@ Supplier → Production plan → Allocation → Container → Receiving → Inve
 <!-- The situations that have actually caused trouble, and what should happen.
      Real cases only — do not invent hypotheticals. -->
 
+## Observations — not gaps
+
+<!-- OPTIONAL but valuable. A striking data finding that turns out to be correct
+     behaviour goes here, with its SOURCE and why it is not a defect. Without
+     this section the next reader rediscovers it and files it as a bug.
+
+     Remember the environment: on the development machine nothing runs on a
+     schedule, so stale timestamps, empty tables and never-run jobs are expected
+     and belong here rather than in the gap register. -->
+
+*Source: <code | local development data; provisional>.*
+
+- **<the finding, stated as it would first strike a reader>.** <why it is
+  correct behaviour.>
+
 ## Known gaps
 
-<!-- IDs and one-line titles ONLY. The detail lives in gaps.md. -->
+<!-- A table: id, one-line title, classification. The detail lives in gaps.md —
+     never copy it here. The classification column is what stops a reader
+     assuming every row is a code defect. -->
 
-- `<SECTION>-<AREA>-<nnn>` — <title>
+| Gap | | Classification |
+|---|---|---|
+| `<SECTION>-<AREA>-<nnn>` | <title> | <missing implementation · bug · configuration · missing operational process · legacy data> |
 
 ## Related decisions
 

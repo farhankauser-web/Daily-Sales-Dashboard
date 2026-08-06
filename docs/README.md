@@ -21,13 +21,14 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Inventory | [`inventory/`](inventory/README.md) | planner, suppliers, POs, containers, receiving — see that folder's README |
 | Intelligence | `intelligence.md` | AI recommendations, profit alerts |
 | Settings | `settings.md` | API credentials, users, roles, catalog |
+| — | **[`methodology.md`](methodology.md)** | **how we document and analyse — read before opening a section** |
 | — | `map.md` | the full documentation map and build order |
 | — | `templates/` | the four document templates, the writing style and the id schemes |
 | — | `architecture.md` | how the six apps fit together, and how data flows |
 | — | `architecture-mismatches.md` | technical-debt register — where code and business disagree |
 | — | `deployment.md` | EC2, nginx, gunicorn, cron, TLS |
 | — | **`gaps.md`** | **every open gap across all sections — the backlog** |
-| — | [`inventory/RETROSPECTIVE.md`](inventory/RETROSPECTIVE.md) | **process lessons — read before starting a section** |
+| — | [`inventory/RETROSPECTIVE.md`](inventory/RETROSPECTIVE.md) | the first section retrospective — evidence behind the methodology |
 
 **Careful:** in this app *Supply Chain* means Atlas. Containers, suppliers,
 purchase orders, allocation and receiving all live under **Inventory**.

@@ -23,6 +23,7 @@ CLAUDE.md                          global memory — rules that apply everywhere
 
 docs/
 ├── README.md                      index + documentation rules
+├── methodology.md                 how we document and analyse — read first
 ├── architecture.md                the six apps, data flow, shared clients
 ├── architecture-mismatches.md     technical-debt register
 ├── deployment.md                  EC2, nginx, gunicorn, cron, TLS

@@ -1,8 +1,12 @@
 # Inventory retrospective
 
 Written 2026-08-06, after the section was completed and frozen. This is about
-**the process**, not about Inventory. Every section that follows should start
-from here.
+**the process**, not about Inventory.
+
+**The rules this produced now live in [methodology.md](../methodology.md)** —
+that is the file to read before opening a section. This one is the evidence
+behind them: what actually happened, including the mistakes, which is what makes
+the rules worth following.
 
 Scale, for calibration: 10 feature documents, 18 open gaps, 20 decisions, five
 commits, one working session. **11 of the 18 open gaps were discovered by
@@ -141,19 +145,25 @@ saying which comes first invites losing the work.
 
 ---
 
-## Conventions that should now be project-wide
+## What was promoted, and where
 
-All of these are already written into the standards; this records why.
+Everything general from this section now lives at project level, so it applies
+to every domain rather than one:
 
-| Convention | Where | Why |
-|---|---|---|
-| Evidence precedence: code → business rules → production → local development data | `templates/README.md`, `CLAUDE.md` | a data conclusion from the local DB is provisional and must say so |
-| The laptop runs no scheduled jobs; production runs them all | `CLAUDE.md`, `templates/README.md` | stale, empty and never-run are expected locally and prove nothing |
-| Separate code · local state · deployment config · scheduled execution · production | `CLAUDE.md` | each layer has a different remedy; only the first supports a defect claim alone |
-| Root cause + classification + "code alone fixes it" | `templates/gap.md` | absence of data is not a defect; a code change cannot close a process gap |
-| Business architecture first, quirks to gaps or `ARCH-` ids | `CLAUDE.md`, `docs/README.md` | a document that describes a quirk as intent makes it permanent |
-| One machine per document, split on discovery | this file | length is not the test; a second question is |
-| Document, gaps, decisions and indexes in one commit | `templates/README.md` | a register updated later is a register that drifts |
+| Pattern | Promoted to |
+|---|---|
+| The eight-step section process | [methodology.md](../methodology.md) |
+| Ground truth, the five layers, evidence precedence | [methodology.md](../methodology.md), `CLAUDE.md` |
+| Read the function not the docstring · grep templates before judging severity · fingerprint data provenance | [methodology.md](../methodology.md) |
+| One machine per document, split on discovery | [methodology.md](../methodology.md) |
+| State the intended rule, link the gap | [methodology.md](../methodology.md) |
+| Root cause · classification · code-alone-fixes-it | [templates/gap.md](../templates/gap.md) |
+| Production verification queue, worked at implementation time | [templates/gap.md](../templates/gap.md), `CLAUDE.md` |
+| *Observations — not gaps*, and a classified gap table | [templates/feature.md](../templates/feature.md) |
+
+**Do not add general rules here.** A pattern that outlives this section belongs
+in `methodology.md` or a template; this file keeps only the Inventory evidence
+for why.
 
 ---
 
@@ -182,16 +192,22 @@ All of these are already written into the standards; this records why.
 
 ---
 
-## Applying this to the next section
+## How Marketing has borne this out
 
-Marketing is larger and less understood than Inventory. In order:
+Recorded here because a prediction that held is worth as much as a lesson
+learned. Marketing hit all three predicted failure shapes within two documents:
 
-1. Establish which database, what executes against it, and whether the feature
-   has ever run **in production** — never concluding from local staleness.
-2. Read `views.py` and the service modules **before** writing any rule.
-3. Expect the same three failure shapes: two sources for one fact, a docstring
-   that contradicts its function, and a data state that looks like a defect and
-   is a process gap.
-4. Split documents the moment a second machine appears.
-5. Backfill decisions from commit history while the code is open.
-6. Run the consistency sweep before calling it complete.
+- **A docstring contradicting its function** — the smoothing blend
+  (`MKT-ALLOC-004`), the third instance.
+- **Two sources for one fact** — none yet, but the campaign→product-group map
+  living in a view module (`MKT-ALLOC-001`) is the same class of problem.
+- **A data state that looks like a defect and is not** — twice, and both were
+  environment rather than code: allocation output stopping seven weeks ago, and
+  47% of rows being lowest-confidence equal splits.
+
+It also produced a shape Inventory did not: **a correctness landmine whose blast
+radius is currently zero** (`MKT-ALLOC-003`). Amazon's own SKU attribution is
+discarded and re-derived, which costs nothing while every ASIN maps to one SKU
+and becomes wrong silently the day one does not. Filed at P3 with the production
+query that would change it to P1 — a pattern now in
+[methodology.md](../methodology.md) as the verification queue.
