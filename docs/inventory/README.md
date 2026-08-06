@@ -11,11 +11,11 @@ This section owns the **physical and financial supply chain for our own brand**
 and the region cash-flow forecast.
 
 It does not own the B2B business. Quotes, RFQs, customer orders and invoices
-belong to the **supply-chain** section *(pending)*, which is Atlas. The naming is
+belong to the **[supply-chain](../supply-chain/README.md)** section, which is Atlas. The naming is
 confusing and worth remembering: in this app, *Supply Chain* means B2B.
 
 It does not own money that has already arrived. Amazon payouts and the
-marketplace balance belong to **financials** *(pending)*; this section forecasts
+marketplace balance belong to **[financials](../financials/README.md)**; this section forecasts
 what we will pay out. Both are called "cash flow" today — `ARCH-005`.
 
 **This section is complete and frozen** except for future feature changes.
@@ -94,6 +94,6 @@ Three relationships are not obvious from the chain and cause most confusion:
 
 ## Related sections
 
-- `docs/financials/` *(pending)* — payouts received, P&L, COGS
-- `docs/reporting/` *(pending)* — sell-through that drives the planner
-- `docs/supply-chain/` *(pending)* — Atlas, the B2B arm. Not this.
+- [financials](../financials/README.md) — payouts received, P&L, COGS
+- [reporting](../reporting/README.md) — sell-through that drives the planner
+- [supply-chain](../supply-chain/README.md) — Atlas, the B2B arm. Not this.

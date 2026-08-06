@@ -28,7 +28,7 @@ settlement.
 **Not covered:**
 - where campaign spend comes from — [ads-api.md](ads-api.md), [ams-stream.md](ams-stream.md)
 - what the allocated cost is used for — [campaigns.md](campaigns.md), and
-  `docs/financials/` *(pending)*
+  [financials](../financials/README.md)
 
 ## Business workflow
 

@@ -25,9 +25,9 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | — | `check_docs.py` | the consistency sweep — run before calling a section done |
 | — | `map.md` | the full documentation map and build order |
 | — | `templates/` | the four document templates, the writing style and the id schemes |
-| — | `architecture.md` | how the six apps fit together, and how data flows |
+| — | [`architecture.md`](architecture.md) | how the eight apps fit together, and how data flows |
 | — | `architecture-mismatches.md` | technical-debt register — where code and business disagree |
-| — | `deployment.md` | EC2, nginx, gunicorn, cron, TLS |
+| — | [`deployment.md`](deployment.md) | EC2, nginx, gunicorn, cron, TLS · owns the `INFRA-*` gaps |
 | — | **`gaps.md`** | **every open gap across all sections — the backlog** |
 | — | `*/RETROSPECTIVE.md` | per-section retrospectives — evidence behind the methodology |
 
@@ -116,6 +116,10 @@ end to end, which the retrospective states plainly.
 and **[settings](settings/README.md)** are complete and frozen — two, two and
 three feature documents, and a retrospective each.
 
-**All nine sections are documented and frozen.** See
-[methodology.md](methodology.md) for how, and each section's `RETROSPECTIVE.md`
-for what it taught. `map.md` carries the structure.
+**All nine sections are documented and frozen**, and so are the two project
+documents — [architecture.md](architecture.md) and
+[deployment.md](deployment.md). Nothing in `docs/` is pending.
+
+See [methodology.md](methodology.md) for how the work is done, and each
+section's `RETROSPECTIVE.md` for what it taught. `map.md` carries the
+structure.

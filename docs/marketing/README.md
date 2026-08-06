@@ -11,11 +11,11 @@ performance, search terms, placements, the spend-to-SKU attribution that makes
 per-SKU profit possible, and the two pipelines that feed all of it.
 
 It does not own organic search performance. Search-query share, market share and
-baskets belong to **brand-analytics** *(pending)*. The distinction is worth
+baskets belong to **[brand-analytics](../brand-analytics/README.md)**. The distinction is worth
 holding onto: this section is *paid*, that one is *earned*.
 
 It does not own the profit those campaigns contribute to. Margin, COGS and the
-P&L belong to **financials** *(pending)*. This section supplies the ad cost;
+P&L belong to **[financials](../financials/README.md)**. This section supplies the ad cost;
 that one decides what it means.
 
 **This section is complete and frozen** except for future feature changes. Seven
@@ -108,6 +108,6 @@ of every count; and remember that nothing runs on a schedule locally.
 
 ## Related sections
 
-- `docs/brand-analytics/` *(pending)* — organic search performance. Not this.
-- `docs/financials/` *(pending)* — what the ad cost does to margin
-- `docs/reporting/` *(pending)* — the SKU table that carries per-SKU ad cost
+- [brand-analytics](../brand-analytics/README.md) — organic search performance. Not this.
+- [financials](../financials/README.md) — what the ad cost does to margin
+- [reporting](../reporting/README.md) — the SKU table that carries per-SKU ad cost

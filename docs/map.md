@@ -173,11 +173,13 @@ tells you which function, not how big the file is.
    `brand-analytics/`, `intelligence/` and `settings/`, each with a
    retrospective. Nine sections documented and frozen.
 
-`deployment.md` and `architecture.md` remain the only unwritten project
-documents; the five `INFRA-*` gaps belong to the first of them.
+10. **`architecture.md` and `deployment.md` — done.** Nothing in `docs/` is
+    pending. `deployment.md` classifies the five `INFRA-*` gaps, including
+    `INFRA-001`, the highest-priority gap in the project.
 
-`architecture.md` and `deployment.md` are written alongside step 5 —
-`deployment.md` pairs with `INFRA-01`, the highest open gap.
+`architecture.md` and `deployment.md` were written last rather than alongside
+step 5 — by then nine sections had established which boundaries were real, which
+is what `architecture.md` is for.
 
 Per-section `gaps.md` files are seeded by splitting the master `gaps.md`,
 keeping the IDs already in use.

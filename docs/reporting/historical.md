@@ -22,7 +22,7 @@ monthly targets.
 **Not covered:**
 - today and short windows — [daily.md](daily.md)
 - the SKU table's construction — [product-performance.md](product-performance.md)
-- reconciliation to money received — `docs/financials/` *(pending)*
+- reconciliation to money received — [financials](../financials/README.md)
 
 ## Business rules
 

@@ -606,7 +606,7 @@ USA-only, so the FC sync is the one that needs the other regions.
 `sync_fba_receipts` per region once a non-USA container exists. Do it with the
 first non-USA container, not before.
 
-**Related documents** — [receiving.md](receiving.md), deployment.md *(pending)*
+**Related documents** — [receiving.md](receiving.md), [deployment.md](../deployment.md)
 
 ---
 

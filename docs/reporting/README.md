@@ -15,7 +15,7 @@ attribution belong to [marketing](../marketing/README.md); this section
 *consumes* the per-SKU ad cost that produces.
 
 It does not own money. P&L, COGS, settlements and payouts belong to
-**financials** *(pending)*.
+**[financials](../financials/README.md)**.
 
 **The overlap with Financials is intentional.** This section is built from the
 **daily order reports** and answers *what is happening in the business* —
@@ -56,7 +56,7 @@ Two facts about this shape cause most confusion:
   — see `ARCH-007`.
 - **"MCF" means two different things.** This section mirrors Amazon's own MCF
   order list, read-only. The Walmart fulfilment pipeline that *creates* MCF
-  orders belongs to `docs/walmart/` *(pending)* — `ARCH-006`.
+  orders belongs to [walmart](../walmart/README.md) — `ARCH-006`.
 
 ## Ground truth
 
@@ -99,5 +99,5 @@ builder has already been identified.
 ## Related sections
 
 - [marketing](../marketing/README.md) — the ad cost this section shows
-- `docs/financials/` *(pending)* — where revenue is reconciled to money
-- `docs/walmart/` *(pending)* — the other "MCF"
+- [financials](../financials/README.md) — where revenue is reconciled to money
+- [walmart](../walmart/README.md) — the other "MCF"

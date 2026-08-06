@@ -420,7 +420,7 @@ rather than merely unlikely.
 that must be kept in step by hand. Routing on the ID prefix means an AWD id
 typed without its prefix is silently sent to the wrong API.
 
-**Affected documents** — [receiving.md](receiving.md), deployment.md *(pending)*
+**Affected documents** — [receiving.md](receiving.md), [deployment.md](../deployment.md)
 
 ---
 

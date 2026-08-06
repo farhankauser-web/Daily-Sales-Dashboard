@@ -14,11 +14,14 @@ Gaps carry a **Classification** — missing implementation, bug, configuration,
 missing operational process or legacy data — a root cause, and whether a code
 change alone would close them. See [methodology.md](methodology.md).
 
-Five ids use the older two-part scheme and are **carried, not registered**:
-`FIN-001`, `WM-001`, `BA-001`, `SET-001` and the `INFRA-*` set. Each is
-described in prose in its section's register and gets a full entry when the
-evidence to classify it exists — for four of the five that means a production
-check, and the `INFRA-*` set belongs to `deployment.md`, which is not written.
+Four ids use the older two-part scheme and are **carried, not registered**:
+`FIN-001`, `WM-001`, `BA-001` and `SET-001`. Each is described in prose in its
+section's register and gets a full entry when the evidence to classify it
+exists — for all four that means a production check.
+
+The five `INFRA-*` gaps are classified in
+[deployment.md](deployment.md); `INFRA-001` is the highest-priority gap in the
+project.
 
 ## Open
 
@@ -28,7 +31,7 @@ check, and the `INFRA-*` set belongs to `deployment.md`, which is not written.
 | `INV-CONT-002` | Opening balance is not consumable | P1 | [inventory](inventory/gaps.md) |
 | `INV-RECV-001` | No active container carries an Amazon shipment ID | P1 | [inventory](inventory/gaps.md) |
 | `INV-RECV-002` | Archived containers with no count report as a total loss | P1 | [inventory](inventory/gaps.md) |
-| `INFRA-001` | `deploy/crontab.txt` cannot be installed on EC2; scheduled jobs never run | P1 | *(deployment.md pending)* |
+| `INFRA-001` | `deploy/crontab.txt` cannot be installed on EC2; scheduled jobs never run | P1 | [deployment](deployment.md) |
 | `INV-CONT-003` | No stall alert for a container stuck in Receiving | P2 | [inventory](inventory/gaps.md) |
 | `INV-CONT-011` | The status-workbook import deletes every container in the region | P2 | [inventory](inventory/gaps.md) |
 | `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | [inventory](inventory/gaps.md) |
@@ -48,8 +51,8 @@ check, and the `INFRA-*` set belongs to `deployment.md`, which is not written.
 | `FIN-001` | Referral fee computed on gross revenue, never checked against a settlement | P2 | [financials](financials/gaps.md) |
 | `BA-001` | Three Brand Analytics reports submitted, never collected | P2 | [brand-analytics](brand-analytics/gaps.md) |
 | `WM-001` | Every non-JSON response reported as "session expired" | P2 | [walmart](walmart/gaps.md) |
-| `INFRA-004` | VAPT: dependency bumps and `json_script` for four templates | P2 | *(deployment.md pending)* |
-| `INFRA-005` | No SMTP, so password reset does not work | P2 | *(deployment.md pending)* |
+| `INFRA-004` | VAPT: dependency bumps and `json_script` for four templates | P2 | [deployment](deployment.md) |
+| `INFRA-005` | No SMTP, so password reset does not work | P2 | [deployment](deployment.md) |
 | `SET-001` | AE/SA marketplace ids missing, blocking the UAE P&L | P2 | [settings](settings/gaps.md) |
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | [inventory](inventory/gaps.md) |
 | `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | [inventory](inventory/gaps.md) |
@@ -62,12 +65,13 @@ check, and the `INFRA-*` set belongs to `deployment.md`, which is not written.
 | `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | [marketing](marketing/gaps.md) |
 | `MKT-UPL-001` | An unmatched campaign name on upload is logged, never reported | P3 | [marketing](marketing/gaps.md) |
 | `MKT-TERM-001` | Signal thresholds are fixed in code and identical across marketplaces | P3 | [marketing](marketing/gaps.md) |
-| `INFRA-002` | Kernel upgrade pending, needs a reboot | P3 | *(deployment.md pending)* |
-| `INFRA-003` | HSTS still 86400 | P3 | *(deployment.md pending)* |
+| `INFRA-002` | Kernel upgrade pending, needs a reboot | P3 | [deployment](deployment.md) |
+| `INFRA-003` | HSTS still 86400 | P3 | [deployment](deployment.md) |
 | `INT-001` | Command Center phase 3 — per-widget config, resize | P3 | [intelligence](intelligence/gaps.md) |
 
-Only the `INFRA-*` gaps have no section register — they belong to
-`deployment.md`, which is not written. They keep their ids when it is.
+Every gap now has a home. The `INFRA-*` set is classified in
+[deployment.md](deployment.md) rather than in a section register, because
+deployment is a project concern rather than a business domain.
 
 ## Architecture mismatches
 

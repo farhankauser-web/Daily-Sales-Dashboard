@@ -19,7 +19,7 @@ the warehouse with no visible order behind it.
 Covers the mirrored order list, its filters and its export.
 
 **Not covered:**
-- creating MCF orders from Walmart sales — `docs/walmart/` *(pending)*, `ARCH-006`
+- creating MCF orders from Walmart sales — [walmart](../walmart/README.md), `ARCH-006`
 - the stock those orders consume — [containers.md](../inventory/containers.md)
 
 ## Business rules
@@ -39,7 +39,7 @@ machines:
 | | Owns |
 |---|---|
 | **MCF Orders** — this document | a read-only mirror of Amazon's MCF order list |
-| **Walmart Fulfilment** — `docs/walmart/` *(pending)* | the pipeline that *creates* MCF orders from Walmart sales |
+| **Walmart Fulfilment** — [walmart](../walmart/README.md) | the pipeline that *creates* MCF orders from Walmart sales |
 
 `ARCH-006` records the naming collision. A bug reported against "MCF" has
 already cost more time to locate than to fix.
@@ -66,5 +66,5 @@ only the shared name is wrong.
 
 ## Related documents
 
-- `docs/walmart/` *(pending)* — the other MCF
+- [walmart](../walmart/README.md) — the other MCF
 - [architecture-mismatches.md](../architecture-mismatches.md) — `ARCH-006`

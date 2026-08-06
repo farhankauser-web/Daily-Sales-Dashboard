@@ -30,7 +30,7 @@ Covers the per-region ledger: opening position, generated and manual entries,
 and the running balance.
 
 **Not covered:**
-- payouts that have actually landed — `docs/financials/payouts.md` *(pending)*, and `ARCH-005`
+- payouts that have actually landed — [payouts.md](../financials/payouts.md), and `ARCH-005`
 - where a container's FOB rate comes from — [allocation-workbench.md](allocation-workbench.md)
 - what we owe suppliers in total — [suppliers.md](suppliers.md)
 

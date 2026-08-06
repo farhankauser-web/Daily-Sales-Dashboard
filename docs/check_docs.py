@@ -246,12 +246,25 @@ def check_leakage(section: str) -> None:
 
 # ── 8. stale pending markers ────────────────────────────────────────────────
 def check_pending(files: list[Path]) -> None:
+    """A *(pending)* marker naming something that now exists is stale.
+
+    Catches three spellings, because all three have gone stale in practice:
+    a sibling document, a cross-directory path, and a whole section named as
+    `docs/<section>/` or **<section>**.
+    """
+    sections = {d.name for d in DOCS.iterdir() if d.is_dir()
+                and (d / 'README.md').exists()}
     for p in files:
-        for m in re.finditer(r'([\w./-]+\.md) \*\(pending\)\*', p.read_text()):
-            target = p.parent / m.group(1)
-            if target.exists():
-                fail(f'{p.relative_to(DOCS)}: marks {m.group(1)} pending, '
+        text = p.read_text()
+        for m in re.finditer(r'[`*]*([\w./-]+\.md)[`*]*\s*\*\(pending\)\*', text):
+            name = m.group(1)
+            if (p.parent / name).exists() or (DOCS / name).exists():
+                fail(f'{p.relative_to(DOCS)}: marks {name} pending, '
                      f'but it exists — upgrade to a link')
+        for m in re.finditer(r'[`*]*(?:docs/)?([\w-]+)/?[`*]*\s*\*\(pending\)\*', text):
+            if m.group(1) in sections:
+                fail(f'{p.relative_to(DOCS)}: marks section {m.group(1)} '
+                     f'pending, but it exists — link its README')
 
 
 def main() -> int:
