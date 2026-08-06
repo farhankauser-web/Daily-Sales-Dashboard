@@ -15,12 +15,12 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Reporting | [`reporting/`](reporting/README.md) | daily & historical sales, hourly patterns, SKU table, command centre |
 | Financials | [`financials/`](financials/README.md) | P&L, COGS, FBA fee drift, payouts, targets |
 | Marketing | [`marketing/`](marketing/README.md) | PPC — see that folder's README |
-| Brand Analytics | `brand-analytics.md` | search-query performance, market share, baskets |
+| Brand Analytics | [`brand-analytics/`](brand-analytics/README.md) | search-query performance, share, baskets |
 | Walmart | [`walmart/`](walmart/README.md) | Walmart orders → Amazon MCF fulfilment |
 | Supply Chain | [`supply-chain/`](supply-chain/README.md) | **Atlas — the B2B arm.** Quotes, RFQs, B2B POs, invoices |
 | Inventory | [`inventory/`](inventory/README.md) | planner, suppliers, POs, containers, receiving — see that folder's README |
-| Intelligence | `intelligence.md` | AI recommendations, profit alerts |
-| Settings | `settings.md` | API credentials, users, roles, catalog |
+| Intelligence | [`intelligence/`](intelligence/README.md) | alerts, AI briefings, morning report |
+| Settings | [`settings/`](settings/README.md) | API credentials, users, roles, catalogue |
 | — | **[`methodology.md`](methodology.md)** | **how we document and analyse — read before opening a section** |
 | — | `check_docs.py` | the consistency sweep — run before calling a section done |
 | — | `map.md` | the full documentation map and build order |
@@ -112,8 +112,10 @@ feature documents, 0 gaps, 7 decisions, and a
 evidence than the other sections'**: Atlas is new and has been exercised once
 end to end, which the retrospective states plainly.
 
-Three sections remain, all small: **Brand Analytics**, **Intelligence** and
-**Settings**.
+**[brand-analytics](brand-analytics/README.md)**, **[intelligence](intelligence/README.md)**
+and **[settings](settings/README.md)** are complete and frozen — two, two and
+three feature documents, and a retrospective each.
 
-Leaves are written as we work through each section. See `map.md` for the build
-order.
+**All nine sections are documented and frozen.** See
+[methodology.md](methodology.md) for how, and each section's `RETROSPECTIVE.md`
+for what it taught. `map.md` carries the structure.

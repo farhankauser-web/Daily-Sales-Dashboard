@@ -169,7 +169,12 @@ tells you which function, not how big the file is.
    the canonical builder before anything was written.
 8. `financials/` — **done**. Five feature documents, no gaps; the
    Reporting/Financials boundary is stated in both READMEs.
-9. The rest, as sessions touch them.
+9. **All remaining sections — done.** `walmart/`, `supply-chain/`,
+   `brand-analytics/`, `intelligence/` and `settings/`, each with a
+   retrospective. Nine sections documented and frozen.
+
+`deployment.md` and `architecture.md` remain the only unwritten project
+documents; the five `INFRA-*` gaps belong to the first of them.
 
 `architecture.md` and `deployment.md` are written alongside step 5 —
 `deployment.md` pairs with `INFRA-01`, the highest open gap.
