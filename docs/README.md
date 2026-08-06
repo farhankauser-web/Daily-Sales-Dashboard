@@ -55,10 +55,12 @@ verified against: <commit> · <date>
 - **Write a doc as a by-product of working in that area**, not cold. Fifteen
   docs written speculatively would be stale before the last was finished.
 - **Gaps carry evidence** — a query or a `file:line`, never an assertion — and
-  **name its source**. Code → business rules → production → the local snapshot.
-  A conclusion counted out of `db.sqlite3` is provisional and says so; that
-  database is a development snapshot, so an empty table means "never used
-  locally", not "broken". See [`templates/`](templates/README.md).
+  **name its source**. Code → business rules → production → local development
+  data. See [`templates/`](templates/README.md).
+- **The laptop runs no scheduled jobs; production runs them all.** Stale
+  timestamps, empty tables and jobs that look like they never ran are expected
+  locally and are never on their own evidence of a defect. Only the code can
+  prove one.
 - **Classify before recommending.** Missing implementation, bug, configuration,
   missing operational process, or legacy data. Absence of data is not a defect.
 - **Aspiration lives in "How it should work"**, never in "How it works today".

@@ -8,10 +8,11 @@ production unchanged; findings drawn from *data* are provisional and must be
 re-measured on production Postgres before anyone acts on them, and say so. See
 [templates/README.md](../templates/README.md) for the precedence.
 
-**No scheduler runs on the development machine.** `deploy/crontab.txt` specifies
-33 jobs; `crontab -l` reports none. Every freshness difference between Marketing
-tables reflects which command someone last ran by hand, **not** pipeline health.
-Staleness alone is never evidence of a defect here.
+**No scheduler runs on the development machine — by design.** Production runs
+all 33 jobs in `deploy/crontab.txt` continuously; the laptop runs none and is
+not always on. Every freshness difference between Marketing tables reflects
+which command someone last ran by hand. **Staleness is never evidence of a
+defect here**, and neither is an empty or partly filled table.
 
 **Absence of data is not a defect.** Every gap carries a **Classification** —
 missing implementation, bug, configuration, missing operational process, or
@@ -136,7 +137,7 @@ have it point at the admin page rather than at a source file.
 
 | | |
 |---|---|
-| **Priority** | P3 — raise to P1 the moment one ASIN carries two active SKUs |
+| **Priority** | P3 on local evidence — **P1 if production has any multi-SKU ASIN; unverified** |
 | **Status** | open |
 | **Classification** | missing implementation |
 | **Code alone fixes it** | yes |
@@ -158,14 +159,18 @@ fully populated; nothing reads it.
 scale. `_load_sp_asin_spend` and `_pass1_sp` both aggregate `.values('asin')`,
 dropping `sku`. `PPCProductSnapshot.sku` is populated on 100% of rows.
 
-**Business impact** — **None measurable today.** All 114 active USA ASINs map to
-exactly one non-excluded SKU, and the SP report's 81 ASINs likewise resolve 1:1,
-so Pass 2's estimate always equals Amazon's answer. *Provisional; re-measure on
-production.*
+**Business impact** — **Unknown, and it hinges on one production query.**
 
-It becomes real the first time a variation family or a second SKU shares an
-ASIN — at which point spend is split by estimate while the exact figure sits
-unread in the same table, and nothing signals the change.
+*Local observation:* all 114 active USA ASINs map to exactly one non-excluded
+SKU, and the SP report's 81 ASINs resolve 1:1, so Pass 2's estimate always
+equals Amazon's answer and the impact is nil. **This is the development
+catalogue.** If production carries any ASIN with two active SKUs — a variation
+family, a repackaged size — then **this gap is live right now**, splitting spend
+by estimate while the exact figure sits unread in the same table.
+
+**Run that query on production before deprioritising this.** Count active ASINs
+with more than one non-excluded SKU. Non-zero makes this P1 today, not "the day
+the catalogue changes".
 
 **Technical impact** — A correctness landmine that activates silently on a
 catalogue change rather than a code change.
@@ -221,6 +226,18 @@ the same day, so successive intra-day recomputes do not swing published figures.
 **Related documents** — [sku-allocation.md](sku-allocation.md)
 
 ---
+
+---
+
+## Production verification queue
+
+Findings below rest on local development data and **cannot be settled here**.
+Each is one query on production. Until then their priority is provisional.
+
+| Gap | The one question production answers |
+|---|---|
+| `MKT-ALLOC-003` | does any active ASIN carry more than one non-excluded SKU? Non-zero makes this P1 today |
+| `MKT-ALLOC-001` | how much spend sits in "Unallocated PPC" on production? Sets the real priority |
 
 ## Closed
 

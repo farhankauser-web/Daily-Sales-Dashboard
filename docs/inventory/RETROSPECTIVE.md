@@ -26,9 +26,14 @@ recommendations changed completely — from "write code" to "run the command tha
 already exists". Had they shipped as filed, the work would have been wasted.
 
 **Naming the evidence source stopped a whole class of wrong conclusion.** Once
-findings had to say *code* or *dev snapshot*, the strong claims separated
-cleanly from the provisional ones. "No container carries a shipment ID" reads
-like a defect and is actually a fact about a lightly-used development database.
+findings had to say *code* or *local data*, the strong claims separated cleanly
+from the provisional ones. "No container carries a shipment ID" reads like a
+defect and is a fact about a development database that runs no scheduled jobs.
+
+It did not stop enough of them. Several gaps still reasoned from local state —
+timestamps, row counts, "this has not run since" — and had to be reclassified
+once the environment was stated plainly (see below). Naming the source is
+necessary; **knowing what the source can and cannot support** is the rest.
 
 **Splitting on discovery rather than on plan.** `planner.md` was one document in
 the build order. Writing it revealed three machines with different scopes,
@@ -75,18 +80,34 @@ still documents a workflow the decision log forbids (`INV-ALLOC-004`).
 because it is trusted.**
 
 **Calling a routed endpoint "live".** `INV-CONT-011` was filed P1 on the
-assumption that a destructive import runs routinely. No template links it, and
-it had not run since the seed. It is P2, latent — still worth fixing, but not
-what was first written. **Grep the templates before assessing severity.**
+assumption that a destructive import runs routinely. **No template links it** —
+that is code evidence and it holds. **Grep the templates before assessing
+severity.**
 
-**Blaming a defect for a state it did not cause.** The same gap was first
-written as having wiped a backfill. Timestamps disproved it: 128 of 131 rows
-untouched since the seed, so the destructive path could not have run. **Check
-whether the accused code could have executed in the window.**
+**Then downgrading it on evidence that could not support the claim.** The same
+gap was argued down to P2 partly because "it has not run since 2026-07-20" — a
+local timestamp on a machine that runs nothing on a schedule. That says nothing
+about whether production ops upload the workbook weekly. The severity is now
+explicitly provisional, resting on the code evidence alone.
 
-**Not asking which database, early.** Several hours of findings were built on
-`db.sqlite3` before anyone asked whether it was production. It is not. Ask in
-the first five minutes of any section.
+**Blaming a defect for a state it did not cause.** It was also first written as
+having wiped a backfill, which local timestamps disproved. The conclusion was
+right and the reasoning was still local-only. **Check whether the accused code
+could have executed — and remember that "it did not run here" is not "it does
+not run".**
+
+**Not asking which database, early — and not asking what runs there.** Several
+hours of findings were built on `db.sqlite3` before anyone asked whether it was
+production. It is not, and more importantly **no scheduled job has ever run
+against it**: cron, workers and automated imports execute only on the deployed
+server, and the laptop is not always on.
+
+That single fact invalidated a chain of reasoning. "The backfill was never
+applied", "this import has not run since the seed", "no container was ever
+created through the workbench" are all statements about a developer's laptop,
+and none of them describe the business. Four gaps were reclassified once it was
+stated. **Ask both questions in the first five minutes: which database, and what
+executes against it.**
 
 ---
 
@@ -101,6 +122,13 @@ position and the In-Transit/Receiving partition are all computed on read and
 therefore cannot drift. Where something *is* stored deliberately — a snapshotted
 FOB rate — the reason belongs in a decision record, because the next reader will
 otherwise "fix" it.
+
+**Separate five layers before calling anything a defect.** Code implementation ·
+local development state · deployment configuration · scheduled execution ·
+production behaviour. Most apparent defects live in the middle three, and each
+has a different remedy — a code change cannot fix a job that is not scheduled,
+and a schedule cannot fix a laptop that is switched off. Only the first layer
+supports a defect claim on its own.
 
 **Two sources for one fact is always a defect.** Found three times: lead times
 in two places (`INV-PLAN-001`), the human count read where the derived figure
@@ -119,7 +147,9 @@ All of these are already written into the standards; this records why.
 
 | Convention | Where | Why |
 |---|---|---|
-| Evidence precedence: code → business rules → production → dev snapshot | `templates/README.md`, `CLAUDE.md` | a data conclusion from the local DB is provisional and must say so |
+| Evidence precedence: code → business rules → production → local development data | `templates/README.md`, `CLAUDE.md` | a data conclusion from the local DB is provisional and must say so |
+| The laptop runs no scheduled jobs; production runs them all | `CLAUDE.md`, `templates/README.md` | stale, empty and never-run are expected locally and prove nothing |
+| Separate code · local state · deployment config · scheduled execution · production | `CLAUDE.md` | each layer has a different remedy; only the first supports a defect claim alone |
 | Root cause + classification + "code alone fixes it" | `templates/gap.md` | absence of data is not a defect; a code change cannot close a process gap |
 | Business architecture first, quirks to gaps or `ARCH-` ids | `CLAUDE.md`, `docs/README.md` | a document that describes a quirk as intent makes it permanent |
 | One machine per document, split on discovery | this file | length is not the test; a second question is |
@@ -129,9 +159,11 @@ All of these are already written into the standards; this records why.
 
 ## What would have saved time
 
-1. **Ask which database, and how it was seeded, before measuring anything.** One
-   query on primary-key ranges and `updated_at` clustering told us the whole
-   dataset came from a single seed import — and that fact reframed four gaps.
+1. **Ask which database, what runs against it, and how it was seeded — before
+   measuring anything.** The development machine runs no scheduled jobs at all,
+   so every timestamp on it records a manual run. One query on primary-key
+   ranges and `updated_at` clustering showed the dataset came from a single seed
+   import, and that reframed four gaps.
 2. **Fingerprint data provenance early.** Contiguous PK ranges, identical
    timestamps, and a derived field equalling its source (`received_date ==
    eta_destination`) identify machine-generated rows in seconds and separate
@@ -154,7 +186,8 @@ All of these are already written into the standards; this records why.
 
 Marketing is larger and less understood than Inventory. In order:
 
-1. Establish which database, and whether the feature has ever run in production.
+1. Establish which database, what executes against it, and whether the feature
+   has ever run **in production** — never concluding from local staleness.
 2. Read `views.py` and the service modules **before** writing any rule.
 3. Expect the same three failure shapes: two sources for one fact, a docstring
    that contradicts its function, and a data state that looks like a defect and

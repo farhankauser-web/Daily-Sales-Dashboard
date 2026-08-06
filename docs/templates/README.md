@@ -36,14 +36,24 @@ Evidence is not all equal. **Precedence, strongest first:**
 | 1 | **Code** | everywhere. A defect read from the source is a defect in production |
 | 2 | **Business rules** | the documented invariants and decision log |
 | 3 | **Production data** | Postgres on EC2 — the business truth |
-| 4 | **Development snapshot** | local `db.sqlite3` only |
+| 4 | **Local development data** | this laptop only |
 
-**Anything not derived from code, architecture or documentation is provisional
-until verified against production, and must say so.** The local database is a
-development snapshot: whole feature paths have never run against it, so an empty
-table means "never used locally", not "broken". Counting its rows and calling
-the result a business fact is how a register fills up with confident, wrong
-conclusions.
+**The laptop is the development environment. Production runs every scheduled
+job; the laptop runs none of them and is not always on.** Cron, background
+workers and automated imports execute only after deploy. So stale timestamps,
+missing scheduled runs, empty or partly populated tables, absent background
+processing and jobs that look like they never ran are all **expected locally**
+and are **never on their own evidence of a defect**. Only the code can prove one.
+
+Use local data to understand **structure** and to confirm a path **works** —
+not to infer what production does. Anything not derived from code, architecture
+or documentation is provisional until checked against production, and must say
+so.
+
+**Separate the five layers** in any analysis: code implementation · local
+development state · deployment configuration · scheduled execution · production
+behaviour. Most apparent defects are one of the middle three, and each has a
+different remedy.
 
 Keep code-derived and data-derived claims separable in the same entry, so a
 reader can tell which survives a different database.

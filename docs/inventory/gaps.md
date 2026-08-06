@@ -2,14 +2,20 @@
 
 Source of truth for this section. The root [gaps.md](../gaps.md) indexes these.
 
+**The laptop is the development environment; production runs the jobs.** No
+cron, background worker or automated import runs on the development machine —
+by design, and it is not always on. **Stale timestamps, empty tables, missing
+scheduled runs and jobs that look like they never ran are expected here and are
+never on their own evidence of a defect.** Only the code can prove one. Local
+data is used below to understand structure and to confirm a path executes, not
+to infer what production does; every data-derived claim is marked provisional.
+
 **Where the evidence comes from.** Every count in this file was measured against
-the **local SQLite database**, not production Postgres. That database is a
-development copy seeded on 2026-07-20 and lightly used since: no container in it
-was created through the Allocation Workbench, and 128 of its 131 containers have
-not been written to since the seed. Findings about *code* transfer to production
-unchanged. Findings about *data* — how many containers carry a shipment ID, how
-many were received by hand — describe this copy and must be re-measured on
-production before anyone acts on them. Each such gap says so.
+the **local development database**, not production Postgres. Findings about
+*code* transfer to production unchanged. Findings about *data* — how many
+containers carry a shipment ID, how many were received by hand, whether the
+Allocation Workbench has been used — describe the development machine only and
+must be re-measured on production before anyone acts on them.
 
 **Absence of data is not a defect.** Before recommending anything, establish why
 the state exists: code that was never written, code that is wrong, code that
@@ -62,12 +68,15 @@ and no PO link, so every container in transit prices at zero in cash flow.
 **Expected behaviour** — Every container line carries a rate, so the region
 ledger shows what we actually owe.
 
-**Root cause** — Legacy data, and more completely so than first recorded. These
-lines do not merely predate the FOB column: **no container in this database was
-ever created through the Allocation Workbench.** All 131 were created by the
-seed import, which carries units and dates and nothing else. A rate, a PO link
-and an FNSKU are all produced by the packing-list path, and that path has never
-run here. The mechanism is correct and unexercised — see `INV-D-007`.
+**Root cause** — *Code:* a rate, a PO link and an FNSKU are produced only by the
+packing-list path; a container created by either import carries none of them,
+and nothing backfills them. That is the mechanism, and it holds everywhere.
+
+*Local observation, provisional:* on the development machine no container was
+created through the Allocation Workbench — all 131 came from the seed import.
+**This says nothing about production**, where ops may well be uploading packing
+lists. The count below is the development database only; re-measure before
+acting. The deliberate forward-only choice is `INV-D-007`.
 
 **Evidence**
 ```python
@@ -78,9 +87,11 @@ InTransitLine.objects.exclude(po_line=None).count()       # 0 of 2,615
 InTransitLine.objects.exclude(fnsku='').count()           # 0 of 2,615
 ```
 
-**Business impact** — Cash flow understates outflows by the full value of
-everything currently on the water. A funding decision taken on that ledger would
-be wrong in the dangerous direction.
+**Business impact** — *If production matches:* cash flow understates outflows
+by the full value of everything on the water, and a funding decision taken on
+that ledger would be wrong in the dangerous direction. **Confirm on production
+first** — the entire impact rests on how many live container lines actually lack
+a rate, which the development database cannot tell us.
 
 **Technical impact** — None ongoing. The mechanism works for new containers;
 these rows simply predate it.
@@ -206,9 +217,9 @@ UI that AWD comes from Amazon.
 
 | | |
 |---|---|
-| **Priority** | P2 |
-| **Status** | open — latent; has not run since 2026-07-20 |
-| **Classification** | bug — data loss, not currently firing |
+| **Priority** | P2 — **provisional; P1 if production runs this import** |
+| **Status** | open — no UI path in the code; production exposure unverified |
+| **Classification** | bug — data loss |
 | **Code alone fixes it** | yes |
 | **Dependencies** | none |
 
@@ -256,12 +267,15 @@ consumed and deleted. 120 of the 131 statuses reproduce the importer's date rule
 exactly, and 116 of the 120 archived containers have `received_date` equal to
 `eta_destination`, which only the importer writes.
 
-**Why it is P2 and not P1** — It is not firing. The endpoint is routed but no
-template links it, so it is reachable only by a direct POST; 128 of the 131
-containers have not been written to since the seed import on 2026-07-20 16:01.
-Nothing it would destroy currently exists either: 0 of 2,615 container lines
-carry a FOB rate, a PO link or an FNSKU, because no container in this database
-was created through the Allocation Workbench.
+**Why P2, and what would make it P1** — *Code evidence:* the endpoint is
+routed but **no template links it**, so it is reachable only by a direct POST.
+That is the whole basis for P2 and it holds in production.
+
+*What is NOT evidence:* that it has not run on the development machine, or that
+no local container carries a FOB rate. Neither says anything about production —
+this laptop runs no scheduled jobs and is not always on. **Raise to P1 if
+production ops upload the status workbook**, which is the one fact that decides
+this. Ask before scheduling the fix.
 
 **Business impact** — None so far. The exposure is entirely forward-looking, and
 it is aimed squarely at the two remedies this register recommends: re-uploading
@@ -296,11 +310,11 @@ destructive.
 
 | | |
 |---|---|
-| **Priority** | P1 |
-| **Status** | open |
-| **Classification** | missing operational process |
-| **Code alone fixes it** | no — a command that exists has to be run, and ops have to record the ID when a container is booked |
-| **Dependencies** | none. `INV-CONT-011` would destroy the result if it ever runs again |
+| **Priority** | P1 — **provisional; confirm on production before acting** |
+| **Status** | open — the finding is local; production may already be compliant |
+| **Classification** | missing operational process *(if it reproduces on production)* |
+| **Code alone fixes it** | no — an existing command has to be run, and ops have to record the ID when a container is booked |
+| **Dependencies** | none. `INV-CONT-011` would destroy the result if it ever runs |
 
 **Current behaviour** — Both receipt syncs iterate open containers that carry an
 Amazon shipment ID. There are none. Every container that has ever been linked is
@@ -325,15 +339,16 @@ which nobody read as applying to AWD containers, and AWD is all of them
 (`8205fb1`). The backfill written that day reported 63 containers to link; 14
 carry an ID today, and all 14 are archived.
 
-*The backfill has never been run with `--apply`.* All 14 IDs that exist arrived
-in the original seed import on 2026-07-20 at 16:01, from row 6 of the Transit
-sheet — they are primary keys 392–406, the leftmost and oldest columns of the
-sheet. 128 of the 131 containers have not been written to since that moment. Had
-the backfill been applied on 2026-08-03, 63 containers would carry IDs and would
-show it in their timestamps.
+*Local observation, provisional.* On the development machine the backfill has
+never been run with `--apply`: all 14 IDs present arrived in the seed import, and
+128 of 131 containers are untouched since. **That is a fact about this laptop,
+not about the business.** Production ops may be entering IDs routinely, or may
+have run the backfill there; nothing here can tell us.
 
-So the ID is knowable, recorded by ops, and reachable by a command that was
-written for exactly this — and the command has never been run.
+*What holds regardless (code):* the ID is knowable and recorded by ops in the
+Containers Summary workbook, a command exists to link it in bulk, and **nothing
+in the code warns when an AWD- or FBA-bound container has no shipment ID.** That
+silence is the durable finding.
 
 **Evidence**
 ```python
@@ -375,10 +390,11 @@ nothing to work on. The consequence is that every receiving code path is
 unexercised, so `INV-RECV-003` and `INV-RECV-004` sit undiscovered rather than
 visible.
 
-**Recommendation** — Confirm against production before doing anything: this
-register's evidence is the local database (see the note at the top of this
-file), and if ops have been entering IDs on the live system there is nothing
-here to fix. If production matches:
+**Recommendation** — **Confirm against production first.** The evidence here is
+the development database, which runs no scheduled jobs and reflects only what
+was run by hand; if ops enter IDs on the live system there is nothing to fix and
+this gap closes. One query settles it: active containers with an empty
+`shipment_id`, on production. If it reproduces there:
 
 1. Run `backfill_container_shipment_ids` against the current Containers Summary
    workbook. It reports before it writes and never replaces an existing ID, so
@@ -404,8 +420,8 @@ makes the next occurrence visible.
 | | |
 |---|---|
 | **Priority** | P1 |
-| **Status** | open |
-| **Classification** | legacy data, surfaced by a display defect |
+| **Status** | open — the display defect is certain; the scale is provisional |
+| **Classification** | display defect (code) over legacy data (local observation) |
 | **Code alone fixes it** | yes — the reported figure is wrong, not the data |
 | **Dependencies** | none |
 
@@ -418,15 +434,19 @@ container, in red.
 **not counted**, distinct from a container counted at zero. Only a real count
 produces a discrepancy figure.
 
-**Root cause** — These containers were never received by anybody. The
-status-workbook import synthesises the status from the dates alone — an ETA more
-than 21 days old becomes `received`, with `received_date` set to the estimated
-arrival — and creates lines carrying packed units and nothing else. There was no
-count to record, because the containers landed before the system existed: their
-arrival dates run from 2023-04-10, and the app's first migration is 2026-07-20.
+**Root cause** — Two layers, and only one is provisional.
 
-The display then treats "no count recorded" and "counted zero" as the same
-thing, and reports the difference against packed as a loss.
+*Code, certain:* the display treats "no count recorded" and "counted zero" as
+the same thing, and reports the difference against packed as a loss. The
+status-workbook import synthesises `received` from dates alone — an ETA more
+than 21 days old — and writes `received_date` from the estimated arrival, with
+no count. Any container arriving that way will read as a total loss, on any
+database.
+
+*Local observation, provisional:* on the development machine 116 of 120 archived
+containers are in exactly that state, with arrival dates from 2023-04-10 —
+before the app's first migration. Production's count of affected containers is
+unknown and needs re-measuring; the defect itself does not.
 
 **Evidence**
 ```python
@@ -492,10 +512,11 @@ containers — so an auto-closed container reports its whole allocation as
 transit shortage on the Goods Receipt variance screens. This is the failure
 `INV-CONT-006` closed at container level, left in place everywhere below it.
 
-**Business impact** — None today: no container carries an Amazon count, so
-neither figure exists. It becomes visible the moment `INV-RECV-001` is fixed and
-the first container is auto-closed — and Goods Receipt is where a variance
-reason gets attributed, so a wrong figure there becomes a wrong claim.
+**Business impact** — Every auto-closed container reports its whole allocation
+as lost in the per-SKU views, on any database where Amazon has counted one in.
+Goods Receipt is where a variance reason gets attributed, so a wrong figure
+there becomes a wrong claim. Whether any such container exists today is a
+production question (`INV-RECV-001`); the defect is certain either way.
 
 **Technical impact** — Two readings of one concept, one of them inside a single
 function, which is what `counted_units` exists to prevent.
@@ -529,12 +550,14 @@ column does not sum to the container figure above it.
 reports packed minus received. A SKU nobody has counted is the most likely to be
 missing entirely, not the least.
 
-**Evidence** — In `api_receiving`, the per-line figure is
-`max(0, b - c) if c else 0`. `InTransitLine.shortfall_units` carries no such
-condition, so the model and the page disagree.
+**Evidence** — source: **code**, so it holds in production. In `api_receiving`
+the per-line figure is `max(0, b - c) if c else 0`, while
+`InTransitLine.shortfall_units` carries no such condition — the model and the
+page disagree.
 
-**Business impact** — The one SKU that arrived not at all is the one hidden.
-None today, because nothing reaches Receiving (`INV-RECV-001`).
+**Business impact** — The one SKU that arrived not at all is the one hidden, on
+any container being counted in. Whether that is happening now depends on
+production (`INV-RECV-001`); the defect does not.
 
 **Technical impact** — The page recomputes a figure the model already derives,
 and derives it differently.
@@ -978,6 +1001,20 @@ building anything.
 **Related documents** — [cashflow.md](cashflow.md), [suppliers.md](suppliers.md)
 
 ---
+
+---
+
+## Production verification queue
+
+Findings below rest on local development data and **cannot be settled here**.
+Each is one query on production. Until then their priority is provisional.
+
+| Gap | The one question production answers |
+|---|---|
+| `INV-RECV-001` | how many active containers have an empty `shipment_id`? Zero closes the gap |
+| `INV-CONT-001` | how many active container lines have `fob_rate = 0`? Depends on whether ops use the Allocation Workbench |
+| `INV-RECV-002` | how many archived containers have no count from either source? The display defect is certain; the scale is not |
+| `INV-CONT-011` | do ops upload the status workbook on production? If yes this is P1, not P2 |
 
 ## Closed
 
