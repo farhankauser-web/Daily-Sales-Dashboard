@@ -23,7 +23,7 @@ Covers subscribing to the stream, consuming its events, and folding them into
 hourly campaign figures.
 
 **Not covered:**
-- the settled daily figures — ads-api.md *(pending)*
+- the settled daily figures — [ads-api.md](ads-api.md)
 - Seller Central hourly files uploaded by hand into the same table —
   hourly-upload.md *(pending)*
 - which source wins when they disagree — [sku-allocation.md](sku-allocation.md), `MKT-D-002`
@@ -147,6 +147,6 @@ jobs, so these describe structure, not production behaviour.*
 
 ## Related documents
 
-- ads-api.md *(pending)* — the settled daily figures this is measured against
+- [ads-api.md](ads-api.md) — the settled daily figures this is measured against
 - hourly-upload.md *(pending)* — the other writer of the hourly table
 - [sku-allocation.md](sku-allocation.md) — what consumes these figures

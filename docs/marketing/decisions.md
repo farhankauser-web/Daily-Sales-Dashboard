@@ -14,6 +14,7 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `MKT-D-004` | `AMZN.*` SKUs are excluded from allocation | 2026-06-08 | accepted |
 | `MKT-D-005` | Hourly figures accumulate, never replace | 2026-07-28 | accepted |
 | `MKT-D-006` | Attribution windows differ by ad product and are not reconciled | 2026-06-08 | accepted |
+| `MKT-D-007` | An incomplete day is suppressed, never estimated | 2026-05-13 | accepted |
 
 ---
 
@@ -85,7 +86,7 @@ snapshot arrives and replaces a larger streamed value. A manual upload is a
 blunt override: it silences both other sources for that date, so a partial file
 under-reports.
 
-**Affected documents** — [sku-allocation.md](sku-allocation.md), [ams-stream.md](ams-stream.md), ads-api.md *(pending)*
+**Affected documents** — [sku-allocation.md](sku-allocation.md), [ams-stream.md](ams-stream.md), [ads-api.md](ads-api.md)
 
 ---
 
@@ -220,4 +221,40 @@ and rise for weeks afterwards. Anyone comparing ad products on conversion needs
 to know the windows differ — the column name does not say so, which is a trap
 worth remembering.
 
-**Affected documents** — [ams-stream.md](ams-stream.md), ads-api.md *(pending)*
+**Affected documents** — [ams-stream.md](ams-stream.md), [ads-api.md](ads-api.md)
+
+---
+
+## `MKT-D-007` · An incomplete day is suppressed, never estimated
+
+| | |
+|---|---|
+| **Date** | 2026-05-13 · **Status** accepted |
+
+**Context** — Advertising data for a day arrives from several reports, each of
+which can be late, empty or failed. A day is often partly filled. Something has
+to decide what the dashboard does with it.
+
+**Decision** — A day whose **core** sources are not resolved is **not shown at
+all**. A day missing only Sponsored Brands or Display data is shown **without
+those columns**. Nothing is interpolated, carried forward or estimated. "Amazon
+returned zero rows" is recorded distinctly from "we did not get an answer",
+because only the first is a known zero.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Show what arrived | A day showing Sponsored Products only looks like a cheap day, not an incomplete one, and nothing on the page says which |
+| Carry the previous day forward | Invents trading history, and the invention persists in every average computed over it |
+| Estimate from the surrounding days | Same objection, with more arithmetic to make it look deliberate |
+
+**Reason** — A missing day is recoverable — the re-pull will fill it. A wrong
+day is not, because nobody knows to go back for it.
+
+**Consequences** — The dashboard has holes rather than errors, which is the
+right trade and an unfamiliar one: a gap in a chart reads as a bug to anyone who
+does not know this rule. It also means a permanently failed day is invisible
+rather than obviously wrong (`MKT-ADS-001`).
+
+**Affected documents** — [ads-api.md](ads-api.md), [ams-stream.md](ams-stream.md)

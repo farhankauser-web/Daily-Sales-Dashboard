@@ -22,7 +22,7 @@ that one decides what it means.
 
 | Document | Covers | Open here when |
 |---|---|---|
-| ads-api.md *(pending)* | the Ads API client — report submit, poll, download | a report never arrives, or arrives empty |
+| [ads-api.md](ads-api.md) | the settled daily reports — submit, poll, download | a report never arrives, or arrives empty |
 | [ams-stream.md](ams-stream.md) | S3 + Firehose → hourly campaign figures | hourly data is missing or a subscription fails |
 | hourly-upload.md *(pending)* | Seller Central hourly CSV → the same table | an uploaded day disagrees with the stream |
 | [sku-allocation.md](sku-allocation.md) | campaign spend → SKU | per-SKU ad cost or TACoS looks wrong |
@@ -81,7 +81,7 @@ Staleness is not evidence of a defect in this section.
 |---|---|
 | per-SKU ad cost or TACoS | `CLAUDE.md` · this README · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
 | missing hourly data | `CLAUDE.md` · this README · [ams-stream.md](ams-stream.md) · `gaps.md` |
-| a report that never arrived | `CLAUDE.md` · this README · ads-api.md *(pending)* · `gaps.md` |
+| a report that never arrived | `CLAUDE.md` · this README · [ads-api.md](ads-api.md) · `gaps.md` |
 | a campaign's figures | `CLAUDE.md` · this README · campaigns.md *(pending)* · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
 
 ## Method

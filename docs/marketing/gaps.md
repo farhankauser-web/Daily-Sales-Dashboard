@@ -25,6 +25,7 @@ legacy data — a root cause, and whether a code change alone would close it.
 | `MKT-ALLOC-003` | Amazon's own SKU attribution is discarded and re-derived | P3 | missing implementation | open |
 | `MKT-ALLOC-004` | The smoothing docstring describes a blend the code does not perform | P3 | bug — stale docs | open |
 | `MKT-AMS-001` | A dataset that stops delivering is silent | P2 | missing implementation | open |
+| `MKT-ADS-001` | A report day that never resolves is invisible | P2 | missing implementation | open |
 | `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | missing implementation | open |
 
 ---
@@ -95,7 +96,7 @@ filtering by campaign. The data is already ingested daily and reaches back to
 confidence for any day that still falls back to the older table. Then resolve
 `ARCH-009` — one of the two tables should stop being written.
 
-**Related documents** — [sku-allocation.md](sku-allocation.md), ads-api.md *(pending)*
+**Related documents** — [sku-allocation.md](sku-allocation.md), [ads-api.md](ads-api.md)
 
 ---
 
@@ -280,9 +281,11 @@ notices.
 is maintained and unread.
 
 **Recommendation** — A scheduled check comparing `last_ingest_at` per active
-subscription against a threshold, reported the same way the container stall
-alert is proposed in Inventory. The threshold is a judgement about how quiet a
+subscription against a threshold. The threshold is a judgement about how quiet a
 dataset can legitimately be overnight; start at 6 hours and tune.
+
+**Same remedy as `MKT-ADS-001`** — both signals are written and unread. Build
+one pipeline-health check covering the stream and the report days, not two.
 
 **Related documents** — [ams-stream.md](ams-stream.md)
 
@@ -329,6 +332,59 @@ legacy path is confirmed dead — an incomplete safety net is worse than a
 documented absence of one.
 
 **Related documents** — [ams-stream.md](ams-stream.md)
+
+---
+
+## `MKT-ADS-001` · A report day that never resolves is invisible
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none — **same remedy as `MKT-AMS-001`; build one health view, not two** |
+
+**Current behaviour** — Every report day and kind records its outcome, and that
+record is used to **suppress** a day whose data is incomplete. Suppression is the
+right behaviour and it is silent: a day that never resolves simply never appears,
+and nothing reports that it is missing.
+
+**Expected behaviour** — A day that has not reached `ok` or `empty_from_amazon`
+after a reasonable window is reported, so somebody can decide whether to chase
+it.
+
+**Root cause** — The completeness layer was built to answer "may this day be
+shown", which is a question with a yes/no answer and no need for an alert. The
+inverse question — "which days did we never manage to fill" — was never asked of
+the same data, and the data supports it.
+
+**Evidence** — source: **code**. `completeness.py` states its contract as gating
+whether a day appears; every consumer listed uses it that way. `log_sync` writes
+an outcome per marketplace, date and source — the exact record an alert would
+read — and no command, view or scheduled check reports on it.
+
+*Local corroboration, provisional:* across three months and nine report kinds,
+two days never resolved — 2026-06-30 and 2026-07-02, both Sponsored Brands.
+Neither is surfaced anywhere. The re-pull design recovered everything else, so
+the volume is small and the silence is the problem rather than the rate.
+
+**Business impact** — Small and open-ended. A permanently missing day removes
+its campaign, search-term and placement rows from every settled figure without
+saying so, and the figures around it look normal. Two days in three months is
+tolerable; the same failure sustained for a week would not be, and would look
+identical.
+
+**Technical impact** — A completeness record that answers one of the two
+questions it can answer.
+
+**Recommendation** — One check across both pipelines: report days where a source
+is still unresolved beyond its window, and active stream subscriptions whose
+last ingest is older than theirs (`MKT-AMS-001`). Both signals are already
+written; neither is read. Build it once.
+
+**Related documents** — [ads-api.md](ads-api.md), [ams-stream.md](ams-stream.md)
+**Related decisions** — `MKT-D-007`
 
 ---
 
