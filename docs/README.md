@@ -14,7 +14,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 |---|---|---|
 | Reporting | `reporting.md` | daily & historical sales, hourly patterns, morning report, command centre |
 | Financials | `financials.md` | P&L, COGS, FBA fee drift, targets, settlements |
-| Marketing | `marketing/` | PPC — see that folder's README |
+| Marketing | [`marketing/`](marketing/README.md) | PPC — see that folder's README |
 | Brand Analytics | `brand-analytics.md` | search-query performance, market share, baskets |
 | Walmart | `walmart.md` | Walmart orders → Amazon MCF |
 | Supply Chain | `supply-chain.md` | **Atlas — the B2B arm.** Quotes, RFQs, B2B POs, invoices |
@@ -81,8 +81,9 @@ every section that follows: one business machine per document, business
 architecture first, and gaps carrying evidence, a root cause and a
 classification.
 
-Every other section in the table above is still unwritten. **Marketing is
-next**, per the build order.
+**[marketing](marketing/README.md) is started** — README and registers, with
+the ground truth of both pipelines established. Its six leaves are pending.
+Every other section in the table above is still unwritten.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.
