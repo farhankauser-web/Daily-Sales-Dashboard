@@ -22,8 +22,8 @@ where its numbers come from.
 
 **Not covered:**
 - the per-SKU table beneath the headlines — [product-performance.md](product-performance.md)
-- hour-by-hour detail — hourly.md *(pending)*
-- multi-month comparison — historical.md *(pending)*
+- hour-by-hour detail — [hourly.md](hourly.md)
+- multi-month comparison — [historical.md](historical.md)
 - where ad spend per SKU comes from — [sku-allocation.md](../marketing/sku-allocation.md)
 
 ## Business workflow
@@ -129,5 +129,5 @@ integration, while it is the Reporting engine. `ARCH-004` covers moving it.
 ## Related documents
 
 - [product-performance.md](product-performance.md) — the SKU table this page carries
-- hourly.md *(pending)* — where today's figures come from
+- [hourly.md](hourly.md) — where today's figures come from
 - [sku-allocation.md](../marketing/sku-allocation.md) — the ad cost shown here

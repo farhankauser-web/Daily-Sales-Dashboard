@@ -160,7 +160,8 @@ tells you which function, not how big the file is.
    11 decisions, and a [retrospective](marketing/RETROSPECTIVE.md). Confirmed
    all three failure shapes Inventory predicted and contributed the *computed
    and unread* pattern.
-7. `reporting/`
+7. `reporting/` — **done**. Six feature documents; `ARCH-007` revised around
+   the canonical builder before anything was written.
 8. `financials/`
 9. The rest, as sessions touch them.
 

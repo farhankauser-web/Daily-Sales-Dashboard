@@ -12,7 +12,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 
 | Section | Doc | Covers |
 |---|---|---|
-| Reporting | `reporting.md` | daily & historical sales, hourly patterns, morning report, command centre |
+| Reporting | [`reporting/`](reporting/README.md) | daily & historical sales, hourly patterns, SKU table, command centre |
 | Financials | `financials.md` | P&L, COGS, FBA fee drift, targets, settlements |
 | Marketing | [`marketing/`](marketing/README.md) | PPC — see that folder's README |
 | Brand Analytics | `brand-analytics.md` | search-query performance, market share, baskets |
@@ -89,7 +89,13 @@ classification.
 documents, 10 open gaps, 11 decisions, and a
 [retrospective](marketing/RETROSPECTIVE.md).
 
-Every other section in the table above is still unwritten. **Reporting is
+**[reporting](reporting/README.md) is complete and frozen** — six feature
+documents, 1 open gap, 5 decisions, and a
+[retrospective](reporting/RETROSPECTIVE.md). Its low gap count is a finding, not
+an oversight: five of its structural problems are recorded as `ARCH-` mismatches
+rather than gaps.
+
+Every other section in the table above is still unwritten. **Financials is
 next**, per the build order.
 
 Leaves are written as we work through each section. See `map.md` for the build

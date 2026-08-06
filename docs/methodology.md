@@ -212,3 +212,6 @@ and every index and cross-reference affected.
   source of most of the above
 - [marketing/RETROSPECTIVE.md](marketing/RETROSPECTIVE.md) — confirmed all three
   of Inventory's predicted failure shapes, and contributed *computed and unread*
+- [reporting/RETROSPECTIVE.md](reporting/RETROSPECTIVE.md) — where canonical-first
+  changed a recorded recommendation before a line was written, and where the
+  gap/mismatch distinction did most of the work

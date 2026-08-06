@@ -18,16 +18,20 @@ It does not own money. P&L, COGS, settlements and payouts belong to
 **financials** *(pending)*. This section reports revenue and contribution
 margin; that one reconciles them to the bank.
 
+**This section is complete and frozen** except for future feature changes. Six
+features are documented; the registers are the backlog, not unwritten work. The
+process lessons are in [RETROSPECTIVE.md](RETROSPECTIVE.md).
+
 ## Features
 
 | Document | Covers | Open here when |
 |---|---|---|
 | [daily.md](daily.md) | the daily dashboard and its KPI tiles | today's headline figures look wrong |
 | [product-performance.md](product-performance.md) | the SKU table · `ARCH-007` | a SKU's revenue, margin or ad cost looks wrong |
-| hourly.md *(pending)* | hourly patterns and the completeness gates | an hour is missing or the heatmap has holes |
-| historical.md *(pending)* | multi-day and multi-month trends | a period comparison looks wrong |
-| command-center.md *(pending)* | the widget dashboard | a widget is empty or stale |
-| mcf-orders.md *(pending)* | the Amazon MCF order mirror · `ARCH-006` | an MCF order is missing |
+| [hourly.md](hourly.md) | hourly patterns and the completeness gates | an hour is missing or the heatmap has holes |
+| [historical.md](historical.md) | multi-day and multi-month trends | a period comparison looks wrong |
+| [command-center.md](command-center.md) | the widget dashboard · `ARCH-003` | a widget is empty or stale |
+| [mcf-orders.md](mcf-orders.md) | the Amazon MCF order mirror · `ARCH-006` | an MCF order is missing |
 
 ## Relationships
 
@@ -70,7 +74,14 @@ Marketplaces carrying data: `usa` 84 days · `uk` 78 · `ae` 47 · `sa` 47.
 |---|---|
 | a headline figure | `CLAUDE.md` · this README · [daily.md](daily.md) · `gaps.md` |
 | a SKU's margin or ad cost | `CLAUDE.md` · this README · [product-performance.md](product-performance.md) · `gaps.md` |
-| a missing hour | `CLAUDE.md` · this README · hourly.md *(pending)* · `gaps.md` |
+| a missing hour | `CLAUDE.md` · this README · [hourly.md](hourly.md) · `gaps.md` |
+| a trend or target comparison | `CLAUDE.md` · this README · [historical.md](historical.md) · `gaps.md` |
+
+## Current priorities
+
+- `REP-PROD-001` — the live fallback builds its own SKU table without the allocator · P2
+- `ARCH-007` — one canonical builder, one straggler · P1 mismatch
+- `ARCH-003` — a Command Center widget reads a superseded app · P1 mismatch
 
 ## Method
 

@@ -26,7 +26,7 @@ decide what appears in each cell.
 **Not covered:**
 - the headline figures above it — [daily.md](daily.md)
 - how campaign spend becomes per-SKU spend — [sku-allocation.md](../marketing/sku-allocation.md)
-- historical range analysis against targets — historical.md *(pending)*
+- historical range analysis against targets — [historical.md](historical.md)
 
 ## Business rules
 
@@ -65,7 +65,7 @@ write a third.
 
 **`product_line_analysis` is not this table.** It answers a different question —
 per-product-group P&L over a historical range against monthly targets, from the
-all-orders report. Same shape, different purpose. See historical.md *(pending)*.
+all-orders report. Same shape, different purpose. See [historical.md](historical.md).
 
 ## Data model
 
