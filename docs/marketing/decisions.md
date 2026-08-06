@@ -12,6 +12,8 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `MKT-D-002` | The daily snapshot is authoritative for settled days | 2026-06-08 | accepted |
 | `MKT-D-003` | Allocations lock at T+3; unlocked days are smoothed | 2026-06-08 | accepted |
 | `MKT-D-004` | `AMZN.*` SKUs are excluded from allocation | 2026-06-08 | accepted |
+| `MKT-D-005` | Hourly figures accumulate, never replace | 2026-07-28 | accepted |
+| `MKT-D-006` | Attribution windows differ by ad product and are not reconciled | 2026-06-08 | accepted |
 
 ---
 
@@ -150,3 +152,72 @@ listing would not be caught. The redistribution is automatic — nothing needs t
 know it happened — which also means a mistaken exclusion would be invisible.
 
 **Affected documents** — [sku-allocation.md](sku-allocation.md)
+
+---
+
+## `MKT-D-005` · Hourly figures accumulate, never replace
+
+| | |
+|---|---|
+| **Date** | 2026-07-28 · **Status** accepted |
+
+**Context** — Amazon delivers an hour's metrics as a stream of events and keeps
+sending late revisions for hours already stored. A single ingest run sees only
+the events in its own batch.
+
+**Decision** — The hourly figure is **added to**, never overwritten. Safety comes
+from consuming each S3 object exactly once, recorded in a ledger, plus a
+single-instance lock so two runs cannot process the same batch concurrently.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Replace the stored value with the run's total | A run carrying three late events overwrites a complete day. This is not hypothetical: 2026-07-28 collapsed from $7,618 to $289 exactly this way |
+| Re-aggregate the whole day from raw events each run | Requires keeping every raw event indefinitely, and re-reading them all on a job that runs every minute |
+
+**Reason** — The ledger already guarantees exactly-once consumption, which is
+precisely the condition that makes accumulation correct. Given that, adding is
+both cheaper and safer than replacing.
+
+**Consequences** — Correctness now depends on two things holding together: the
+ledger and the lock. Losing either double-counts silently, with no error — which
+is why the lock is taken before any listing and the ledger write shares the
+upsert's transaction. Re-ingesting an object deliberately requires deleting its
+ledger row first.
+
+**Affected documents** — [ams-stream.md](ams-stream.md)
+
+---
+
+## `MKT-D-006` · Attribution windows differ by ad product and are not reconciled
+
+| | |
+|---|---|
+| **Date** | 2026-06-08 · **Status** accepted |
+
+**Context** — Sponsored Products reports conversions on a one-day attribution
+window; Brands and Display report only fourteen-day. The same stored column
+therefore holds figures measured over different periods.
+
+**Decision** — Store each as Amazon reports it, in the same columns, and **do
+not attempt to normalise them**. Sponsored Products settles within a day; Brands
+and Display keep revising upward for weeks, and that drift is accepted.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Normalise everything to a common window | Amazon does not provide the data to do it; any conversion factor would be invented and would then be compounded by every downstream calculation |
+| Hold SB/SD figures back until they stabilise | Weeks of blank intra-day reporting for two ad products, to avoid a number that is directionally right immediately |
+| Separate columns per window | Triples the schema and pushes the same reconciliation problem onto every reader |
+
+**Reason** — A figure measured over a stated window is honest; a figure
+converted between windows is a guess wearing a precise number.
+
+**Consequences** — Brands and Display sales for a recent period are understated
+and rise for weeks afterwards. Anyone comparing ad products on conversion needs
+to know the windows differ — the column name does not say so, which is a trap
+worth remembering.
+
+**Affected documents** — [ams-stream.md](ams-stream.md), ads-api.md *(pending)*

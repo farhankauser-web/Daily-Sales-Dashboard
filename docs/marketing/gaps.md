@@ -24,6 +24,8 @@ legacy data — a root cause, and whether a code change alone would close it.
 | `MKT-ALLOC-001` | The campaign → product-group map is hardcoded in a view module | P2 | missing implementation | open |
 | `MKT-ALLOC-003` | Amazon's own SKU attribution is discarded and re-derived | P3 | missing implementation | open |
 | `MKT-ALLOC-004` | The smoothing docstring describes a blend the code does not perform | P3 | bug — stale docs | open |
+| `MKT-AMS-001` | A dataset that stops delivering is silent | P2 | missing implementation | open |
+| `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | missing implementation | open |
 
 ---
 
@@ -229,10 +231,106 @@ the same day, so successive intra-day recomputes do not swing published figures.
 
 ---
 
+## `MKT-AMS-001` · A dataset that stops delivering is silent
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — Six datasets feed the hourly figures: traffic and
+conversion for each of Sponsored Products, Brands and Display. If one stops
+arriving — a subscription lapses, a provisioning failure is never retried,
+Amazon changes an endpoint — its events simply stop. The hourly table keeps
+filling from the other five, and nothing reports the silence.
+
+**Expected behaviour** — A subscription that has delivered nothing for longer
+than its normal cadence is reported.
+
+**Root cause** — The pipeline is built for exactly-once consumption of what
+arrives, and it does that well. Nothing was built to notice what does *not*
+arrive, because absence has no event to hang a check on.
+
+**Evidence** — source: **code**. `ingest_ams_s3` touches `last_ingest_at` on
+active subscriptions when a run produces buckets, so the signal to alert on
+already exists and is written — but no command, view or scheduled check reads
+it. `seed_ams_subscriptions` creates and repairs subscriptions; it does not
+report stale ones.
+
+**Business impact** — Sponsored Brands or Display spend would quietly vanish
+from the intra-day picture while Sponsored Products kept flowing, so the day
+would look cheaper than it is. The settled daily figures would still be right,
+so the discrepancy surfaces a day later as an unexplained jump — if anyone
+notices.
+
+**Technical impact** — The one field that would answer "is this dataset alive"
+is maintained and unread.
+
+**Recommendation** — A scheduled check comparing `last_ingest_at` per active
+subscription against a threshold, reported the same way the container stall
+alert is proposed in Inventory. The threshold is a judgement about how quiet a
+dataset can legitimately be overnight; start at 6 hours and tune.
+
+**Related documents** — [ams-stream.md](ams-stream.md)
+
+---
+
+## `MKT-AMS-002` · The legacy dataset map covers SP only outside North America
+
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | open |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — When an event carries no `dataset_id`, the dataset is
+inferred from the publishing account in the topic ARN. That lookup is complete
+for North America and, for Europe and the Far East, lists Sponsored Products and
+budget-usage only. A European Sponsored Brands or Display event on that path
+cannot be identified and is skipped.
+
+**Expected behaviour** — Every dataset we subscribe to is identifiable in every
+region we advertise in.
+
+**Root cause** — Deliberate and documented: the map was filled in for the
+regions and products in use at the time, with a comment saying the rest would be
+added as needed. UK advertising is the case that makes it needed.
+
+**Evidence** — source: **code**. `_SNS_ACCOUNT_TO_DATASET` in `ams_consumer.py`
+carries three EU and three FE entries against seven NA ones, with the comment
+"SB/SD will be added as needed".
+
+**Business impact** — None on the current Firehose path, which carries
+`dataset_id` in the payload and never needs the fallback. It bites only if a
+marketplace is wired through the legacy SNS envelope path, at which point UK
+Brands and Display spend would be silently dropped rather than reported.
+
+**Technical impact** — A fallback that is complete for one region and partial
+for others, where the partiality is invisible until it matters.
+
+**Recommendation** — Fill in the EU and FE accounts for the four missing
+datasets from Amazon's dataset reference, or remove the fallback entirely if the
+legacy path is confirmed dead — an incomplete safety net is worse than a
+documented absence of one.
+
+**Related documents** — [ams-stream.md](ams-stream.md)
+
+---
+
 ## Production verification queue
 
 Findings below rest on local development data and **cannot be settled here**.
 Each is one query on production. Until then their priority is provisional.
+
+**This queue is worked at implementation time, not documentation time.** When a
+feature is built or one of these gaps is picked up, run its query first, update
+the classification if the evidence moves, and close or re-prioritise the row on
+what it shows. Nothing here blocks a document.
 
 | Gap | The one question production answers |
 |---|---|

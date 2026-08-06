@@ -64,7 +64,13 @@ nobody will trust enough to act on.
 <!-- The fix, specific enough to start from. It must follow from the root
      cause: a code change cannot close a process gap, and a process change
      cannot survive a defect that erases its work. If it is deliberately
-     deferred, say what has to be true before it is worth doing. -->
+     deferred, say what has to be true before it is worth doing.
+
+     If the gap rests on local development data, START the recommendation with
+     the production query that settles it, and add a row to the section's
+     Production verification queue. Do NOT block the document on it — the query
+     runs when the gap is worked, and the classification and priority are
+     updated then. -->
 
 **Related documents** — [<doc>](<doc>.md)
 **Related decisions** — `<SECTION>-D-<nnn>`

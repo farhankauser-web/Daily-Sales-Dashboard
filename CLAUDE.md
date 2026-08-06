@@ -86,6 +86,14 @@ crontab is maintained by hand and has drifted; see `INFRA-01` in `docs/gaps.md`.
 - **Separate the five layers** when analysing anything: code implementation ·
   local development state · deployment configuration · scheduled execution ·
   production behaviour. Most apparent defects are one of the middle three.
+
+- **Production verification belongs to implementation, not documentation.**
+  While documenting: identify where it is needed, write the exact query, and
+  **keep going** — never block a document on production access. When a feature
+  is built or a gap is worked: run the query first, update the classification if
+  the evidence moves, and close or re-prioritise the gap on what it shows. Each
+  section's `gaps.md` carries a **Production verification queue** that is the
+  handoff between the two.
 - **Absence of data is not a defect.** Before recommending a fix, say why the
   state exists: missing implementation, bug, configuration, missing operational
   process, or legacy data. A code change cannot close a process gap.

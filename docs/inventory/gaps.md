@@ -1009,6 +1009,11 @@ building anything.
 Findings below rest on local development data and **cannot be settled here**.
 Each is one query on production. Until then their priority is provisional.
 
+**This queue is worked at implementation time, not documentation time.** When a
+feature is built or one of these gaps is picked up, run its query first, update
+the classification if the evidence moves, and close or re-prioritise the row on
+what it shows. Nothing here blocks a document.
+
 | Gap | The one question production answers |
 |---|---|
 | `INV-RECV-001` | how many active containers have an empty `shipment_id`? Zero closes the gap |

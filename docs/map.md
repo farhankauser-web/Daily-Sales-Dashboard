@@ -46,7 +46,8 @@ docs/
 ├── marketing/
 │   ├── README.md
 │   ├── ads-api.md                 AdsAPIClient, report submit/poll/download
-│   ├── ams-stream.md              S3 + Firehose → hourly campaign snapshots
+│   ├── ams-stream.md              S3 + Firehose → hourly campaign figures
+│   ├── hourly-upload.md           Seller Central hourly CSV → the same table
 │   ├── sku-allocation.md          campaign spend → SKU
 │   ├── campaigns.md               campaign centre, profit, detail tabs
 │   ├── search-terms.md
