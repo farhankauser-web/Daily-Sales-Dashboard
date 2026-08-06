@@ -193,7 +193,7 @@ containers on the development snapshot show counted exactly equal to packed —
 
 Depends on [containers.md](containers.md) for the container and its shipment ID,
 and on [allocation-workbench.md](allocation-workbench.md) for the packed quantity that every
-comparison is made against. Feeds planner.md *(pending)* — the un-received
+comparison is made against. Feeds [planner.md](planner.md) — the un-received
 remainder is what stays inbound — and container history.
 
 ## Edge cases
@@ -246,5 +246,5 @@ feature. See [gaps.md](gaps.md).
 
 - [containers.md](containers.md) — the container, its statuses and its history
 - [allocation-workbench.md](allocation-workbench.md) — where the packed quantity comes from
-- planner.md *(pending)* — what the un-received remainder does to cover
+- [planner.md](planner.md) — what the un-received remainder does to cover
 - transfers.md *(pending)* — goods-receipt variance against the purchase order

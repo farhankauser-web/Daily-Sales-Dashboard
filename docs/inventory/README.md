@@ -27,7 +27,9 @@ what we will pay out (`ARCH-005`).
 | [allocation-workbench.md](allocation-workbench.md) | packing list → container, PO drawdown | an upload is refused or allocates wrongly |
 | [suppliers.md](suppliers.md) | suppliers, opening balance | supplier balances look wrong |
 | [purchase-orders.md](purchase-orders.md) | PO workbook, production plans, balances | a PO import misbehaves |
-| planner.md *(pending)* | projection, runway, reorder, loading plan | cover days or reorder dates look wrong |
+| [planner.md](planner.md) | position, cover days, stockout and order-by | cover days or a stockout date look wrong |
+| [loading-plan.md](loading-plan.md) | how much to ship on the next container | a container's mix looks wrong |
+| [reorder.md](reorder.md) | suggestions → draft POs | what to buy, and from whom |
 | transfers.md *(pending)* | FBA transfers, goods-receipt variance | stock moves between our own locations |
 | cashflow.md *(pending)* | the region ledger — forecast | a container's payment is missing or wrong |
 
@@ -43,6 +45,8 @@ Supplier → Purchase order → Production plan
                             Cash flow          Warehouse stock
                                                     ↓
                                                  Planner
+                                                    ↓
+                                    Loading plan  ·  Reorder ──→ draft PO
 ```
 
 Two relationships are not obvious from the chain and cause most confusion:
@@ -52,6 +56,9 @@ Two relationships are not obvious from the chain and cause most confusion:
   from two factories.
 - **Receiving is a stage, not a page.** A container moves into it the moment
   Amazon counts the first unit, whatever its status field says.
+- **Planning is three machines, not one.** The planner says where we stand; the
+  loading plan says what to ship to one region; reorder says what to buy across
+  all of them. The last two legitimately disagree — see [reorder.md](reorder.md).
 
 ## Navigation
 
@@ -61,6 +68,9 @@ Two relationships are not obvious from the chain and cause most confusion:
 | a shortfall or Amazon's count | `CLAUDE.md` · this README · [receiving.md](receiving.md) · [containers.md](containers.md) · `gaps.md` |
 | a packing-list upload | `CLAUDE.md` · this README · [allocation-workbench.md](allocation-workbench.md) · [purchase-orders.md](purchase-orders.md) · `gaps.md` |
 | container payments | `CLAUDE.md` · this README · cashflow.md *(pending)* · [containers.md](containers.md) · `gaps.md` |
+| a cover day or stockout date | `CLAUDE.md` · this README · [planner.md](planner.md) · `gaps.md` |
+| what to put on the next container | `CLAUDE.md` · this README · [loading-plan.md](loading-plan.md) · [planner.md](planner.md) · `gaps.md` |
+| what to buy | `CLAUDE.md` · this README · [reorder.md](reorder.md) · [purchase-orders.md](purchase-orders.md) · `gaps.md` |
 
 ## Current priorities
 
@@ -70,6 +80,7 @@ Two relationships are not obvious from the chain and cause most confusion:
 - `INV-RECV-002` — 116 archived containers have no count; history reports 1,245,478 units lost · P1
 - `INV-CONT-011` — the status-workbook import deletes every container in the region · P2
 - `INV-ALLOC-003` — the container-manifest import strips FOB and PO attribution · P2
+- `INV-PLAN-001` — lead times exist twice; editing a supplier's does not move the order-by date · P2
 - `INV-SUP-001` — opening balance has no rate, so Outstanding FOB understates · P2
 
 ## Related sections

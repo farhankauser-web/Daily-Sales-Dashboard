@@ -27,6 +27,7 @@ code change alone would close them. See [inventory/gaps.md](inventory/gaps.md).
 | `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | [inventory](inventory/gaps.md) |
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | [inventory](inventory/gaps.md) |
 | `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | [inventory](inventory/gaps.md) |
+| `INV-PLAN-001` | Lead times exist twice, and the two disagree | P2 | [inventory](inventory/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |
 | `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | [inventory](inventory/gaps.md) |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | [inventory](inventory/gaps.md) |
@@ -39,6 +40,7 @@ code change alone would close them. See [inventory/gaps.md](inventory/gaps.md).
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | [inventory](inventory/gaps.md) |
 | `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | [inventory](inventory/gaps.md) |
 | `INV-ALLOC-004` | Append mode is unreachable and its docstring misleads | P3 | [inventory](inventory/gaps.md) |
+| `INV-PLAN-002` | The supplier-choice docstring describes a rule the code does not follow | P3 | [inventory](inventory/gaps.md) |
 | `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | [inventory](inventory/gaps.md) |
 | `INFRA-002` | Kernel upgrade pending, needs a reboot | P3 | *(deployment.md pending)* |
 | `INFRA-003` | HSTS still 86400 | P3 | *(deployment.md pending)* |

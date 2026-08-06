@@ -29,7 +29,8 @@ balances, wastage, short-closing, regional reservations and the sourcing views.
 **Not covered:**
 - how balance is consumed by a packing list — [allocation-workbench.md](allocation-workbench.md)
 - the supplier registry the PO belongs to — [suppliers.md](suppliers.md)
-- when reorder suggestions become draft POs — planner.md *(pending)*
+- what to buy, and how a draft PO is proposed — [reorder.md](reorder.md)
+- what to ship on the next container — [loading-plan.md](loading-plan.md)
 - what happens after units ship — [containers.md](containers.md), [receiving.md](receiving.md)
 
 ## Business workflow
@@ -114,10 +115,9 @@ A line additionally distinguishes **closed** (fully allocated) from
 - Sourcing ranks a SKU's suppliers: those holding open balance first (allocate
   from these), then past suppliers by average FOB (candidates for the next
   order).
-- The reorder engine proposes **draft POs** grouped per supplier from accepted
-  suggestions, choosing each SKU's supplier as: holder of open balance, else
-  most recent, else cheapest historical. Drafts are proposals — they carry no
-  balance until confirmed. *(Detail in planner.md — pending.)*
+- The reorder engine proposes **draft POs** grouped per supplier from approved
+  suggestions. Drafts are proposals: they carry no balance the business acts on
+  until purchasing confirms them. See [reorder.md](reorder.md).
 
 ## Data model
 
@@ -170,4 +170,5 @@ A line additionally distinguishes **closed** (fully allocated) from
 
 - [suppliers.md](suppliers.md) — the registry and the ledger built from these lines
 - [allocation-workbench.md](allocation-workbench.md) — how balance becomes a container
-- planner.md *(pending)* — reorder suggestions and the loading plan that reservations serve
+- [reorder.md](reorder.md) — where draft POs come from
+- [loading-plan.md](loading-plan.md) — what reservations serve

@@ -29,12 +29,14 @@ does not follow from the cause is how a register turns into a wishlist.
 | `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | bug | open |
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | bug | open |
 | `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | bug | open |
+| `INV-PLAN-001` | Lead times exist twice, and the two disagree | P2 | bug | open |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | missing implementation | open |
 | `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | bug | open |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | — | open |
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | bug | open |
 | `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | missing implementation · configuration | open |
 | `INV-ALLOC-004` | Append mode is unreachable and its docstring misleads | P3 | bug | open |
+| `INV-PLAN-002` | The supplier-choice docstring describes a rule the code does not follow | P3 | bug | open |
 | `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | legacy schema | open |
 
 `—` means the cause has not been established yet. Those gaps predate the
@@ -582,6 +584,125 @@ USA-only, so the FC sync is the one that needs the other regions.
 first non-USA container, not before.
 
 **Related documents** — [receiving.md](receiving.md), deployment.md *(pending)*
+
+---
+
+## `INV-PLAN-001` · Lead times exist twice, and the two disagree
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open |
+| **Classification** | bug — two sources for one concept |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — Lead time is held in two places. `planning.LEAD_LEGS`
+hardcodes it per **region** — production 90, sea 45 or 15, port-to-warehouse 10
+— and drives the planner's order-by and ship-by dates and the loading plan's
+target pipeline. `Supplier.production_lead_days`, `sea_lead_days` and
+`port_to_wh_days` are per **supplier**, editable on the Suppliers page, and
+drive the reorder engine's target-ready date and the sourcing view's lead
+column.
+
+So the date telling you *when to order* is computed from a constant that ignores
+which factory will make it, while the date telling you *when it will be ready*
+uses that factory's own figure.
+
+**Expected behaviour** — One source. Production lead belongs to the supplier —
+it is a fact about a factory. The shipping legs belong to the region lane — sea
+time is a fact about a route, not a factory. The planner should combine the two
+rather than carry a second copy of production lead.
+
+**Root cause** — The planner was built first, against ops' spreadsheet, which
+used flat regional assumptions. Per-supplier lead times arrived with the
+supplier registry and were wired into the machines built after it — reorder and
+sourcing. The planner was never revisited, so both survive.
+
+**Evidence** — source: **code**, so it holds in production.
+```python
+# planning.py — region constants, drive order_by / ship_by / loading plan
+LEAD_LEGS = {'usa': {'production': 90, 'sea': 45, 'port_to_wh': 10}, ...}
+
+# reorder.py — the supplier's own figure, dates the suggestion
+lead = supplier.production_lead_days if supplier else 90
+```
+
+**Business impact** — Editing a supplier's lead times on the Suppliers page
+changes reorder dates and the sourcing view but **not** the order-by date the
+planner shows, which is the number a planner actually acts on. A factory that
+genuinely takes 120 days still shows a 90-day order-by, so the order is placed
+a month late and the page gives no hint. The reverse — a fast factory — shows a
+false urgency.
+
+*Provisional, dev snapshot:* all 13 suppliers currently sit at the defaults
+90/45/10, which happen to equal the USA constants, so nothing disagrees today.
+The divergence appears the moment anyone edits a supplier. Re-measure on
+production.
+
+**Technical impact** — Two definitions of one business concept, in two modules,
+with no comment in either acknowledging the other.
+
+**Recommendation** — Make the planner read the supplier's production lead for
+each SKU — via the same "best supplier" resolution reorder already uses — and
+keep the sea and port-to-warehouse legs as region constants, which is what they
+correctly are. Where a SKU resolves to no supplier, fall back to the region
+constant and say so in the row.
+
+**Related documents** — [planner.md](planner.md), [reorder.md](reorder.md), [suppliers.md](suppliers.md)
+
+---
+
+## `INV-PLAN-002` · The supplier-choice docstring describes a rule the code does not follow
+
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | open |
+| **Classification** | bug — stale documentation in code |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — `_supplier_and_fob` in `reorder.py` is documented as
+"the one holding open PO balance → else the most recent PO supplier → else
+cheapest historical", which reads as a three-step priority chain. The code
+narrows to the suppliers holding open balance — or every supplier that has ever
+supplied the SKU, where none does — and then picks the **cheapest** within that
+pool, ties broken by the most recent order.
+
+The difference matters: given two suppliers both holding open balance, the
+docstring implies the more recent one wins, and the code picks the cheaper one.
+
+**Expected behaviour** — The docstring states the rule the code implements.
+
+**Root cause** — The docstring describes an earlier design. The selection was
+later narrowed to a pool-then-cheapest form — the inline comment one line above
+the `min()` says so correctly — and the docstring above it was not updated.
+
+**Evidence** — source: **code**.
+```python
+open_lines = [l for l in lines if l.remaining_units > 0 and l.po.status not in (...)]
+pool = open_lines or lines
+best = min(pool, key=lambda l: (float(l.group.fob_rate) or 9e9))
+```
+There is no branch on recency; `order_by('-po__order_date')` only makes the
+`min()` stable, which is the tie-break.
+
+**Business impact** — None to the running system: the code's behaviour is the
+defensible one.
+
+**Technical impact** — Real and demonstrated. This docstring was taken at face
+value while writing [suppliers.md](suppliers.md) and [reorder.md](reorder.md),
+and put the wrong rule into both; it was caught only on re-reading the function
+during the section review. A comment that contradicts its function is worse than
+none, because it is trusted.
+
+**Recommendation** — Rewrite the docstring: candidate pool is the open-balance
+holders, else everyone who has supplied it; cheapest agreed rate wins; a zero
+rate sorts last, so an unpriced line never wins on price. Two lines, and it
+stops the next reader repeating the mistake.
+
+**Related documents** — [reorder.md](reorder.md), [suppliers.md](suppliers.md)
 
 ---
 

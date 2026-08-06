@@ -31,7 +31,7 @@ balance.
 - wastage — a PO-line event; its upload lives on this page for convenience but
   belongs to [purchase-orders.md](purchase-orders.md)
 - how allocation consumes a supplier's balance — [allocation-workbench.md](allocation-workbench.md)
-- what the lead times drive — planner.md *(pending)*
+- what the lead times drive — [planner.md](planner.md)
 
 ## Business workflow
 
@@ -69,7 +69,8 @@ Opening balance upload            Drill: supplier → category → PO → produc
 6. **Wastage closes balance permanently.** We do not pay for factory-fault
    units and the factory does not remake them. See `INV-D-016`.
 7. **Lead time is production + sea + port-to-warehouse**, per supplier. The
-   reorder engine dates its proposals from these.
+   reorder engine dates its proposals from these; the planner's order-by date
+   does not yet read them — `INV-PLAN-001`.
 8. **A retired supplier keeps its history and leaves the totals.** Deactivation
    hides it from the default view and its balances from the KPIs; nothing is
    deleted, and the record can be reactivated.
@@ -91,9 +92,10 @@ Opening balance upload            Drill: supplier → category → PO → produc
 - Opening balance **categorises from the catalogue** by SKU; a typed category in
   an older file still wins (`INV-D-003`). SKUs the catalogue does not know are
   reported back by name, not silently left blank.
-- The reorder engine picks a SKU's supplier as: the one holding open PO balance,
-  else the most recent PO's, else the cheapest historical — and dates the
-  proposal by that supplier's production lead.
+- The reorder engine narrows to the suppliers holding open balance for a SKU —
+  or, where none does, every supplier that has ever supplied it — and proposes
+  the **cheapest** of them, dating the proposal by that supplier's production
+  lead. See [reorder.md](reorder.md).
 
 ## Data model
 
@@ -136,6 +138,7 @@ Opening balance upload            Drill: supplier → category → PO → produc
 |---|---|---|
 | `INV-SUP-001` | opening balance has no rate, so Outstanding FOB understates | missing implementation |
 | `INV-SUP-004` | the PO upload takes free text for the supplier and mints one on a typo | bug |
+| `INV-PLAN-001` | the planner's order-by date ignores these lead times | bug |
 | `INV-CONT-002` | opening balance is not consumable | missing implementation |
 | `INV-CASH-001` | opening-balance backlog never reaches cash flow | blocked on a business decision |
 
@@ -147,4 +150,5 @@ Opening balance upload            Drill: supplier → category → PO → produc
 
 - [purchase-orders.md](purchase-orders.md) — the documents this ledger is built from
 - [allocation-workbench.md](allocation-workbench.md) — how balance is drawn down
-- planner.md *(pending)* — what lead times and capacity feed
+- [planner.md](planner.md) — what lead times feed, and `INV-PLAN-001`
+- [reorder.md](reorder.md) — how a supplier is proposed for a purchase

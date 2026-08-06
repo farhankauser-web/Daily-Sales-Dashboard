@@ -24,6 +24,7 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `INV-D-014` | Units draw FIFO — oldest purchase order first | 2026-08-04 | accepted |
 | `INV-D-015` | Suppliers are never created implicitly | 2026-08-05 | accepted, PO upload not yet compliant |
 | `INV-D-016` | Wastage closes balance permanently | 2026-07-27 | accepted |
+| `INV-D-017` | Demand is PDS where set, otherwise the 7-day average | 2026-07-21 | accepted |
 
 ---
 
@@ -524,3 +525,38 @@ then distinguishes what remains: a closed line's unallocated remainder is
 production shortage, never wastage.
 
 **Affected documents** — [purchase-orders.md](purchase-orders.md), [suppliers.md](suppliers.md)
+
+---
+
+## `INV-D-017` · Demand is PDS where set, otherwise the 7-day average
+
+| | |
+|---|---|
+| **Date** | 2026-07-21 · **Status** accepted |
+
+**Context** — Every cover day, stockout date and reorder quantity divides by a
+demand figure. Two candidates exist: PDS, the potential daily sale the sales
+team sets per SKU, and the live selling average from Amazon.
+
+**Decision** — **PDS wins wherever it is set**, on a dated basis. Where no PDS
+exists, the live **7-day** average is used and the SKU is flagged *no PDS*. A
+SKU with neither is not planned at all.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Always use the selling average | A SKU that stocked out sells nothing, so its average collapses and the planner stops reordering it — the failure feeds itself |
+| Blend PDS and the average | Nobody could explain the resulting number, and neither team would own it |
+| 30- or 90-day average as the fallback | Too slow to react to a launch or a step change; the 7-day is the responsive one, and 30 and 90 are shown alongside for context |
+
+**Reason** — Business call: PDS is the sales team's intent, and the planner
+should buy for the plan, not for the past. It is also the only figure that works
+for a SKU with no history.
+
+**Consequences** — A wrong or stale PDS is believed absolutely, which is why the
+*no PDS* count is a headline figure and why 7-, 30- and 90-day averages are
+shown next to it for comparison. PDS is dated, so a seasonal plan projects
+correctly rather than flattening to one number.
+
+**Affected documents** — [planner.md](planner.md), [loading-plan.md](loading-plan.md), [reorder.md](reorder.md)

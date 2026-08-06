@@ -30,7 +30,9 @@ docs/
 │
 ├── inventory/                     6,795 lines · 15 nav items · active work
 │   ├── README.md
-│   ├── planner.md                 projection, runway, reorder, loading plan
+│   ├── planner.md                 position, cover, stockout, order-by
+│   ├── loading-plan.md            how much to ship on the next container
+│   ├── reorder.md                 suggestions → draft POs
 │   ├── suppliers.md               suppliers, opening balance
 │   ├── purchase-orders.md         PO workbook, production plans, sourcing
 │   ├── allocation-workbench.md    packing list → container
