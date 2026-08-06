@@ -168,6 +168,16 @@ would not have been recoverable.
 **Ordering constraints belong in the recommendation.** Where one fix creates the
 data another latent defect destroys, say which comes first.
 
+**Name the canonical implementation before recommending any refactor.** When the
+same fact is produced or stored twice, the first question is not "how do we
+merge these" but **"which one is already right?"** Consolidate onto the existing
+source of truth; do not design a third. In Marketing this turned an expensive
+recommendation — re-request the report from Amazon and re-fetch history — into a
+one-line repoint, because the canonical table was already ingested daily. The
+canonical one is usually the newer, wider, more granular one, and usually
+already has a consumer. *(Marketing; prevented an expensive wrong
+recommendation.)*
+
 ---
 
 ## The consistency sweep

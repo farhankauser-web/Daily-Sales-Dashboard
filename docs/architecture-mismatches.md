@@ -24,7 +24,7 @@ Seeded 2026-08-05 from the codebase at `85e4438`.
 | `ARCH-004` | `amazon_api` conflates Settings, the Reporting engine and the shared client | P2 | 2–3 | open |
 | `ARCH-005` | "Cash flow" names two different machines | P3 | 0.5 | open |
 | `ARCH-006` | "MCF" names two different features | P3 | 0.5 | open |
-| `ARCH-007` | Four SKU-table builders produce the same table | P1 | 2–3 | open |
+| `ARCH-007` | The SKU table has one canonical builder and one straggler | P1 | 1–2 | open |
 | `ARCH-008` | Business logic lives in views; no consistent service layer | P2 | ongoing | open |
 | `ARCH-009` | Advertised-product data is stored twice, in two generations of table | P2 | 1 | open |
 
@@ -230,35 +230,66 @@ each cross-referencing the other. No code move.
 
 ---
 
-## ARCH-007 · Four SKU-table builders produce the same table
+## ARCH-007 · The SKU table has one canonical builder and one straggler
 
 **Current implementation**
-The Product Performance table is built by four separate code paths:
-`_build_cached_skus` (today's cache), the DailyMetric range path, the live
-SP-API fallback — all in `amazon_api/views.py` — and
-`dashboard.product_line_analysis`.
+Four code paths were recorded here as producing the Product Performance table.
+Re-examined 2026-08-06, they are not four peers:
+
+| Path | Status |
+|---|---|
+| `_build_cached_skus` (`amazon_api/views.py`) | **canonical** |
+| the DailyMetric range path | already calls the canonical builder |
+| the live SP-API fallback | **the straggler** — its own builder, still reachable |
+| `dashboard.product_line_analysis` | a different machine — see below |
+
+Consolidation has already begun and was not recorded here. The DailyMetric path
+was migrated onto `_build_cached_skus`, with a comment saying so: *"re-use the
+proven grouping helper that the cache-first path uses."*
+
+**Which one is canonical, and why**
+`_build_cached_skus` is the only path that: prefers the PPC allocator's output
+where it exists and falls back deliberately where it does not; measures margin
+ex-VAT via `net_factor`; distinguishes today (group-level PPC attribution,
+because Amazon's per-ASIN report lags a day) from past days (per-ASIN actuals);
+and emits the "Unallocated PPC" row. Every one of those is a business rule the
+straggler does not implement.
+
+**`product_line_analysis` is not a fourth builder.** It answers a different
+question — per-product-group P&L over a historical *range*, against monthly
+targets, sourced from the all-orders report rather than the daily snapshots. It
+shares a shape with the SKU table, not a purpose. Counting it here overstated
+the duplication and would have led to merging two machines that should stay
+separate.
 
 **Desired architecture**
-One builder, taking a date range and a source, with the caching decision made
-by its caller.
+One builder for the daily SKU table — the one that already exists. Not a new
+module: `_build_cached_skus` carries the business rules and two of the three
+callers already use it.
 
 **Why it matters**
-This is the most expensive mismatch in the codebase by evidence. The ex-VAT
-margin fix had to be applied in four places; the first attempt fixed only one
-and appeared to do nothing, because the page is served by a different builder
-than the one that was changed. Every future change to that table carries the
-same trap.
+This is still the most expensive mismatch by evidence: the ex-VAT margin fix had
+to be applied in several places and the first attempt appeared to do nothing
+because the page was served by a different path than the one changed. The
+straggler is where that risk now lives, and it is one path rather than three.
 
 **Recommended solution**
-Extract `apps/dashboard/reporting/sku_table.py` with one builder. Migrate the
-callers one at a time, asserting the four paths produce identical output for a
-given day before removing each old path — the assertion is the safety net, and
-it is cheap to write.
+1. Make the live SP-API fallback call `_build_cached_skus`, or delete the branch
+   if the cache and hourly paths now cover every case — establish which before
+   touching it.
+2. Move `_build_cached_skus` out of `amazon_api/views.py` into Reporting, keeping
+   the function intact. That is `ARCH-004`'s concern, and it should not be done
+   in the same commit as step 1.
+3. Leave `product_line_analysis` alone. If it is later found to duplicate
+   something, it duplicates the Financials P&L, not this table.
 
-Do this the next time the SKU table is touched, which is likely soon.
+**Do not design a third builder.** The earlier entry here recommended extracting
+a new `sku_table.py` with one builder and migrating four callers; that was
+written before the canonical one was identified, and would have created a fourth
+implementation on the way to removing three.
 
 **Dependencies** — overlaps ARCH-001 and ARCH-004
-**Priority** P1 · **Effort** 2–3 sessions · **Status** open
+**Priority** P1 · **Effort** 1–2 sessions, revised down from 2–3 · **Status** open
 
 ---
 
