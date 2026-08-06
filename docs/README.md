@@ -17,7 +17,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Marketing | [`marketing/`](marketing/README.md) | PPC — see that folder's README |
 | Brand Analytics | `brand-analytics.md` | search-query performance, market share, baskets |
 | Walmart | [`walmart/`](walmart/README.md) | Walmart orders → Amazon MCF fulfilment |
-| Supply Chain | `supply-chain.md` | **Atlas — the B2B arm.** Quotes, RFQs, B2B POs, invoices |
+| Supply Chain | [`supply-chain/`](supply-chain/README.md) | **Atlas — the B2B arm.** Quotes, RFQs, B2B POs, invoices |
 | Inventory | [`inventory/`](inventory/README.md) | planner, suppliers, POs, containers, receiving — see that folder's README |
 | Intelligence | `intelligence.md` | AI recommendations, profit alerts |
 | Settings | `settings.md` | API credentials, users, roles, catalog |
@@ -106,8 +106,14 @@ documents, 1 gap, 4 decisions, and a
 an external system on the business's behalf, which is why its decisions are
 about correctness under concurrency and failure rather than about display.
 
-Every other section in the table above is still unwritten. **Supply Chain
-(Atlas) is next**, per the build order.
+**[supply-chain](supply-chain/README.md) is complete and frozen** — four
+feature documents, 0 gaps, 7 decisions, and a
+[retrospective](supply-chain/RETROSPECTIVE.md). Its clean register is **weaker
+evidence than the other sections'**: Atlas is new and has been exercised once
+end to end, which the retrospective states plainly.
+
+Three sections remain, all small: **Brand Analytics**, **Intelligence** and
+**Settings**.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.

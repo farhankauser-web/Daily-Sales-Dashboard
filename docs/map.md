@@ -103,11 +103,15 @@ docs/
 │   ├── gaps.md
 │   └── decisions.md
 │
-├── supply-chain/                  Atlas — the B2B arm
+├── supply-chain/                  Atlas — the B2B arm (NOT our own supply chain)
 │   ├── README.md
-│   ├── quotes.md · rfqs.md · purchase-orders.md · invoices.md
+│   ├── quotes.md                  weight × kg rate, revisions
+│   ├── rfqs.md                    commercial → supply chain, 24h TAT
+│   ├── purchase-orders.md         seven stages, backorders
+│   ├── invoices.md                billing, payments, AR ageing
 │   ├── gaps.md
-│   └── decisions.md
+│   ├── decisions.md
+│   └── RETROSPECTIVE.md
 │
 └── settings/
     ├── README.md

@@ -243,3 +243,5 @@ and every index and cross-reference affected.
   gaps, and what the domain boundary changed
 - [walmart/RETROSPECTIVE.md](walmart/RETROSPECTIVE.md) — the section that acts on
   the business's behalf, and a striking number that was twice read wrongly
+- [supply-chain/RETROSPECTIVE.md](supply-chain/RETROSPECTIVE.md) — a section with
+  a written specification, and why its clean register is weak evidence
