@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 from datetime import date
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -916,9 +917,11 @@ def packing_list_template(request):
     wb = Workbook(); ws = wb.active; ws.title = 'Packing List'
     # No product-name column: the SKU already carries it in the catalogue, and
     # the preview fills it in. Same rule as Category on the PO workbook.
+    cur = (settings.AMAZON_MARKETPLACES.get(region, {}).get('currency')
+           or 'USD')
     _xlsx_header(ws, ['SKU', 'Supplier', 'PO Number', 'Boxes', 'P/Box',
-                      'Units', 'Total CBM'],
-                 [24, 18, 16, 9, 9, 10, 11])
+                      'Units', 'Total CBM', f'FOB ({cur}/unit)'],
+                 [24, 18, 16, 9, 9, 10, 11, 15])
 
     # ── Reference lists, read live at download time ───────────────────────
     # This is why the file cannot drift: it is generated per download, so a
@@ -963,8 +966,8 @@ def packing_list_template(request):
     # that supplier's oldest open Production Plan).
     ex_sup = suppliers[0] if suppliers else ''
     ex_sup2 = suppliers[1] if len(suppliers) > 1 else ex_sup
-    ws.append(['TW-WHT-BTH-4', ex_sup, '', 60, 24, 1440, 12.5])
-    ws.append(['TW-GRY-KTH-6', ex_sup2, '', 100, 24, 2400, 18.0])
+    ws.append(['TW-WHT-BTH-4', ex_sup, '', 60, 24, 1440, 12.5, 6.20])
+    ws.append(['TW-GRY-KTH-6', ex_sup2, '', 100, 24, 2400, 18.0, 3.85])
 
     _xlsx_notes(wb, 'Allocation Workbench — packing list', [
         ['Dropdowns', 'Supplier, SKU and PO Number are picked from the Lists '
@@ -989,6 +992,12 @@ def packing_list_template(request):
                       'Without it, they draw FIFO from that row\'s supplier\'s '
                       'oldest open Production Plan — check the PO shown on '
                       'each preview line before confirming.'],
+        ['FOB', f'Required, per UNIT, in {cur} — the currency of this '
+                f'region\'s cash-flow ledger, because that is where the '
+                f'payment for this container lands. Nothing is converted, so '
+                f'do not enter a supplier-currency price here. A missing rate '
+                f'is refused rather than assumed: a container priced at zero '
+                f'would quietly understate what you owe.'],
         ['No product name', 'The SKU already carries its name in the '
                             'catalogue, so the preview fills it in — exactly '
                             'like Category on the PO workbook. A Name or '

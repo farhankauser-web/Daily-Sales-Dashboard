@@ -215,6 +215,18 @@ class InTransitLine(models.Model):
                                  on_delete=models.SET_NULL,
                                  related_name='allocations')
     fnsku    = models.CharField(max_length=16, blank=True)   # region label applied
+    # What we pay the factory per unit, IN THE REGION'S CURRENCY — the packing
+    # list carries it and it is snapshotted here at commit.
+    #
+    # Snapshotted rather than read live off po_line.group.fob_rate for two
+    # reasons. A container shipped in May must keep May's price even if the PO
+    # is re-imported at a new rate in August; and a line need not resolve to a
+    # PO at all, in which case there is nothing to read.
+    #
+    # Currency is the container's region (settings.AMAZON_MARKETPLACES), not
+    # the supplier's. A UK container's rate is in GBP because that is the
+    # ledger it lands in — so this must never be summed across regions.
+    fob_rate = models.DecimalField(max_digits=10, decimal_places=4, default=0)
     # goods-receipt: reason when received != shipped
     RECEIPT_REASONS = [('damage', 'Damage'), ('short_ship', 'Short-ship'),
                        ('lost', 'Lost in transit'), ('miscount', 'Miscount'),

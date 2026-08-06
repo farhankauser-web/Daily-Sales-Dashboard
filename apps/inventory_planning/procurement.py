@@ -486,6 +486,7 @@ def parse_packing_list(file_obj) -> list[dict]:
     c_cbm = _pick(cm, 'total cbm', 'cbm')   # the TOTAL, not CBM/Box
     c_po = _pick(cm, 'po number', 'po no', 'po')
     c_sup = _pick(cm, 'supplier', 'vendor', 'factory')
+    c_fob = _pick(cm, 'fob')
 
     out = []
     for r in range(hrow + 1, ws.max_row + 1):
@@ -505,6 +506,11 @@ def parse_packing_list(file_obj) -> list[dict]:
             'cbm': round(_num(ws.cell(r, c_cbm).value), 3) if c_cbm else 0,
             'po_number': _txt(ws.cell(r, c_po).value) if c_po else '',
             'supplier': _txt(ws.cell(r, c_sup).value) if c_sup else '',
+            # None, not 0 — a missing rate and a genuine zero are different
+            # things, and only the first should raise an error.
+            'fob': (_num(ws.cell(r, c_fob).value, None)
+                    if c_fob and ws.cell(r, c_fob).value not in (None, '')
+                    else None),
         })
     return out
 
@@ -567,11 +573,19 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
                .values_list('sku', 'name') if s}
     sup_idx = supplier_index()
 
+    # FOB is entered in the REGION's currency — that is the ledger this
+    # container's payment lands in, so no conversion happens anywhere and the
+    # figure must never be summed across regions.
+    from django.conf import settings
+    currency = (settings.AMAZON_MARKETPLACES.get(region, {})
+                .get('currency') or 'USD')
+
     out = {'supplier': supplier.name if supplier else '',
            'supplier_id': supplier.pk if supplier else None,
-           'region': region, 'rows': [], 'errors': 0, 'warnings': 0,
-           'total_units': 0, 'total_cbm': 0.0, 'blocking': False,
-           'suppliers': []}
+           'region': region, 'currency': currency,
+           'rows': [], 'errors': 0, 'warnings': 0,
+           'total_units': 0, 'total_cbm': 0.0, 'total_fob': 0.0,
+           'blocking': False, 'suppliers': []}
 
     for r in rows:
         row = dict(r, allocs=[], errors=[], warnings=[], fnsku='')
@@ -607,6 +621,27 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
         sku = r['sku']
         # A typed name still wins, so an older packing list reads as before.
         row['name'] = _txt(r.get('name')) or name_of.get(sku.upper(), '')
+
+        # 0b. price. Required, and deliberately NOT inferred from the PO: PO
+        # rates are in the supplier's currency and this figure is in the
+        # region's, so a fallback would quietly convert nothing and land a USD
+        # number in a GBP ledger.
+        fob = r.get('fob')
+        if fob is None:
+            row['errors'].append(
+                f'No FOB rate for {sku}. Put the per-unit price in {currency} '
+                f'in the FOB column — it is what the cash-flow planner charges '
+                f'for this container.')
+            row['fob'] = None
+            row['line_value'] = 0.0
+        elif fob < 0:
+            row['errors'].append(f'FOB for {sku} is negative.')
+            row['fob'] = None
+            row['line_value'] = 0.0
+        else:
+            row['fob'] = round(float(fob), 4)
+            row['line_value'] = round(float(fob) * int(r['units'] or 0), 2)
+            out['total_fob'] += row['line_value']
 
         # 1. region identity — the factory must have an FNSKU to label with
         fn = fn_ci.get(sku.upper())
@@ -677,6 +712,7 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
                 f'{out["total_cbm"]} CBM exceeds a {container_size} '
                 f'container (~{cap} CBM usable).')
             out['warnings'] += 1
+    out['total_fob'] = round(out['total_fob'], 2)
     out['blocking'] = out['errors'] > 0
     return out
 
@@ -793,11 +829,12 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
             merged[key]['units'] += units
         else:
             merged[key] = {'sku': a['sku'], 'po_line_id': int(a['po_line_id']),
-                           'units': units, 'fnsku': a.get('fnsku', '')}
+                           'units': units, 'fnsku': a.get('fnsku', ''),
+                           'fob': float(a.get('fob') or 0)}
 
     res = {'container_no': sh.container_no, 'shipment_id': sh.pk,
-           'mode': mode, 'lines': 0, 'units': 0, 'over_allocated': [],
-           'vendor': sh.vendor}
+           'mode': mode, 'lines': 0, 'units': 0, 'value': 0.0,
+           'over_allocated': [], 'vendor': sh.vendor}
     for m in merged.values():
         line = POLine.objects.filter(pk=m['po_line_id']).first()
         if line is None:
@@ -818,14 +855,23 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
         existing = (sh.lines.filter(sku=m['sku'], po_line=line).first()
                     if mode == 'append' else None)
         if existing:
-            existing.units += m['units']
-            existing.save(update_fields=['units'])
+            # Weighted average, so appending more of the same SKU at a
+            # different price does not throw the earlier rate away.
+            tot = existing.units + m['units']
+            existing.fob_rate = (
+                (float(existing.fob_rate or 0) * existing.units
+                 + m['fob'] * m['units']) / tot) if tot else 0
+            existing.units = tot
+            existing.save(update_fields=['units', 'fob_rate'])
         else:
             InTransitLine.objects.create(
                 shipment=sh, sku=m['sku'], units=m['units'],
-                po_line=line, fnsku=(m.get('fnsku') or '')[:16])
+                po_line=line, fnsku=(m.get('fnsku') or '')[:16],
+                fob_rate=m['fob'])
         res['lines'] += 1
         res['units'] += m['units']
+        res['value'] += m['fob'] * m['units']
+    res['value'] = round(res['value'], 2)
     return res
 
 

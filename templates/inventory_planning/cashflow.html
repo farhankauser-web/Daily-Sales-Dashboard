@@ -134,7 +134,12 @@
 
 {% block extra_js %}
 <script>
-const M = n => '$'+Math.abs(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+// Every figure in this ledger is in the region's own currency — container FOB
+// is entered that way and nothing is converted. This was hardcoded to '$', so
+// a GBP ledger was labelled in dollars.
+const SYM = {usa:'$', ca:'C$', uk:'£', de:'€', ae:'AED ', sa:'SAR '};
+let CUR = '$';
+const M = n => CUR+Math.abs(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
 // accounting style: negatives in ( )
 const B = n => n<0 ? '('+M(n)+')' : M(n);
 const D = s => { if(!s) return ''; const [y,m,d]=s.split('-');
@@ -150,6 +155,7 @@ async function post(u,b){ return (await fetch(u,{method:'POST',body:JSON.stringi
 
 async function load(){
   DATA = await (await fetch('{% url "inventory_planning:api_cashflow" %}?region='+REGION)).json();
+  CUR = SYM[DATA.region] || SYM[REGION] || '$';
   k_open.textContent = M(DATA.opening);
   k_in.textContent = M(DATA.total_in); k_out.textContent = M(DATA.total_out);
   k_end.textContent = M(DATA.ending);

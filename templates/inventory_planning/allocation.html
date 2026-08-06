@@ -126,11 +126,13 @@
       <span class="stat">Units<b id="s_units">–</b></span>
       <span class="stat">SKU lines<b id="s_lines">–</b></span>
       <span class="stat">CBM<b id="s_cbm">–</b></span>
+      <span class="stat">Container value<b id="s_fob">–</b></span>
       <span class="stat">Container fill<b id="s_fill">–</b><div class="bar"><i id="s_bar"></i></div></span>
     </div>
     <table class="t" id="t_prev"><thead><tr>
       <th class="l">SKU</th><th class="l">Name</th><th class="l">Supplier</th>
       <th>Boxes</th><th>Units</th>
+      <th>FOB</th><th>Line value</th>
       <th class="l">FNSKU</th><th class="l">Drawn from</th><th>Open balance</th>
     </tr></thead><tbody></tbody></table>
     <div style="text-align:right;margin-top:14px">
@@ -178,6 +180,14 @@
 {% block extra_js %}
 <script>
 const N = n => (n||0).toLocaleString();
+// Cash flow is denominated per region and nothing is converted, so the symbol
+// has to follow the region the container is going to.
+const SYM = {usa:'$', ca:'C$', uk:'£', de:'€', ae:'AED ', sa:'SAR '};
+function MONEY(v, dp){
+  const s = (PREV && SYM[PREV.region]) || '$';
+  return s + Number(v||0).toLocaleString(undefined,
+    {minimumFractionDigits: dp||0, maximumFractionDigits: dp||0});
+}
 let PREV = null, PLANS = [];
 
 async function boot(){
@@ -312,6 +322,8 @@ function render(){
       <td class="l">${r.supplier_id ? r.supplier
                        : `<span class="msg e">${r.supplier||'—'}</span>`}</td>
       <td>${N(r.boxes)}</td><td><b>${N(r.units)}</b></td>
+      <td>${r.fob == null ? '<span class="msg e">—</span>' : MONEY(r.fob, 2)}</td>
+      <td>${r.fob == null ? '<span class="msg e">—</span>' : MONEY(r.line_value)}</td>
       <td class="l">${r.fnsku || '<span class="msg e">missing</span>'}</td>
       <td class="l">${from}
         ${r.errors.map(e=>`<div class="msg e">✕ ${e}</div>`).join('')}

@@ -83,11 +83,33 @@ def estimate_amazon_inflows(region: str, start: date) -> list[dict]:
 # ── container payment amount = FOB (allocations) + freight/duty (manual) ────
 
 def _container_fob(sh) -> float:
+    """What this container costs us, in the region's currency.
+
+    Reads the rate snapshotted on each line at allocation time. It used to walk
+    to po_line.group.fob_rate, which returned zero for every line without a PO
+    link — and every line imported from the container spreadsheet has none, so
+    cash flow reported every container as free.
+
+    A snapshot is also the right basis: a container shipped in May keeps May's
+    price even if the PO is re-imported at a new rate in August.
+    """
     total = 0.0
     for l in sh.lines.all():
-        if l.po_line_id and l.po_line and l.po_line.group_id:
-            total += l.units * float(l.po_line.group.fob_rate or 0)
+        rate = float(l.fob_rate or 0)
+        if not rate and l.po_line_id and l.po_line and l.po_line.group_id:
+            # Older lines allocated before the snapshot existed.
+            rate = float(l.po_line.group.fob_rate or 0)
+        total += l.units * rate
     return round(total, 2)
+
+
+def container_missing_rate(sh) -> int:
+    """Units on this container with no price at all — the amount cash flow is
+    silently under-counting by."""
+    return sum(l.units for l in sh.lines.all()
+               if not float(l.fob_rate or 0)
+               and not (l.po_line_id and l.po_line and l.po_line.group_id
+                        and float(l.po_line.group.fob_rate or 0)))
 
 
 def _pay_date(sh):
@@ -155,9 +177,16 @@ def refresh_region(region: str) -> dict:
 def build_ledger(region: str, horizon: int | None = None) -> dict:
     from .models import CashFlowEntry, CashFlowPlan
 
+    from django.conf import settings
+
     plan = CashFlowPlan.objects.filter(region=region).first()
     opening = float(plan.opening_balance) if plan else 0.0
     as_of = plan.opening_as_of if (plan and plan.opening_as_of) else date.today()
+    # Every figure in this ledger is in the region's currency — container FOB is
+    # entered that way and nothing is converted. The page hardcoded '$', so a
+    # GBP ledger was labelled in dollars.
+    currency = (settings.AMAZON_MARKETPLACES.get(region, {})
+                .get('currency') or 'USD')
     if horizon is None:
         horizon = horizon_days(region)
     end = date.today() + timedelta(days=horizon)
@@ -183,9 +212,13 @@ def build_ledger(region: str, horizon: int | None = None) -> dict:
             min_bal, min_date = bal, e.date
         # container payment = FOB (from the PO allocations) + freight/duty
         fob = freight = None
+        unpriced = 0
         if e.auto_source == 'container' and e.container:
             fob = _container_fob(e.container)
             freight = float(e.container.freight_cost or 0)
+            # Units with no rate anywhere — the row understates by this much
+            # and it is better said than silently absorbed.
+            unpriced = container_missing_rate(e.container)
         rows.append({
             'id': e.pk, 'date': e.date.isoformat(),
             'particulars': dict(CashFlowEntry.CATEGORIES).get(e.category,
@@ -193,7 +226,7 @@ def build_ledger(region: str, horizon: int | None = None) -> dict:
             'category': e.category, 'direction': e.direction,
             'description': e.description, 'vendor': e.vendor,
             'inflow': round(inflow, 2), 'outflow': round(outflow, 2),
-            'fob': fob, 'freight': freight,
+            'fob': fob, 'freight': freight, 'unpriced_units': unpriced,
             'balance': round(bal, 2),
             'port_date': (e.container.eta_port.isoformat()
                           if e.container and e.container.eta_port else None),
@@ -202,6 +235,7 @@ def build_ledger(region: str, horizon: int | None = None) -> dict:
         })
     return {
         'region': region,
+        'currency': currency,
         'opening': round(opening, 2),
         'as_of': as_of.isoformat(),
         'horizon_days': horizon,
