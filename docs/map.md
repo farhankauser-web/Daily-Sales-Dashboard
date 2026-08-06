@@ -147,10 +147,11 @@ tells you which function, not how big the file is.
 2. `docs/README.md` — **done** (`a666708`)
 3. `architecture-mismatches.md` — **done**
 4. This map — **done**
-5. **`inventory/`** — active work, and most of the content already exists from
-   the last week. README, `containers.md`, `receiving.md`,
-   `allocation-workbench.md`, `suppliers.md`, `purchase-orders.md`, plus
-   `decisions.md` backfilled with what has already been settled.
+5. **`inventory/`** — **done** (`3be05d9`). Ten feature documents, 18 open
+   gaps, 20 decisions, and a [retrospective](inventory/RETROSPECTIVE.md).
+   Inventory is the reference standard: one machine per document, business
+   architecture first, evidence-first gaps with a root cause and a
+   classification. Read the retrospective before opening a new section.
 6. `marketing/` — the largest undocumented machinery, and the source of the
    subtlest bugs so far.
 7. `reporting/`

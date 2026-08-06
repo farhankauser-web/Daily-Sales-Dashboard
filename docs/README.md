@@ -27,6 +27,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | — | `architecture-mismatches.md` | technical-debt register — where code and business disagree |
 | — | `deployment.md` | EC2, nginx, gunicorn, cron, TLS |
 | — | **`gaps.md`** | **every open gap across all sections — the backlog** |
+| — | [`inventory/RETROSPECTIVE.md`](inventory/RETROSPECTIVE.md) | **process lessons — read before starting a section** |
 
 **Careful:** in this app *Supply Chain* means Atlas. Containers, suppliers,
 purchase orders, allocation and receiving all live under **Inventory**.
@@ -73,14 +74,15 @@ verified against: <commit> · <date>
 
 `map.md`, `architecture-mismatches.md`, `gaps.md`, `templates/` and this index.
 
-Of the sections, only **[inventory](inventory/README.md)** has been started,
-and it is most of the way through: README, [containers.md](inventory/containers.md),
-[receiving.md](inventory/receiving.md),
-[allocation-workbench.md](inventory/allocation-workbench.md),
-[suppliers.md](inventory/suppliers.md),
-[purchase-orders.md](inventory/purchase-orders.md), and the decision and gap
-registers. The planner, transfers and cash flow are named there as pending.
-Every other section in the table above is still unwritten.
+**[inventory](inventory/README.md) is complete and frozen** — ten feature
+documents, 18 open gaps, 20 decisions, and a
+[retrospective](inventory/RETROSPECTIVE.md). It is the reference standard for
+every section that follows: one business machine per document, business
+architecture first, and gaps carrying evidence, a root cause and a
+classification.
+
+Every other section in the table above is still unwritten. **Marketing is
+next**, per the build order.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.

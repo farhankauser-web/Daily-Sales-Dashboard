@@ -18,8 +18,11 @@ It does not own money that has already arrived. Amazon payouts and the
 marketplace balance belong to **financials** *(pending)*; this section forecasts
 what we will pay out. Both are called "cash flow" today — `ARCH-005`.
 
-**This section is complete.** All ten features are documented; the registers
-below are the backlog, not unwritten work.
+**This section is complete and frozen** except for future feature changes.
+All ten features are documented; the registers below are the backlog, not
+unwritten work. The process lessons are in
+[RETROSPECTIVE.md](RETROSPECTIVE.md) — read that before starting a new
+section.
 
 ## Features
 
