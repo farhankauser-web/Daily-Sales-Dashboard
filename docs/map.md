@@ -45,17 +45,18 @@ docs/
 │   ├── gaps.md
 │   └── decisions.md
 │
-├── marketing/
+├── marketing/                     7 features · 2 pipelines · 2 attribution paths
 │   ├── README.md
-│   ├── ads-api.md                 AdsAPIClient, report submit/poll/download
+│   ├── ads-api.md                 settled daily reports — submit/poll/download
 │   ├── ams-stream.md              S3 + Firehose → hourly campaign figures
 │   ├── hourly-upload.md           Seller Central hourly CSV → the same table
-│   ├── sku-allocation.md          campaign spend → SKU
-│   ├── campaigns.md               campaign centre, profit, detail tabs
-│   ├── search-terms.md
-│   ├── placements.md
+│   ├── sku-allocation.md          campaign spend → SKU              ⚠ ARCH-009
+│   ├── campaigns.md               campaign performance and profit
+│   ├── search-terms.md            search-term signals
+│   ├── placements.md              placement mix
 │   ├── gaps.md
-│   └── decisions.md
+│   ├── decisions.md
+│   └── RETROSPECTIVE.md
 │
 ├── reporting/                                                    ⚠ ARCH-001
 │   ├── README.md
@@ -155,8 +156,10 @@ tells you which function, not how big the file is.
    Inventory is the reference standard: one machine per document, business
    architecture first, evidence-first gaps with a root cause and a
    classification. Read the retrospective before opening a new section.
-6. `marketing/` — the largest undocumented machinery, and the source of the
-   subtlest bugs so far.
+6. `marketing/` — **done** (`7a34e48`). Seven feature documents, 10 open gaps,
+   11 decisions, and a [retrospective](marketing/RETROSPECTIVE.md). Confirmed
+   all three failure shapes Inventory predicted and contributed the *computed
+   and unread* pattern.
 7. `reporting/`
 8. `financials/`
 9. The rest, as sessions touch them.

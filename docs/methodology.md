@@ -90,9 +90,22 @@ live endpoint. Two priority calls have turned on whether any page links it. *(In
 machine-generated rows in seconds — and separate "the business did this" from
 "an importer did this". One such check reframed four gaps. *(Inventory; prevented four wrong classifications.)*
 
-**Two sources for one fact is always a defect.** Found four times so far: lead
-times in two places, a human count read where a derived figure belongs, and two
-docstrings against their own functions, and an allocator reading a superseded copy of its own data. Worth actively hunting. *(Inventory, Marketing.)*
+**Two sources for one fact is always a defect.** Found four times: lead times in
+two places, a human count read where a derived figure belongs, and two docstrings
+against their own functions. Its commonest shape is **a newer source that already
+exists, with a consumer nobody repointed** — which is what made a wrong root
+cause plausible in Marketing until the second writer was found. Before concluding
+a fact is unavailable, ask: **is this the only writer of this fact?**
+*(Inventory, Marketing; prevented an expensive wrong recommendation.)*
+
+**Computed and unread.** Look for values that are stored and never consumed —
+and, more often, values that *are* consumed but only for one of the two questions
+they could answer. `last_ingest_at` is written and nothing asks whether a feed
+went silent; a completeness log gates whether a day may be shown and nothing asks
+which days never filled; attribution coverage is displayed and nothing flags an
+estimated profit. The useful question is not "is this value used?" but **"which
+questions could this value answer, and which does anything ask?"**
+*(Inventory, Marketing; four instances.)*
 
 **Absence of data is not a defect.** Establish why the state exists before
 recommending anything: missing implementation · bug · configuration · missing
@@ -187,3 +200,5 @@ and every index and cross-reference affected.
 
 - [inventory/RETROSPECTIVE.md](inventory/RETROSPECTIVE.md) — the first, and the
   source of most of the above
+- [marketing/RETROSPECTIVE.md](marketing/RETROSPECTIVE.md) — confirmed all three
+  of Inventory's predicted failure shapes, and contributed *computed and unread*

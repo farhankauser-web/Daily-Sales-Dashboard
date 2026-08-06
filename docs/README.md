@@ -29,7 +29,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | — | `architecture-mismatches.md` | technical-debt register — where code and business disagree |
 | — | `deployment.md` | EC2, nginx, gunicorn, cron, TLS |
 | — | **`gaps.md`** | **every open gap across all sections — the backlog** |
-| — | [`inventory/RETROSPECTIVE.md`](inventory/RETROSPECTIVE.md) | the first section retrospective — evidence behind the methodology |
+| — | `*/RETROSPECTIVE.md` | per-section retrospectives — evidence behind the methodology |
 
 **Careful:** in this app *Supply Chain* means Atlas. Containers, suppliers,
 purchase orders, allocation and receiving all live under **Inventory**.
@@ -85,9 +85,12 @@ every section that follows: one business machine per document, business
 architecture first, and gaps carrying evidence, a root cause and a
 classification.
 
-**[marketing](marketing/README.md) is started** — README and registers, with
-the ground truth of both pipelines established. Its six leaves are pending.
-Every other section in the table above is still unwritten.
+**[marketing](marketing/README.md) is complete and frozen** — seven feature
+documents, 10 open gaps, 11 decisions, and a
+[retrospective](marketing/RETROSPECTIVE.md).
+
+Every other section in the table above is still unwritten. **Reporting is
+next**, per the build order.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.

@@ -18,6 +18,10 @@ It does not own the profit those campaigns contribute to. Margin, COGS and the
 P&L belong to **financials** *(pending)*. This section supplies the ad cost;
 that one decides what it means.
 
+**This section is complete and frozen** except for future feature changes. Seven
+features are documented; the registers are the backlog, not unwritten work. The
+process lessons are in [RETROSPECTIVE.md](RETROSPECTIVE.md).
+
 ## Features
 
 | Document | Covers | Open here when |
@@ -33,16 +37,18 @@ that one decides what it means.
 ## Relationships
 
 ```
-Ads API  ──daily reports──→ campaign · targeting · search term · placement snapshots
-                                              ↓
-AMS stream ──hourly──→ hourly snapshots       ↓
-                                              ↓
-                              SKU allocation: spend → SKU
-                                              ↓
-                          per-SKU ad cost → TACoS, CM%, campaign profit
+Ads API  ──daily reports──→ campaign · targeting · search term · placement rows
+                                    ↓                    ↓
+AMS stream  ──hourly──┐             ↓          campaign profit (nightly)
+                      ├→ hourly figures              ↓        ↓
+Hourly upload ────────┘             ↓        search terms   placements
+                                    ↓
+                        SKU allocation: spend → SKU
+                                    ↓
+                    per-SKU ad cost → TACoS, CM%, the SKU table
 ```
 
-Two facts about this shape cause most confusion:
+Three facts about this shape cause most confusion:
 
 - **Two pipelines, different grains and different latencies.** The Ads API
   delivers complete daily reports a day or two late. The AMS stream delivers
@@ -51,29 +57,29 @@ Two facts about this shape cause most confusion:
 - **Attribution is a decision, not a fact.** Amazon reports spend per campaign,
   not per SKU. Everything per-SKU in Pulse — ad cost, TACoS, contribution
   margin — rests on the allocation this section performs.
+- **There are two attribution paths, and they are not rivals.** Campaign profit
+  uses Amazon's own advertised-product rows; the SKU allocator spreads whole
+  campaign budgets across SKUs including campaigns Amazon attributes nothing to.
+  One answers "what did this campaign earn", the other "what did this SKU cost".
+  They read the same source through different tables today — `ARCH-009`.
 
 ## Ground truth
 
-Established 2026-08-06, before any document was written. *Source: dev snapshot;
-provisional against production.*
+Established before any document was written, and unchanged by them. *Source:
+local development data; provisional against production.*
 
-| Pipeline | State |
-|---|---|
-| AMS stream | **live** — 9,052 objects processed, most recent today |
-| Ads API daily snapshots | **live** — search terms, targeting, placements and campaign profit all current to 2026-08-04 |
-| Campaign snapshots | current to 2026-07-26 |
-| SKU allocation | **last run 2026-06-16** — 555,305 rows, then nothing |
-| Stream subscriptions | 12 rows across 6 datasets, a mix of `ACTIVE` and `FAILED_PROVISIONING` |
-| Marketplaces | `usa` and `uk` only |
+**The laptop runs no scheduled jobs — by design.** Production runs all 33 jobs in
+`deploy/crontab.txt` continuously; this machine runs none and is not always on.
+Every freshness difference between Marketing tables reflects which command
+someone last ran by hand. **Staleness here is never evidence of a defect**, and
+neither is an empty or partly filled table.
 
-Unlike Inventory, **these paths have genuinely run**, so data findings here
-carry real weight.
+What the local data is good for is confirming the machinery executes, and it
+does: the allocator runs correctly on demand, the stream has consumed 9,052 S3
+objects, and the detail-report pipeline resolved every day but two across three
+months and nine report kinds.
 
-**Both freshness divergences are resolved and neither was a defect.** No
-crontab is installed on the development machine — `deploy/crontab.txt` specifies
-33 jobs and `crontab -l` reports none — so every date difference above reflects
-which command someone last ran by hand. The allocator runs correctly on demand.
-Staleness is not evidence of a defect in this section.
+Marketplaces carrying advertising data: `usa` and `uk`.
 
 ## Navigation
 
@@ -83,6 +89,15 @@ Staleness is not evidence of a defect in this section.
 | missing hourly data | `CLAUDE.md` · this README · [ams-stream.md](ams-stream.md) · `gaps.md` |
 | a report that never arrived | `CLAUDE.md` · this README · [ads-api.md](ads-api.md) · `gaps.md` |
 | a campaign's figures | `CLAUDE.md` · this README · [campaigns.md](campaigns.md) · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
+| a term or placement decision | `CLAUDE.md` · this README · [search-terms.md](search-terms.md) · [placements.md](placements.md) · `gaps.md` |
+| an uploaded day disagreeing | `CLAUDE.md` · this README · [hourly-upload.md](hourly-upload.md) · [ams-stream.md](ams-stream.md) · `gaps.md` |
+
+## Current priorities
+
+- `MKT-ALLOC-002` — the allocator reads a superseded, campaign-blind copy of the advertised-product data · P2
+- `MKT-ALLOC-001` — the campaign → product-group map is hardcoded in a view module · P2
+- `MKT-CAMP-001` — nothing flags a campaign whose profit rests on fallback margins · P2
+- `MKT-AMS-001` · `MKT-ADS-001` — pipeline silence is invisible; **one health check fixes both** · P2
 
 ## Method
 

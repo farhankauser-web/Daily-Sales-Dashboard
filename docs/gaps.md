@@ -7,7 +7,8 @@ recommendation are there, not here.
 Updated in the same commit as the section file. If it starts drifting, generate
 it rather than maintain it by hand.
 
-Last reconciled: 2026-08-06.
+Last reconciled: 2026-08-06. **Inventory and Marketing are complete and frozen**;
+their registers are the backlog for those domains.
 
 Gaps carry a **Classification** — missing implementation, bug, configuration,
 missing operational process or legacy data — a root cause, and whether a code
