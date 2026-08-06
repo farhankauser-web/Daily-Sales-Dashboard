@@ -22,6 +22,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Intelligence | `intelligence.md` | AI recommendations, profit alerts |
 | Settings | `settings.md` | API credentials, users, roles, catalog |
 | — | `map.md` | the full documentation map and build order |
+| — | `templates/` | the four document templates, the writing style and the id schemes |
 | — | `architecture.md` | how the six apps fit together, and how data flows |
 | — | `architecture-mismatches.md` | technical-debt register — where code and business disagree |
 | — | `deployment.md` | EC2, nginx, gunicorn, cron, TLS |
@@ -31,6 +32,9 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 purchase orders, allocation and receiving all live under **Inventory**.
 
 ## The shape of a leaf
+
+Templates live in `templates/`. Copy the skeleton, fill it in, **delete what
+does not apply** — a page of empty headings buries the content that matters.
 
 ```markdown
 # Containers
