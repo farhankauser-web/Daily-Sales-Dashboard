@@ -22,6 +22,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Intelligence | `intelligence.md` | AI recommendations, profit alerts |
 | Settings | `settings.md` | API credentials, users, roles, catalog |
 | — | **[`methodology.md`](methodology.md)** | **how we document and analyse — read before opening a section** |
+| — | `check_docs.py` | the consistency sweep — run before calling a section done |
 | — | `map.md` | the full documentation map and build order |
 | — | `templates/` | the four document templates, the writing style and the id schemes |
 | — | `architecture.md` | how the six apps fit together, and how data flows |

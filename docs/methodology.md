@@ -19,7 +19,9 @@ Eight steps, in order. Skipping step 1 has cost the most.
 3. **Discover and classify gaps.** Root cause before recommendation, always.
 4. **Backfill architectural decisions** from the code and commit history, while
    the code is open.
-5. **Perform a section review** — mechanical checks plus a read for sense.
+5. **Perform a section review** — `python docs/check_docs.py <section>` plus a
+   read for sense. The script is not optional: it has caught stale pending
+   markers, orphaned ids and duplicated rules in sections that read fine.
 6. **Write a retrospective** capturing what generalises.
 7. **Promote anything broadly useful** into this file or the templates.
 8. **Freeze the section** and move on.
@@ -143,6 +145,23 @@ would not have been recoverable.
 data another latent defect destroys, say which comes first.
 
 ---
+
+## The consistency sweep
+
+```bash
+python docs/check_docs.py            # every section
+python docs/check_docs.py marketing  # one section
+```
+
+Eight checks, ordered by how often each has actually caught something: broken
+links · gap ids defined, listed and indexed · required gap fields including
+Classification · decision ids defined, listed and cited · ids referenced but
+never defined · business rules stated in two documents · implementation detail
+in business prose · `*(pending)*` markers naming a document that now exists.
+
+Non-zero exit on failure, so it can gate a commit. **Fix the script when it is
+wrong** — it found two bugs in itself on first run, and a checker nobody trusts
+is worse than none.
 
 ## Definition of done
 

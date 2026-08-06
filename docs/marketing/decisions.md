@@ -85,7 +85,7 @@ snapshot arrives and replaces a larger streamed value. A manual upload is a
 blunt override: it silences both other sources for that date, so a partial file
 under-reports.
 
-**Affected documents** — [sku-allocation.md](sku-allocation.md), ams-stream.md *(pending)*, ads-api.md *(pending)*
+**Affected documents** — [sku-allocation.md](sku-allocation.md), [ams-stream.md](ams-stream.md), ads-api.md *(pending)*
 
 ---
 

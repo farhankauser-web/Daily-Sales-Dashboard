@@ -26,7 +26,7 @@ Covers the two-pass allocation, its fallbacks, reconciliation, smoothing and
 settlement.
 
 **Not covered:**
-- where campaign spend comes from — ads-api.md *(pending)*, ams-stream.md *(pending)*
+- where campaign spend comes from — ads-api.md *(pending)*, [ams-stream.md](ams-stream.md)
 - what the allocated cost is used for — campaigns.md *(pending)*, and
   `docs/financials/` *(pending)*
 
@@ -162,5 +162,5 @@ Recorded because each looks like a defect and is not. *Source: dev snapshot.*
 ## Related documents
 
 - ads-api.md *(pending)* — where the daily reports come from
-- ams-stream.md *(pending)* — where the hourly figures come from
+- [ams-stream.md](ams-stream.md) — where the hourly figures come from
 - campaigns.md *(pending)* — what the allocated cost is shown against
