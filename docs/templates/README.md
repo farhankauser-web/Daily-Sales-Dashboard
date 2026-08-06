@@ -63,6 +63,10 @@ Each concept has one home. Everything else links to it.
 If two documents describe the same rule, one of them is wrong — and it will be
 the one nobody remembers to update.
 
+**A document that does not exist yet is named, not linked.** Write
+`receiving.md *(pending)*`, never a link to a missing file — a broken link
+teaches readers to stop trusting the links that work.
+
 ## Identifiers
 
 | Kind | Shape | Example |
