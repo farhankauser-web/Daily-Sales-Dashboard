@@ -24,7 +24,7 @@ that one decides what it means.
 |---|---|---|
 | ads-api.md *(pending)* | the Ads API client — report submit, poll, download | a report never arrives, or arrives empty |
 | ams-stream.md *(pending)* | S3 + Firehose → hourly campaign snapshots | hourly data is missing or a subscription fails |
-| sku-allocation.md *(pending)* | campaign spend → SKU | per-SKU ad cost or TACoS looks wrong |
+| [sku-allocation.md](sku-allocation.md) | campaign spend → SKU | per-SKU ad cost or TACoS looks wrong |
 | campaigns.md *(pending)* | campaign centre, profit, detail tabs | a campaign's figures look wrong |
 | search-terms.md *(pending)* | search-term performance and summaries | a term's spend or conversion looks wrong |
 | placements.md *(pending)* | placement performance | placement multipliers or splits look wrong |
@@ -65,19 +65,23 @@ provisional against production.*
 | Stream subscriptions | 12 rows across 6 datasets, a mix of `ACTIVE` and `FAILED_PROVISIONING` |
 | Marketplaces | `usa` and `uk` only |
 
-Unlike Inventory, **these paths have genuinely run**, so data findings here carry
-real weight. Two divergences need a root cause before anything is filed as a
-gap: why campaign snapshots trail the Ads snapshots by eleven days, and why SKU
-allocation stopped seven weeks ago while everything feeding it kept running.
+Unlike Inventory, **these paths have genuinely run**, so data findings here
+carry real weight.
+
+**Both freshness divergences are resolved and neither was a defect.** No
+crontab is installed on the development machine — `deploy/crontab.txt` specifies
+33 jobs and `crontab -l` reports none — so every date difference above reflects
+which command someone last ran by hand. The allocator runs correctly on demand.
+Staleness is not evidence of a defect in this section.
 
 ## Navigation
 
 | Working on… | Load |
 |---|---|
-| per-SKU ad cost or TACoS | `CLAUDE.md` · this README · sku-allocation.md *(pending)* · `gaps.md` |
+| per-SKU ad cost or TACoS | `CLAUDE.md` · this README · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
 | missing hourly data | `CLAUDE.md` · this README · ams-stream.md *(pending)* · `gaps.md` |
 | a report that never arrived | `CLAUDE.md` · this README · ads-api.md *(pending)* · `gaps.md` |
-| a campaign's figures | `CLAUDE.md` · this README · campaigns.md *(pending)* · sku-allocation.md *(pending)* · `gaps.md` |
+| a campaign's figures | `CLAUDE.md` · this README · campaigns.md *(pending)* · [sku-allocation.md](sku-allocation.md) · `gaps.md` |
 
 ## Method
 
