@@ -79,12 +79,13 @@ docs/
 │   ├── gaps.md
 │   └── decisions.md
 │
-├── walmart/
+├── walmart/                       writes OUTWARD — Amazon MCF and Walmart
 │   ├── README.md
-│   ├── orders.md                  import, validate, hold, reprocess
-│   ├── mcf-pipeline.md            the state machine, tracking, reconcile
+│   ├── orders.md                  the order and its state machine
+│   ├── mcf-pipeline.md            the five scheduled stages
 │   ├── gaps.md
-│   └── decisions.md
+│   ├── decisions.md
+│   └── RETROSPECTIVE.md
 │
 ├── brand-analytics/                                              ⚠ ARCH-003
 │   ├── README.md

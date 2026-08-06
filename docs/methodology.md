@@ -241,3 +241,5 @@ and every index and cross-reference affected.
   gap/mismatch distinction did most of the work
 - [financials/RETROSPECTIVE.md](financials/RETROSPECTIVE.md) — a section with no
   gaps, and what the domain boundary changed
+- [walmart/RETROSPECTIVE.md](walmart/RETROSPECTIVE.md) — the section that acts on
+  the business's behalf, and a striking number that was twice read wrongly

@@ -36,12 +36,13 @@ change alone would close them. See [inventory/gaps.md](inventory/gaps.md) and
 | `MKT-ADS-001` | A report day that never resolves is invisible | P2 | [marketing](marketing/gaps.md) |
 | `MKT-CAMP-001` | Nothing flags a campaign whose profit rests mostly on fallback margins | P2 | [marketing](marketing/gaps.md) |
 | `REP-PROD-001` | The live fallback builds its own SKU table without the allocator | P2 | [reporting](reporting/gaps.md) |
+| `WM-ERR-001` | The error log has no lifecycle, so a repeating failure buries every real one | P2 | [walmart](walmart/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |
 | `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | [inventory](inventory/gaps.md) |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | [inventory](inventory/gaps.md) |
 | `FIN-001` | Referral fee computed on gross revenue, never checked against a settlement | P2 | *(financials pending)* |
 | `BA-001` | Three Brand Analytics reports submitted, never collected | P2 | *(brand-analytics pending)* |
-| `WM-001` | Every non-JSON response reported as "session expired" | P2 | *(walmart pending)* |
+| `WM-001` | Every non-JSON response reported as "session expired" | P2 | [walmart](walmart/gaps.md) |
 | `INFRA-004` | VAPT: dependency bumps and `json_script` for four templates | P2 | *(deployment.md pending)* |
 | `INFRA-005` | No SMTP, so password reset does not work | P2 | *(deployment.md pending)* |
 | `SET-001` | AE/SA marketplace ids missing, blocking the UAE P&L | P2 | *(settings pending)* |

@@ -16,7 +16,7 @@ is the whole point: `apps/dashboard/views.py` alone is 7,590 lines.
 | Financials | [`financials/`](financials/README.md) | P&L, COGS, FBA fee drift, payouts, targets |
 | Marketing | [`marketing/`](marketing/README.md) | PPC — see that folder's README |
 | Brand Analytics | `brand-analytics.md` | search-query performance, market share, baskets |
-| Walmart | `walmart.md` | Walmart orders → Amazon MCF |
+| Walmart | [`walmart/`](walmart/README.md) | Walmart orders → Amazon MCF fulfilment |
 | Supply Chain | `supply-chain.md` | **Atlas — the B2B arm.** Quotes, RFQs, B2B POs, invoices |
 | Inventory | [`inventory/`](inventory/README.md) | planner, suppliers, POs, containers, receiving — see that folder's README |
 | Intelligence | `intelligence.md` | AI recommendations, profit alerts |
@@ -100,8 +100,14 @@ documents, 0 new gaps, 7 decisions, and a
 [retrospective](financials/RETROSPECTIVE.md). Its zero gap count is the register
 working: everything that looked like a defect was a recorded decision.
 
-Every other section in the table above is still unwritten. **Walmart is next**,
-per the build order.
+**[walmart](walmart/README.md) is complete and frozen** — two feature
+documents, 1 gap, 4 decisions, and a
+[retrospective](walmart/RETROSPECTIVE.md). It is the only section that writes to
+an external system on the business's behalf, which is why its decisions are
+about correctness under concurrency and failure rather than about display.
+
+Every other section in the table above is still unwritten. **Supply Chain
+(Atlas) is next**, per the build order.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.
