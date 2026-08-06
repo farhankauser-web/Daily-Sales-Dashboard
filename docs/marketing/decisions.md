@@ -15,6 +15,7 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `MKT-D-005` | Hourly figures accumulate, never replace | 2026-07-28 | accepted |
 | `MKT-D-006` | Attribution windows differ by ad product and are not reconciled | 2026-06-08 | accepted |
 | `MKT-D-007` | An incomplete day is suppressed, never estimated | 2026-05-13 | accepted |
+| `MKT-D-008` | An uploaded hour replaces the stream; the stream accumulates | 2026-06-14 | accepted |
 
 ---
 
@@ -258,3 +259,39 @@ does not know this rule. It also means a permanently failed day is invisible
 rather than obviously wrong (`MKT-ADS-001`).
 
 **Affected documents** — [ads-api.md](ads-api.md), [ams-stream.md](ams-stream.md)
+
+---
+
+## `MKT-D-008` · An uploaded hour replaces the stream; the stream accumulates
+
+| | |
+|---|---|
+| **Date** | 2026-06-14 · **Status** accepted |
+
+**Context** — Two writers fill the hourly table. The stream delivers an hour as
+a series of events plus late revisions, so it **adds** (`MKT-D-005`). A manual
+upload delivers a whole hour, complete, from Amazon's own console.
+
+**Decision** — The upload **replaces** the hours it covers and marks them as
+manually sourced; the stream continues to accumulate. Where an hour has been
+uploaded, the upload wins.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Make the upload accumulate too | It carries a complete hour, so adding it to whatever the stream already had doubles that hour |
+| Make the stream replace too | Its events are partial by nature; this is exactly the failure `MKT-D-005` records |
+| Refuse to upload an hour the stream already has | Removes the escape hatch precisely when it is needed — a stream hour known to be wrong |
+
+**Reason** — The two sources have genuinely different shapes: one is a stream of
+increments, the other a snapshot of a finished hour. One write strategy cannot
+be correct for both.
+
+**Consequences** — Two write paths into one table with opposite semantics, which
+is a trap for anyone adding a third. The `source` column records which wrote each
+row, and any future writer must declare its shape before it is added. An upload
+covering an hour the stream is still receiving events for will be topped up
+again by those events — so uploads are for settled periods.
+
+**Affected documents** — [hourly-upload.md](hourly-upload.md), [ams-stream.md](ams-stream.md)

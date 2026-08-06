@@ -50,6 +50,7 @@ change alone would close them. See [inventory/gaps.md](inventory/gaps.md) and
 | `MKT-ALLOC-003` | Amazon's own SKU attribution is discarded and re-derived | P3 | [marketing](marketing/gaps.md) |
 | `MKT-ALLOC-004` | The smoothing docstring describes a blend the code does not perform | P3 | [marketing](marketing/gaps.md) |
 | `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | [marketing](marketing/gaps.md) |
+| `MKT-UPL-001` | An unmatched campaign name on upload is logged, never reported | P3 | [marketing](marketing/gaps.md) |
 | `INFRA-002` | Kernel upgrade pending, needs a reboot | P3 | *(deployment.md pending)* |
 | `INFRA-003` | HSTS still 86400 | P3 | *(deployment.md pending)* |
 | `INT-001` | Command Center phase 3 — per-widget config, resize | P3 | *(intelligence pending)* |

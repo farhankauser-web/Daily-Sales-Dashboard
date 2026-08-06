@@ -27,6 +27,7 @@ legacy data — a root cause, and whether a code change alone would close it.
 | `MKT-AMS-001` | A dataset that stops delivering is silent | P2 | missing implementation | open |
 | `MKT-ADS-001` | A report day that never resolves is invisible | P2 | missing implementation | open |
 | `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | missing implementation | open |
+| `MKT-UPL-001` | An unmatched campaign name on upload is logged, never reported | P3 | missing implementation | open |
 
 ---
 
@@ -385,6 +386,56 @@ written; neither is read. Build it once.
 
 **Related documents** — [ads-api.md](ads-api.md), [ams-stream.md](ams-stream.md)
 **Related decisions** — `MKT-D-007`
+
+---
+
+## `MKT-UPL-001` · An unmatched campaign name on upload is logged, never reported
+
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | open |
+| **Classification** | missing implementation |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — Seller Central's hourly export has no campaign id, so
+campaigns are matched by name. A name that resolves to nothing keeps a
+placeholder id — the right call, since dropping the row would lose real spend —
+and the miss is written to the application log. The person who uploaded the file
+is told the upload succeeded, with no mention that some campaigns were not
+matched.
+
+**Expected behaviour** — The upload result names the unmatched campaigns, the
+way the parser already names a missing column.
+
+**Root cause** — The placeholder fallback and the audit record were built at
+different times. The audit captures rows imported and the date range; the
+name-matching outcome was treated as a diagnostic and sent to the log, where the
+uploader will never see it.
+
+**Evidence** — source: **code**. `import_hourly_csv_bytes` collects
+`unmatched_names`, emits a `logger.warning`, and neither stores them on the
+audit record nor returns them in its result dict. The result dict is what the
+upload view renders.
+
+**Business impact** — Spend under a placeholder id does not join to that
+campaign's detail view, so a campaign silently under-reports its hourly figures
+while its daily figures look normal. Nobody is prompted to investigate, because
+the upload reported success.
+
+None on the current data — all 202 campaign ids on uploaded rows are real, so
+nothing is currently mismatched. *Local; provisional.*
+
+**Technical impact** — A diagnostic that exists, is computed, and is discarded
+at the boundary where it would be useful.
+
+**Recommendation** — Return the unmatched names in the result and store them on
+the upload audit, so the uploader sees them and the history is queryable. The
+re-key command already exists to fix them once the names resolve; this is only
+about knowing.
+
+**Related documents** — [hourly-upload.md](hourly-upload.md)
 
 ---
 

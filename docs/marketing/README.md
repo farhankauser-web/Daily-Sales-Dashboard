@@ -24,7 +24,7 @@ that one decides what it means.
 |---|---|---|
 | [ads-api.md](ads-api.md) | the settled daily reports — submit, poll, download | a report never arrives, or arrives empty |
 | [ams-stream.md](ams-stream.md) | S3 + Firehose → hourly campaign figures | hourly data is missing or a subscription fails |
-| hourly-upload.md *(pending)* | Seller Central hourly CSV → the same table | an uploaded day disagrees with the stream |
+| [hourly-upload.md](hourly-upload.md) | Seller Central hourly CSV → the same table | an uploaded day disagrees with the stream |
 | [sku-allocation.md](sku-allocation.md) | campaign spend → SKU | per-SKU ad cost or TACoS looks wrong |
 | campaigns.md *(pending)* | campaign centre, profit, detail tabs | a campaign's figures look wrong |
 | search-terms.md *(pending)* | search-term performance and summaries | a term's spend or conversion looks wrong |

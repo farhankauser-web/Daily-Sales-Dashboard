@@ -25,7 +25,7 @@ hourly campaign figures.
 **Not covered:**
 - the settled daily figures — [ads-api.md](ads-api.md)
 - Seller Central hourly files uploaded by hand into the same table —
-  hourly-upload.md *(pending)*
+  [hourly-upload.md](hourly-upload.md)
 - which source wins when they disagree — [sku-allocation.md](sku-allocation.md), `MKT-D-002`
 
 ## Business workflow
@@ -62,7 +62,7 @@ Amazon Marketing Stream ──→ Firehose ──→ S3 (one object per batch)
 7. **Budget-usage events are routed separately** and never folded into the
    hourly spend figure — they describe budget consumption, not cost incurred.
 8. **A manually uploaded hour is never overwritten by the stream.** See
-   hourly-upload.md *(pending)*.
+   [hourly-upload.md](hourly-upload.md).
 9. **An event whose dataset cannot be identified is skipped and counted**, never
    guessed into a bucket.
 
@@ -148,5 +148,5 @@ jobs, so these describe structure, not production behaviour.*
 ## Related documents
 
 - [ads-api.md](ads-api.md) — the settled daily figures this is measured against
-- hourly-upload.md *(pending)* — the other writer of the hourly table
+- [hourly-upload.md](hourly-upload.md) — the other writer of the hourly table
 - [sku-allocation.md](sku-allocation.md) — what consumes these figures
