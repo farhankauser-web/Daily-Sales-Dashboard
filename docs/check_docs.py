@@ -27,7 +27,11 @@ from pathlib import Path
 
 DOCS = Path(__file__).resolve().parent
 SKIP_DIRS = {'templates'}
-ID_RE = r'[A-Z]{2,4}-(?!D-)[A-Z]+-\d{3}'
+ID_RE = r'[A-Z]{2,5}-(?!D-)[A-Z]+-\d{3}'
+# Legacy two-part ids (FIN-001, BA-001, INFRA-001) predate the
+# <SECTION>-<AREA>-<nnn> scheme and are held in the root index until their
+# section is written. Recognised so they cannot hide from the checks.
+LEGACY_ID_RE = r'(?<![A-Z-])[A-Z]{2,5}-\d{3}(?![\d-])'
 DEC_RE = r'[A-Z]{2,4}-D-\d{3}'
 
 failures: list[str] = []
@@ -95,6 +99,12 @@ def check_gaps(section: str) -> None:
 
     head = re.split(r'^---$', text, maxsplit=1, flags=re.M)[0]
     listed = set(re.findall(rf'^\| `({ID_RE})`', head, re.M))
+    legacy_listed = set(re.findall(rf'^\| `({LEGACY_ID_RE})`', head, re.M))
+    legacy_bodies = set(re.findall(rf'^## `({LEGACY_ID_RE})`', text, re.M))
+    orphan_legacy = legacy_listed - legacy_bodies
+    if orphan_legacy:
+        fail(f'{section}: summary row with no body (legacy id): '
+             f'{sorted(orphan_legacy)}')
     closed_part = text.split('## Closed')[-1] if '## Closed' in text else ''
     closed = set(re.findall(rf'^\| `({ID_RE})`', closed_part, re.M))
 
