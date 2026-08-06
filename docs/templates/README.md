@@ -24,11 +24,29 @@ carries pick lines drawn from production plans*. Django models, fields and
 migrations belong in a `-tech.md`. If you find yourself writing a field type,
 you are in the wrong document.
 
-**Gaps carry evidence.**
-The spec's field list does not include one; it should. A gap without a query or
-a `file:path` cannot be re-checked, so within a month nobody trusts it enough to
-act on. `INV-CONT-001` says "188 of 188" *and* the queryset that proves it.
-Evidence is what separates a register from a wishlist.
+**Gaps carry evidence, and name its source.**
+A gap without a query or a `file:path` cannot be re-checked, so within a month
+nobody trusts it enough to act on. `INV-CONT-001` says "188 of 188" *and* the
+queryset that proves it. Evidence is what separates a register from a wishlist.
+
+Evidence is not all equal. **Precedence, strongest first:**
+
+| | Source | Holds |
+|---|---|---|
+| 1 | **Code** | everywhere. A defect read from the source is a defect in production |
+| 2 | **Business rules** | the documented invariants and decision log |
+| 3 | **Production data** | Postgres on EC2 — the business truth |
+| 4 | **Development snapshot** | local `db.sqlite3` only |
+
+**Anything not derived from code, architecture or documentation is provisional
+until verified against production, and must say so.** The local database is a
+development snapshot: whole feature paths have never run against it, so an empty
+table means "never used locally", not "broken". Counting its rows and calling
+the result a business fact is how a register fills up with confident, wrong
+conclusions.
+
+Keep code-derived and data-derived claims separable in the same entry, so a
+reader can tell which survives a different database.
 
 **Decisions carry a status.**
 Decisions get superseded. Without a status field a reader cannot tell a live

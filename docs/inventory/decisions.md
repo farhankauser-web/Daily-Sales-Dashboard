@@ -21,6 +21,7 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `INV-D-011` | Opening balance is consumed before PO balance | 2026-08-05 | accepted, not built |
 | `INV-D-012` | Amazon's case pack wins over ours | 2026-08-05 | accepted |
 | `INV-D-013` | One receipt sync per Amazon API, never merged | 2026-08-05 | accepted |
+| `INV-D-014` | Units draw FIFO — oldest purchase order first | 2026-08-04 | accepted |
 
 ---
 
@@ -414,3 +415,41 @@ that must be kept in step by hand. Routing on the ID prefix means an AWD id
 typed without its prefix is silently sent to the wrong API.
 
 **Affected documents** — [receiving.md](receiving.md), deployment.md *(pending)*
+
+---
+
+## `INV-D-014` · Units draw FIFO — oldest purchase order first
+
+| | |
+|---|---|
+| **Date** | 2026-08-04 · **Status** accepted |
+
+**Context** — A packing-list row names a SKU and a quantity. That supplier may
+have the same SKU open on several purchase orders, and a row rarely carries a PO
+number. Something has to decide which commitment the units come off.
+
+**Decision** — Units draw from that supplier's **oldest open purchase order
+first**, by order date, splitting across POs where one cannot cover the row. A
+PO number on the row overrides it with an exact match. A split is reported as a
+warning, never silently.
+
+**Alternatives considered**
+
+| Option | Rejected because |
+|---|---|
+| Require a PO number on every row | The factory's packing list does not carry one, so it would be typed from memory — a guess with the authority of an entry |
+| Newest PO first | Leaves the oldest commitment open indefinitely, so a balance never closes and the supplier's ageing is meaningless |
+| Refuse to guess; make the operator allocate each row | Hundreds of rows a container. The override exists for the cases that need it |
+
+**Reason** — Business call: it matches how the factory settles, oldest
+commitment first, and it is the only rule under which a purchase order reliably
+reaches zero.
+
+**Consequences** — A row can span several purchase orders, so one packing-list
+line becomes several container lines, each keeping its own attribution. Where
+the same SKU is open on two suppliers, the FIFO pool is filtered to the row's
+own supplier — an unfiltered list would let a line be drawn against the wrong
+factory's balance. Once `INV-D-011` is built, opening balance is consumed ahead
+of any PO, and FIFO applies within each tier.
+
+**Affected documents** — [allocation-workbench.md](allocation-workbench.md), purchase-orders.md *(pending)*

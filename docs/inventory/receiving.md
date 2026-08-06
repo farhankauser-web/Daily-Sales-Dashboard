@@ -28,7 +28,7 @@ a container occupies while that is happening.
 
 **Not covered:**
 - the container's own lifecycle and statuses — [containers.md](containers.md)
-- how a container comes to exist — allocation-workbench.md *(pending)*
+- how a container comes to exist — [allocation-workbench.md](allocation-workbench.md)
 - PO-line goods-receipt variance, ordered vs received against a purchase order
   — transfers.md *(pending)*
 - what a lost unit costs. The app values nothing; see `INV-D-008`.
@@ -51,11 +51,12 @@ units stay fully inbound, and it sits past its ETA with no signal. That is the
 commonest cause of a "stuck" container, and today it is the normal case
 (`INV-RECV-001`).
 
-**Nothing described in this document has ever run against a real container.**
-Every mechanism below is built and correct; none of it has been exercised,
-because no active container carries the ID it all keys off. That is a gap in the
-operational process, not a defect in the software — the distinction matters,
-because no amount of code changes it.
+**On the development snapshot, nothing described in this document has ever run
+against a real container** — no active container carries the ID it all keys off
+(`INV-RECV-001`). *Source: dev snapshot; provisional until re-measured on
+production.* Every mechanism below is built and correct either way; if the
+finding holds, it is a gap in the operational process rather than a defect in
+the software, and no amount of code changes it.
 
 ## Actors
 
@@ -132,7 +133,8 @@ action that affects receiving happens elsewhere:
 
 Receiving by hand pre-fills every line with the packed quantity, so accepting
 the form as presented records a perfect receipt. All 4 of the hand-counted
-containers on record show counted exactly equal to packed.
+containers on the development snapshot show counted exactly equal to packed —
+*provisional; re-measure on production.*
 
 ## System behaviour
 
@@ -190,7 +192,7 @@ containers on record show counted exactly equal to packed.
 ## Dependencies
 
 Depends on [containers.md](containers.md) for the container and its shipment ID,
-and on allocation-workbench.md *(pending)* for the packed quantity that every
+and on [allocation-workbench.md](allocation-workbench.md) for the packed quantity that every
 comparison is made against. Feeds planner.md *(pending)* — the un-received
 remainder is what stays inbound — and container history.
 
@@ -198,7 +200,8 @@ remainder is what stays inbound — and container history.
 
 - **No Amazon shipment ID.** Nothing can be counted against. The container never
   reaches Receiving and its units stay fully inbound until somebody receives it
-  by hand. Currently true of every active container (`INV-RECV-001`).
+  by hand. True of every active container on the development snapshot
+  (`INV-RECV-001`) — *provisional.*
 - **Amazon declares more than we packed.** Normal and not a loss. Amazon
   reconciles against its own declared figure, so its discrepancy report will
   look worse than ours, and that difference is explained rather than reconciled
@@ -214,9 +217,10 @@ remainder is what stays inbound — and container history.
 - **A container that landed but was never received.** Amazon shows the units
   on-hand and nothing inbound, while Pulse still counts the container — the same
   units in two places. Detected and reported, never closed automatically.
-- **Archived with no count at all.** 116 of the 120 archived containers have no
-  count from either source, so history reports 1,245,478 units as lost
-  (`INV-RECV-002`).
+- **Archived with no count at all.** 116 of the 120 archived containers on the
+  development snapshot have no count from either source, so history reports
+  1,245,478 units as lost (`INV-RECV-002`) — *provisional.* The display defect
+  behind it is code, and holds regardless.
 
 ## Known gaps
 
@@ -241,6 +245,6 @@ feature. See [gaps.md](gaps.md).
 ## Related documents
 
 - [containers.md](containers.md) — the container, its statuses and its history
-- allocation-workbench.md *(pending)* — where the packed quantity comes from
+- [allocation-workbench.md](allocation-workbench.md) — where the packed quantity comes from
 - planner.md *(pending)* — what the un-received remainder does to cover
 - transfers.md *(pending)* — goods-receipt variance against the purchase order

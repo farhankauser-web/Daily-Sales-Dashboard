@@ -28,10 +28,12 @@ does not follow from the cause is how a register turns into a wishlist.
 | `INV-CONT-011` | The status-workbook import deletes every container in the region | P2 | bug | open |
 | `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | bug | open |
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | bug | open |
+| `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | bug | open |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | — | open |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | — | open |
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | bug | open |
 | `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | missing implementation · configuration | open |
+| `INV-ALLOC-004` | Append mode is unreachable and its docstring misleads | P3 | bug | open |
 | `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | — | open |
 
 `—` means the cause has not been established yet. Those gaps predate the
@@ -575,6 +577,117 @@ USA-only, so the FC sync is the one that needs the other regions.
 first non-USA container, not before.
 
 **Related documents** — [receiving.md](receiving.md), deployment.md *(pending)*
+
+---
+
+## `INV-ALLOC-003` · The container-manifest import strips FOB and PO attribution
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open |
+| **Classification** | bug — data loss |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none. Same shape as `INV-CONT-011`, but this one is exposed in the UI |
+
+**Current behaviour** — Uploading a container manifest deletes and rebuilds the
+lines of every container it names. The manifest carries container number,
+vendor, destination, two dates, status, SKU and units — and nothing else — so
+the rebuilt lines lose the FOB rate, the PO line, the FNSKU, the human receipt
+count, Amazon's count and any variance reason. The container row itself
+survives, and with it the Amazon shipment ID.
+
+**Expected behaviour** — An import updates what its file describes and leaves
+the rest alone. A file with no FOB column is not a statement that the FOB is
+zero.
+
+**Root cause** — The manifest predates procurement. When it was written a
+container line held a SKU and a quantity, so replacing the set of lines was the
+same as replacing the units, and `update_or_create` on the container plus a
+wholesale line rebuild was the simplest correct thing. Attribution, rates and
+counts were later added to the same row, and the rebuild was never revisited.
+
+Note the contrast with a packing-list re-upload, which also replaces lines
+(`INV-D-010`) but **rebuilds** attribution and rates as it goes because the file
+carries them. The manifest replaces without rebuilding.
+
+**Evidence** — source: **code**, so this holds in production regardless of what
+any database currently contains.
+```python
+# apps/inventory_planning/importer.py, import_containers()
+sh.lines.all().delete()
+InTransitLine.objects.bulk_create([
+    InTransitLine(shipment=sh, sku=s, units=u) for s, u in g['lines'].items()])
+```
+The parser recognises only container, SKU, units, vendor, destination,
+departure, ETA and status. There is no Supplier, PO, FOB or FNSKU column to
+carry, and no field is preserved from the row being replaced.
+
+**Business impact** — None measurable yet, and it is the same forward-looking
+exposure as `INV-CONT-011`: it destroys precisely what the `INV-CONT-001` remedy
+creates. Re-upload eleven packing lists to price the containers on the water,
+then upload a routine manifest for any of them, and the rates are gone with no
+warning. Unlike `INV-CONT-011` this path is reachable from two pages.
+
+**Technical impact** — Two import paths and one upload path all "replace the
+lines", meaning three different things by it. A reader cannot tell which is safe
+without reading each.
+
+**Recommendation** — Update lines in place by SKU instead of rebuilding: adjust
+units, leave every other field untouched, and delete only lines the file drops.
+Where a container already carries PO attribution, refuse the manifest and say
+the packing list is the right file — a container built through the workbench
+should not be edited by a file that cannot express what it holds.
+
+**Related documents** — [allocation-workbench.md](allocation-workbench.md), [containers.md](containers.md)
+**Related decisions** — `INV-D-005`, `INV-D-010`
+
+---
+
+## `INV-ALLOC-004` · Append mode is unreachable and its docstring misleads
+
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | open |
+| **Classification** | bug — stale documentation on a superseded path |
+| **Code alone fixes it** | yes |
+| **Dependencies** | none |
+
+**Current behaviour** — `commit_packing_list` supports `mode='append'` and both
+endpoints accept it, but no page offers it: the mode selector was removed in
+`abe7df2` once the packing list carried a Supplier column per row. The
+docstring still describes append as "how a container loaded from two suppliers
+is recorded: upload supplier A, then append supplier B" — the exact workflow
+`INV-D-002` replaced.
+
+**Expected behaviour** — The code says what the business does. One file
+describes the whole container.
+
+**Root cause** — Deliberate removal, incompletely finished. `ad3e6dd` added
+append to fix a second supplier's upload silently replacing the first
+(`INV-ALLOC-001`); `0cd9e7a` then made the packing list carry Supplier per row,
+which solved the same problem better; `abe7df2` dropped the selector and said
+so. The service layer and its docstring were left as they were.
+
+**Evidence** — source: **code**. `grep -c append templates/inventory_planning/allocation.html`
+returns 0, while `commit_packing_list` still branches on `mode == 'append'` and
+documents it as the two-supplier route.
+
+**Business impact** — None. The path cannot be reached from the UI.
+
+**Technical impact** — The most authoritative-looking comment in the module
+describes a workflow the decision log forbids. A reader who follows it
+reintroduces a two-upload flow whose second half is easy to forget, which is
+what `INV-D-002` exists to prevent.
+
+**Recommendation** — Decide one way and make the code agree. Either delete the
+append path and its `mode` argument, or keep it as an API-only capability and
+rewrite the docstring to say that one file describes the whole container and
+append exists only for corrections. Deleting is preferable — nothing calls it.
+
+**Related documents** — [allocation-workbench.md](allocation-workbench.md)
+**Related decisions** — `INV-D-002`, `INV-D-010`
 
 ---
 

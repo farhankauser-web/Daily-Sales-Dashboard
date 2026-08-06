@@ -53,7 +53,13 @@ verified against: <commit> · <date>
   same commit.** A doc that lies is worse than none, because it gets believed.
 - **Write a doc as a by-product of working in that area**, not cold. Fifteen
   docs written speculatively would be stale before the last was finished.
-- **Gaps carry evidence** — a query or a `file:line`, never an assertion.
+- **Gaps carry evidence** — a query or a `file:line`, never an assertion — and
+  **name its source**. Code → business rules → production → the local snapshot.
+  A conclusion counted out of `db.sqlite3` is provisional and says so; that
+  database is a development snapshot, so an empty table means "never used
+  locally", not "broken". See [`templates/`](templates/README.md).
+- **Classify before recommending.** Missing implementation, bug, configuration,
+  missing operational process, or legacy data. Absence of data is not a defect.
 - **Aspiration lives in "How it should work"**, never in "How it works today".
   Mixing them is how a doc stops being trusted.
 - **Documents describe the business, not the code.** Where the implementation
@@ -69,10 +75,11 @@ verified against: <commit> · <date>
 
 Of the sections, only **[inventory](inventory/README.md)** has been started, and
 only partly: its README, [containers.md](inventory/containers.md),
-[receiving.md](inventory/receiving.md), and its decision and gap registers.
-Suppliers, purchase orders, the allocation workbench, the planner, transfers and
-cash flow are named there as pending. Every other section in the table above is
-still unwritten.
+[receiving.md](inventory/receiving.md),
+[allocation-workbench.md](inventory/allocation-workbench.md), and its decision
+and gap registers. Suppliers, purchase orders, the planner, transfers and cash
+flow are named there as pending. Every other section in the table above is still
+unwritten.
 
 Leaves are written as we work through each section. See `map.md` for the build
 order.

@@ -42,9 +42,15 @@ nobody will trust enough to act on.
      hold. -->
 
 
-**Evidence**
+**Evidence** — source: code · business rules · production · dev snapshot
 <!-- The query, count or file path that proves the gap, so anyone can re-check
-     it. "188 of 188 lines" beats "most lines". -->
+     it. "188 of 188 lines" beats "most lines".
+
+     NAME THE SOURCE, and use the precedence in templates/README.md. A finding
+     read from the code holds in production. A finding counted out of the local
+     SQLite snapshot is PROVISIONAL — say so, and say what to re-measure —
+     because whole feature paths have never run against that database, so an
+     empty table there means "never used locally", not "broken". -->
 
 **Business impact**
 <!-- What it costs the business: wrong numbers, manual work, a decision made on

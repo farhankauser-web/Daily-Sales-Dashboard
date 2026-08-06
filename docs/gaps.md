@@ -26,6 +26,7 @@ code change alone would close them. See [inventory/gaps.md](inventory/gaps.md).
 | `INV-CONT-011` | The status-workbook import deletes every container in the region | P2 | [inventory](inventory/gaps.md) |
 | `INV-RECV-003` | Per-SKU variance views ignore Amazon's count | P2 | [inventory](inventory/gaps.md) |
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | [inventory](inventory/gaps.md) |
+| `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | [inventory](inventory/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | [inventory](inventory/gaps.md) |
 | `FIN-001` | Referral fee computed on gross revenue, never checked against a settlement | P2 | *(financials pending)* |
@@ -36,6 +37,7 @@ code change alone would close them. See [inventory/gaps.md](inventory/gaps.md).
 | `SET-001` | AE/SA marketplace ids missing, blocking the UAE P&L | P2 | *(settings pending)* |
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | [inventory](inventory/gaps.md) |
 | `INV-RECV-005` | Receipt syncs are neither region-filtered nor scheduled outside the USA | P3 | [inventory](inventory/gaps.md) |
+| `INV-ALLOC-004` | Append mode is unreachable and its docstring misleads | P3 | [inventory](inventory/gaps.md) |
 | `INV-SUP-002` | `POLineGroup.pcs` is written and never read | P3 | [inventory](inventory/gaps.md) |
 | `INFRA-002` | Kernel upgrade pending, needs a reboot | P3 | *(deployment.md pending)* |
 | `INFRA-003` | HSTS still 86400 | P3 | *(deployment.md pending)* |

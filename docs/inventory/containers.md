@@ -20,7 +20,7 @@ inventory report — a gap of two to four months.
 Covers the container's life from creation to archive, and its statuses.
 
 **Not covered:**
-- how a container is created from a packing list — allocation-workbench.md *(pending)*
+- how a container is created from a packing list — [allocation-workbench.md](allocation-workbench.md)
 - Amazon's counting and shortfall — [receiving.md](receiving.md)
 - when the payment lands in the ledger — cashflow.md *(pending)*
 
@@ -173,6 +173,7 @@ all pending.)*
 - `INV-CONT-003` — no stall alert for a container stuck in Receiving
 - `INV-CONT-004` — goods receipt writes AWD stock the sync then overwrites
 - `INV-CONT-011` — the status-workbook import deletes every container in the region
+- `INV-ALLOC-003` — the container-manifest import strips FOB and PO attribution
 - `INV-RECV-001` — no active container carries an Amazon shipment ID
 - `INV-RECV-002` — archived containers with no count report as a total loss
 - `INV-RECV-003` — per-SKU variance views ignore Amazon's count
@@ -184,6 +185,6 @@ all pending.)*
 ## Related documents
 
 - [receiving.md](receiving.md) — what Amazon counted and what is short
-- allocation-workbench.md *(pending)* — how a container comes into being
+- [allocation-workbench.md](allocation-workbench.md) — how a container comes into being
 - cashflow.md *(pending)* — when its payment falls due
 - [architecture-mismatches.md](../architecture-mismatches.md) — `ARCH-005`

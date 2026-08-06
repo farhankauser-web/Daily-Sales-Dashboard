@@ -66,6 +66,15 @@ crontab is maintained by hand and has drifted; see `INFRA-01` in `docs/gaps.md`.
 
 - Verify with real data before claiming a fix works. Run the query, show the
   numbers. Several bugs this codebase has had were "obviously fine" on reading.
+- **Rank the evidence, and name its source.** Code → business rules →
+  production data → the local snapshot. `db.sqlite3` is a **development
+  snapshot, not the business truth**: whole feature paths have never run against
+  it, so an empty table means "never used locally", not "broken". Any conclusion
+  not drawn from code, architecture or documentation is provisional until
+  checked against production, and must say so.
+- **Absence of data is not a defect.** Before recommending a fix, say why the
+  state exists: missing implementation, bug, configuration, missing operational
+  process, or legacy data. A code change cannot close a process gap.
 - Destructive or irreversible work goes through a dry run first — most
   management commands report by default and only write with `--apply`.
 - Test writes against the local DB inside a rolled-back transaction.
