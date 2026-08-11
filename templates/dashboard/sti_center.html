@@ -1,0 +1,1003 @@
+{% extends "base/base.html" %}
+{% block title %}Search Intelligence{% endblock %}
+{% block nav_sti %}active{% endblock %}
+{% block page_title %}Search Intelligence Center{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="stiSetMP('{{ mp }}')">
+    {% if mp == 'usa' %}🇺🇸 USA
+    {% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'ae' %}🇦🇪 UAE
+    {% elif mp == 'sa' %}🇸🇦 KSA
+    {% elif mp == 'ca' %}🇨🇦 CA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+
+<form method="post" action="{% url 'dashboard:sti_generate' %}" id="stiForm"
+      style="display:flex;align-items:center;gap:8px;margin-left:12px">
+  {% csrf_token %}
+  <input type="hidden" name="mp" id="stiMp" value="{{ marketplace }}">
+  <select name="group" id="stiGroup" class="form-control sti-ctl">
+    {% for g in groups %}
+    <option value="{{ g.slug }}" {% if g.slug == group_slug %}selected{% endif %}>{{ g.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="ptype" id="stiPtype" class="form-control sti-ctl">
+    {% for id, label in period_types %}
+    <option value="{{ id }}" {% if id == ptype %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="period" id="stiPeriod" class="form-control sti-ctl" style="min-width:290px">
+    {% for p in period_options %}
+    <option value="{{ p.key }}" {% if p.key == selected_period %}selected{% endif %}>
+      {{ p.label }} · {{ p.coverage_note }}{% if not p.complete %} · partial{% endif %}
+    </option>
+    {% empty %}
+    <option value="">No completed periods with advertising data</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary sti-gen" id="stiGenBtn">Generate</button>
+</form>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .sti-ctl { padding:5px 10px; font-size:11px; width:auto; }
+  .sti-gen { padding:6px 14px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .sti-gen[disabled] { opacity:.6; cursor:progress; }
+
+  /* ── banners ─────────────────────────────────────────────────────────── */
+  .sti-banner { padding:9px 13px; border-radius:6px; font-size:12px;
+                margin-bottom:10px; border:1px solid transparent; line-height:1.5; }
+  .sti-banner.warn { background:var(--warn-weak); border-color:#EAD499; color:var(--warn-ink); }
+  .sti-banner.info { background:var(--bg4); border-color:var(--border); color:var(--text2); }
+  .sti-banner.err  { background:#FDEDEC; border-color:#F3B7B2; color:var(--red); }
+  .sti-banner b { font-weight:700; }
+
+  /* ── run meta strip ──────────────────────────────────────────────────── */
+  .sti-meta { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center;
+              font-size:11px; color:var(--text3); margin-bottom:12px; }
+  .sti-meta .sep { color:var(--border2); }
+  .sti-meta b { color:var(--text2); font-weight:600; }
+
+  /* ── Data As Of strip (MKT-D-012: every metric states its own period) ── */
+  .sti-asof { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .sti-asof .src { background:var(--bg2); border:1px solid var(--border); border-radius:7px;
+                   padding:7px 11px; flex:1 1 190px; min-width:0; }
+  .sti-asof .nm { font-size:10px; font-weight:700; text-transform:uppercase;
+                  letter-spacing:.3px; color:var(--text3); }
+  .sti-asof .pd { font-size:11.5px; color:var(--text); font-family:'DM Mono',monospace;
+                  margin-top:2px; }
+  .sti-asof .ao { font-size:10px; color:var(--text3); margin-top:1px; }
+  .sti-asof .src.warn { border-left:3px solid #EAD499; }
+  .sti-asof .src.none { border-left:3px solid var(--border2); background:var(--bg4); }
+
+  /* ── progressive disclosure (MKT-D-014) ───────────────────────────────── */
+  .sti-more { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+              margin-bottom:10px; }
+  .sti-more > summary { cursor:pointer; padding:10px 16px; font-size:12px; font-weight:600;
+                        color:var(--text2); list-style:none; user-select:none; }
+  .sti-more > summary::-webkit-details-marker { display:none; }
+  .sti-more > summary:before { content:'▸ '; color:var(--text3); }
+  .sti-more[open] > summary:before { content:'▾ '; }
+  .sti-more > summary:hover { color:var(--accent); }
+  .sti-more .body { padding:0 16px 14px; overflow-x:auto; }
+  .sti-more .body .note { font-size:11px; color:var(--text3); margin-bottom:8px; }
+
+  /* ── headline ─────────────────────────────────────────────────────────── */
+  .sti-headline { display:flex; flex-wrap:wrap; align-items:flex-end; gap:26px;
+                  background:var(--bg2); border:1px solid var(--border);
+                  border-left:3px solid var(--green); border-radius:10px;
+                  padding:14px 18px; margin-bottom:14px; }
+  .sti-headline .big .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.4px;
+                            color:var(--text3); }
+  .sti-headline .big .val { font-size:30px; font-weight:700; color:var(--green);
+                            font-family:'DM Mono',monospace; line-height:1.15; }
+  .sti-headline .big .sub { font-size:11px; color:var(--text3); }
+  .sti-headline .ctx { display:flex; flex-wrap:wrap; gap:22px; }
+  .sti-headline .ctx div .l { font-size:10px; text-transform:uppercase; letter-spacing:.3px;
+                              color:var(--text3); }
+  .sti-headline .ctx div .v { font-size:16px; font-weight:700; color:var(--text);
+                              font-family:'DM Mono',monospace; }
+
+  /* ── narrative ────────────────────────────────────────────────────────── */
+  .sti-nar { background:var(--bg2); border:1px solid var(--border);
+             border-left:3px solid var(--accent); border-radius:10px;
+             padding:13px 16px; margin-bottom:14px; }
+  .sti-nar .hd { font-size:11px; font-weight:700; text-transform:uppercase;
+                 letter-spacing:.4px; color:var(--text3); margin-bottom:7px;
+                 display:flex; align-items:center; gap:8px; }
+  .sti-nar p { font-size:12.5px; color:var(--text); line-height:1.7; margin:0 0 8px; }
+  .sti-nar .warn { background:var(--warn-weak); border:1px solid #EAD499;
+                   color:var(--warn-ink); border-radius:6px; padding:8px 11px;
+                   font-size:11.5px; margin-top:8px; }
+  .sti-nar .src { font-size:10.5px; color:var(--text3); margin-top:6px; }
+  .sti-nar button { font-size:11px; padding:5px 12px; border-radius:5px; cursor:pointer;
+                    border:1px solid var(--border); background:var(--bg2);
+                    color:var(--text2); }
+  .sti-nar button:hover { border-color:var(--accent); color:var(--accent); }
+  .sti-nar button[disabled] { opacity:.6; cursor:progress; }
+
+  /* ── what changed ─────────────────────────────────────────────────────── */
+  .sti-chg { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+             padding:12px 16px; margin-bottom:14px; }
+  .sti-chg .hd { font-size:11px; font-weight:700; text-transform:uppercase;
+                 letter-spacing:.4px; color:var(--text3); margin-bottom:8px; }
+  .sti-chg ul { list-style:none; margin:0; padding:0; }
+  .sti-chg li { font-size:12px; color:var(--text2); padding:3px 0; line-height:1.5; }
+  .sti-chg .up   { color:var(--green); font-weight:700; font-family:'DM Mono',monospace; }
+  .sti-chg .down { color:var(--red);   font-weight:700; font-family:'DM Mono',monospace; }
+  .sti-chg .nw   { color:var(--accent);font-weight:700; }
+  .sti-chg .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+                   gap:16px; }
+
+  /* ── executive cards ─────────────────────────────────────────────────── */
+  .sti-h2 { font-size:13px; font-weight:700; color:var(--text); margin:20px 0 4px;
+            display:flex; align-items:baseline; gap:8px; }
+  .sti-h2 .note { font-size:11px; font-weight:400; color:var(--text3); }
+  .sti-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+               gap:10px; margin-bottom:6px; }
+  .sti-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+              padding:12px 14px; display:flex; flex-direction:column; min-height:118px; }
+  .sti-card .clbl { font-size:10px; font-weight:700; text-transform:uppercase;
+                    letter-spacing:.4px; color:var(--text3); margin-bottom:6px; }
+  .sti-card .ctitle { font-size:13px; font-weight:700; color:var(--text); line-height:1.35; }
+  .sti-card .cwhy { font-size:11px; color:var(--text2); line-height:1.5; margin-top:5px;
+                    flex:1; }
+  .sti-card .cval { font-size:16px; font-weight:700; font-family:'DM Mono',monospace;
+                    color:var(--green); margin-top:8px; }
+  .sti-card .cmsg { font-size:11.5px; color:var(--text3); line-height:1.55; flex:1;
+                    display:flex; align-items:center; }
+  .sti-card.ok      { border-left:3px solid var(--accent); }
+  .sti-card.empty   { border-left:3px solid var(--border2); background:var(--bg4); }
+  .sti-card.unavailable { border-left:3px solid var(--border2); background:var(--bg4);
+                          border-style:dashed; }
+  .sti-card.risk    { border-left:3px solid var(--red); }
+  .sti-card.risk .cval { color:var(--red); }
+  .sti-card.clickable { cursor:pointer; }
+  .sti-card.clickable:hover { border-color:var(--accent); }
+  /* Opportunity Map — value vs effort scatter */
+  .sti-map { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+             padding:12px 14px 8px; margin:0 0 20px; }
+  .sti-map svg { width:100%; height:auto; display:block; }
+  .sti-map .dot { cursor:pointer; transition:opacity .12s; }
+  .sti-map .dot:hover { opacity:1 !important; }
+  .sti-map .grid { stroke:var(--border); stroke-dasharray:3 3; }
+  .sti-map .axl { font-size:10px; fill:var(--text3); font-family:'DM Mono',monospace; }
+  .sti-map .qlabel { font-size:9px; fill:var(--text3); font-weight:700;
+                     text-transform:uppercase; letter-spacing:.4px; }
+  .sti-maplegend { display:flex; flex-wrap:wrap; align-items:center; gap:12px;
+                   font-size:10.5px; color:var(--text2); margin-top:8px; }
+  .sti-maplegend span { display:inline-flex; align-items:center; gap:5px; }
+  .sti-maplegend i { width:9px; height:9px; border-radius:50%; display:inline-block; }
+
+  /* ── board ───────────────────────────────────────────────────────────── */
+  .sti-filters { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 12px; }
+  .sti-pill { font-size:11px; padding:4px 11px; border-radius:14px; cursor:pointer;
+              border:1px solid var(--border); background:var(--bg2); color:var(--text2);
+              user-select:none; }
+  .sti-pill:hover { border-color:var(--accent); color:var(--text); }
+  .sti-pill.on { background:var(--accent); border-color:var(--accent); color:#fff;
+                 font-weight:600; }
+  .sti-pill .n { opacity:.7; margin-left:4px; }
+  .sti-sort { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px;
+              margin-left:auto; font-size:10px; font-weight:700; text-transform:uppercase;
+              letter-spacing:.4px; color:var(--text3); }
+  .sti-pareto { display:flex; align-items:center; gap:10px; margin:2px 0 10px;
+                padding:8px 12px; background:var(--bg2); border:1px solid var(--border);
+                border-radius:8px; font-size:11.5px; color:var(--text2); }
+  .sti-pareto b { color:var(--text); font-weight:700; }
+  .sti-pareto .bar { flex:none; width:52px; height:7px; border-radius:4px;
+                     background:var(--bg4); position:relative; overflow:hidden; }
+  .sti-pareto .bar:after { content:''; position:absolute; inset:0; width:var(--p,0);
+                           background:var(--green); border-radius:4px; }
+
+  .sti-opp { background:var(--bg2); border:1px solid var(--border); border-radius:9px;
+             margin-bottom:7px; overflow:hidden; }
+  .sti-opp.blocked { border-left:3px solid var(--red); }
+  .sti-opp.is-done { opacity:.55; }
+  .sti-ohead { display:grid; grid-template-columns:34px 1fr auto; gap:12px;
+               padding:11px 14px; cursor:pointer; align-items:center; }
+  .sti-ohead:hover { background:var(--bg4); }
+  .sti-rank { font-family:'DM Mono',monospace; font-size:13px; font-weight:700;
+              color:var(--text3); text-align:center; }
+  .sti-otitle { font-size:13px; font-weight:600; color:var(--text); line-height:1.4; }
+  .sti-osub { font-size:11px; color:var(--text3); margin-top:3px;
+              display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  .sti-oval { text-align:right; white-space:nowrap; }
+  .sti-oval .v { font-size:15px; font-weight:700; font-family:'DM Mono',monospace;
+                 color:var(--green); }
+  .sti-oval .u { font-size:10px; color:var(--text3); }
+  .sti-opp.blocked .sti-oval .v { color:var(--text3); text-decoration:line-through; }
+
+  .sti-badge { font-size:9.5px; font-weight:700; text-transform:uppercase;
+               letter-spacing:.3px; padding:2px 7px; border-radius:9px;
+               background:var(--bg3); color:var(--text2); white-space:nowrap; }
+  .sti-badge.t-defend       { background:#FDEDEC; color:var(--red); }
+  .sti-badge.t-scale_ppc    { background:#E0F2EC; color:var(--green); }
+  .sti-badge.t-listing_fix  { background:var(--warn-weak); color:var(--warn-ink); }
+  .sti-badge.t-organic_push { background:#E3EEF6; color:#1B4A75; }
+  .sti-badge.t-capture_share{ background:#E3EEF6; color:#1B4A75; }
+  .sti-badge.t-product_gap  { background:#EFE7F7; color:#6B3FA0; }
+  .sti-badge.t-conquest     { background:#FDEDEC; color:#A33; }
+  .sti-badge.c-high   { background:#E0F2EC; color:var(--green); }
+  .sti-badge.c-medium { background:var(--warn-weak); color:var(--warn-ink); }
+  .sti-badge.c-low    { background:var(--bg3); color:var(--text3); }
+  .sti-badge.new      { background:var(--accent); color:#fff; }
+  .sti-badge.blocked  { background:#FDEDEC; color:var(--red); }
+  .sti-badge.status   { background:#E3EEF6; color:#1B4A75; }
+
+  .sti-diff { display:inline-flex; gap:2px; vertical-align:middle; }
+  .sti-diff i { width:5px; height:5px; border-radius:50%; background:var(--border2);
+                display:inline-block; }
+  .sti-diff i.on { background:var(--text3); }
+
+  .sti-obody { display:none; padding:0 14px 14px 60px; border-top:1px solid var(--bg3); }
+  .sti-obody.open { display:block; }
+  .sti-obody .why { font-size:12px; color:var(--text2); line-height:1.6; margin:11px 0; }
+  .sti-sub { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+             color:var(--text3); margin:13px 0 6px; }
+  .sti-ev { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:7px; }
+  .sti-ev div { background:var(--bg4); border-radius:5px; padding:6px 9px; }
+  .sti-ev .k { font-size:10px; color:var(--text3); }
+  .sti-ev .v { font-size:12px; font-weight:600; color:var(--text);
+               font-family:'DM Mono',monospace; }
+  .sti-acts { list-style:none; padding:0; margin:0; }
+  .sti-acts li { font-size:12px; color:var(--text); padding:5px 0 5px 20px;
+                 position:relative; line-height:1.5; }
+  .sti-acts li:before { content:'→'; position:absolute; left:2px; color:var(--accent); }
+  .sti-acts .dom { font-size:9.5px; font-weight:700; text-transform:uppercase;
+                   color:var(--text3); margin-right:5px; }
+  .sti-dep { font-size:11.5px; color:var(--text2); padding:3px 0; }
+  .sti-dep .met  { color:var(--green); font-weight:700; }
+  .sti-dep .unmet{ color:var(--warn-ink); font-weight:700; }
+
+  .sti-calc { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--text2);
+              background:var(--bg4); border-radius:6px; padding:9px 11px; line-height:1.7; }
+  .sti-calc b { color:var(--text); }
+
+  .sti-btns { display:flex; gap:6px; margin-top:13px; flex-wrap:wrap; }
+  .sti-btn { font-size:11px; padding:5px 12px; border-radius:5px; cursor:pointer;
+             border:1px solid var(--border); background:var(--bg2); color:var(--text2); }
+  .sti-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  .sti-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .sti-table th { background:var(--bg); padding:7px 9px; text-align:right; font-size:10.5px;
+                  font-weight:600; color:var(--text2); }
+  .sti-table th.l, .sti-table td.l { text-align:left; }
+  .sti-table td { padding:6px 9px; text-align:right; border-bottom:1px solid var(--bg3);
+                  font-family:'DM Mono',monospace; }
+  .sti-table td.l { font-family:inherit; font-weight:600; }
+  .sti-panel { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+               padding:13px 16px; margin-bottom:12px; overflow-x:auto; }
+
+  .sti-empty { background:var(--bg2); border:1px dashed var(--border2); border-radius:10px;
+               padding:44px 24px; text-align:center; }
+  .sti-empty h3 { font-size:15px; color:var(--text); margin:0 0 7px; }
+  .sti-empty p { font-size:12.5px; color:var(--text2); margin:0 auto; max-width:520px;
+                 line-height:1.65; }
+  .sti-empty code { background:var(--bg3); padding:2px 6px; border-radius:4px;
+                    font-size:11.5px; }
+
+  @media (max-width:720px) {
+    .sti-ohead { grid-template-columns:26px 1fr; }
+    .sti-oval { grid-column:2; text-align:left; margin-top:4px; }
+    .sti-obody { padding-left:20px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if not groups %}
+  <div class="sti-empty">
+    <h3>No product groups yet</h3>
+    <p>The Center reports on one product group at a time. Seed them from the catalog
+       and campaign dimension with <code>python manage.py seed_product_groups --apply</code>,
+       then reload this page.</p>
+  </div>
+
+{% elif run and run.status == 'failed' %}
+  <div class="sti-banner err">
+    <b>Generation failed.</b> {{ run.error }}
+  </div>
+
+{% elif not payload %}
+  <div class="sti-empty">
+    <h3>No report yet for {{ group.name }} · {{ marketplace|upper }}</h3>
+    <p>Pick a range and press <b>Generate</b>. The run aggregates the search-term fact
+       table, classifies every term, joins Brand Analytics market share, and scores each
+       opportunity in contribution margin per month. It takes a few seconds.</p>
+  </div>
+
+{% else %}
+
+  {# ── caveats: stated up front, never buried ───────────────────────────── #}
+  {% if payload.meta.scope_warning %}
+  <div class="sti-banner err">
+    <b>This report is empty, and here is why.</b> {{ payload.meta.scope_warning }}
+  </div>
+  {% endif %}
+
+  {% if not payload.meta.valuation.trusted %}
+  <div class="sti-banner warn">
+    <b>Margin is an estimate.</b> Only
+    {{ payload.meta.valuation.skus_sold }} of {{ payload.meta.valuation.skus_total }} of this
+    group's SKUs recorded settled sales in the last
+    {{ payload.meta.valuation.days }} selling days, so a fallback contribution-margin rate
+    of {{ payload.meta.valuation.cm_rate|floatformat:2 }} is used. Every money figure
+    scales with it.
+  </div>
+  {% endif %}
+
+  {% if payload.meta.ba_weeks == 0 %}
+  <div class="sti-banner info">
+    <b>Amazon has not published market data for {{ payload.meta.period_label }}.</b>
+    Advertising figures below are complete; market-share, organic-gap and product-gap
+    sections need Brand Analytics and are hidden rather than shown empty. Periods that
+    do have it are marked <b>market ✓</b> in the selector.
+  </div>
+  {% endif %}
+
+  <div class="sti-meta">
+    <span><b>{{ payload.meta.group }}</b> · {{ payload.meta.marketplace|upper }}</span>
+    <span class="sep">|</span>
+    <span><b>{{ payload.meta.period_label }}</b>
+          ({{ payload.meta.period_coverage.ads_days }}/{{ payload.meta.period_coverage.span_days }} days of ads data{% if not payload.meta.period_coverage.complete %}, partial{% endif %})</span>
+    <span class="sep">|</span>
+    {% if payload.meta.ba_window %}
+      <span>Brand Analytics <b>{{ payload.meta.ba_weeks }}
+        week{{ payload.meta.ba_weeks|pluralize }}</b> to {{ payload.meta.ba_window.end }}</span>
+    {% else %}
+      <span>Brand Analytics <b>none</b></span>
+    {% endif %}
+    <span class="sep">|</span>
+    <span>{{ payload.meta.terms }} terms · {{ payload.meta.campaigns }} campaigns ·
+          {{ payload.meta.asins }} ASINs</span>
+    <span class="sep">|</span>
+    <span>{{ run.duration_ms }} ms</span>
+  </div>
+
+  {# ── Data As Of — one entry per dataset, no forced alignment (MKT-D-012) #}
+  <div class="sti-asof" id="stiAsOf"></div>
+
+  {# ── Headline: the decision total, then only figures that frame it ─────── #}
+  <div class="sti-headline">
+    <div class="big">
+      <div class="lbl">Open opportunity</div>
+      <div class="val" id="kpiOpen"></div>
+      <div class="sub">contribution margin / month · <span id="kpiCount"></span></div>
+    </div>
+    <div class="ctx">
+      <div><div class="l">Ad spend</div><div class="v" id="kpiSpend"></div></div>
+      <div><div class="l">ACOS</div><div class="v" id="kpiAcos"></div></div>
+      <div><div class="l">Market share</div><div class="v" id="kpiShare"></div></div>
+      <div><div class="l">CM rate</div><div class="v" id="kpiCm"></div></div>
+    </div>
+  </div>
+
+  {# ── Narrator — explains the report, never authors it (MKT-D-014) ─────── #}
+  <div class="sti-nar" id="stiNarrative">
+    <div class="hd">Briefing
+      <button type="button" id="stiNarBtn" onclick="stiNarrate({{ run.id }})">Explain this report</button>
+    </div>
+    <div id="stiNarBody" style="font-size:12px;color:var(--text3)">
+      A short read of where this group stands and what to do first. Generated from this
+      report only — it cannot add an opportunity the engine did not find.
+    </div>
+  </div>
+
+  {# ── What changed — only when there is something to say ───────────────── #}
+  <div id="stiChanged"></div>
+
+  {# ── Executive Screen ──────────────────────────────────────────────────── #}
+  <div class="sti-h2">Executive Screen
+    <span class="note">the eight questions — one item each, or an honest blank</span></div>
+  <div class="sti-cards" id="stiCards"></div>
+
+  {# ── Opportunity Map — value vs effort (executive at-a-glance) ─────────── #}
+  <div class="sti-map" id="stiMapWrap">
+    <div class="sti-h2" style="margin-top:0">Opportunity Map
+      <span class="note">where the money is vs how hard it is — Y is CM/month, X is difficulty</span></div>
+    <div id="stiMap"></div>
+    <div id="stiMapLegend" class="sti-maplegend"></div>
+  </div>
+
+  {# ── Opportunity Board ─────────────────────────────────────────────────── #}
+  <div class="sti-h2">Opportunity Board
+    <span class="note">ranked by expected contribution margin per month, not by ad metrics</span>
+    <span style="margin-left:auto;font-size:11px;font-weight:600">
+      <a href="{% url 'dashboard:sti_groups' %}">Product groups</a>
+      <span style="color:var(--border2);margin:0 6px">|</span>
+      <a href="{% url 'dashboard:sti_outcomes' %}?mp={{ marketplace }}&group={{ group_slug }}">Outcomes →</a>
+    </span></div>
+  <div class="sti-pareto" id="stiPareto"></div>
+  <div class="sti-filters" id="stiFilters"></div>
+  <div id="stiBoard"></div>
+
+  {# ── Evidence drawers — reachable, not resident (MKT-D-014) ──────────── #}
+  <details class="sti-more">
+    <summary>Account context — full performance figures</summary>
+    <div class="body">
+      <div class="note">Supporting evidence for the opportunities above, not decisions in
+        themselves. Advertising window {{ payload.meta.date_from }} → {{ payload.meta.date_to }}.</div>
+      <table class="sti-table">
+        <thead><tr><th class="l">Measure</th><th>Value</th><th class="l">Period</th></tr></thead>
+        <tbody id="stiContext"></tbody>
+      </table>
+    </div>
+  </details>
+
+  <details class="sti-more">
+    <summary>Where the spend goes, by shopper intent</summary>
+    <div class="body">
+      <div class="note">Evidence behind the waste and negative-keyword opportunities —
+        off-category and adjacent spend is what those cards act on.</div>
+      <table class="sti-table">
+        <thead><tr>
+          <th class="l">Intent tier</th><th>Terms</th><th>Spend</th><th>Sales</th>
+          <th>Orders</th><th>ACOS</th><th>Share of spend</th>
+        </tr></thead>
+        <tbody id="stiTiers"></tbody>
+      </table>
+    </div>
+  </details>
+
+  <details class="sti-more">
+    <summary>Data quality — what this report could not see</summary>
+    <div class="body" style="font-size:11.5px;color:var(--text2);line-height:1.75">
+      <div>Brand Analytics covers <b>{{ payload.meta.data_quality.sqp_coverage_pct }}%</b>
+           of this group's ad spend — the rest has no market-share reading.</div>
+      <div>Scoped by <b>ASIN from the product catalog</b>, not by campaign naming:
+           {{ payload.meta.asins }} ASINs → {{ payload.meta.ad_groups }} ad groups →
+           {{ payload.meta.campaigns }} campaigns. The catalog places
+           <b>{{ payload.meta.data_quality.attribution.coverage_pct }}%</b> of
+           {{ payload.meta.marketplace|upper }} search-term spend; the remaining
+           {{ payload.meta.symbol }}{{ payload.meta.data_quality.attribution.unplaced|floatformat:0 }}
+           was advertised against ASINs no group claims.</div>
+      {% if payload.meta.weighted %}
+      <div>At least one ad group advertises more than one product group, so its spend
+           is apportioned by ASIN share rather than assigned whole. Group totals still
+           sum exactly to the placed spend.</div>
+      {% endif %}
+      <div>Listing checks read <b>{{ payload.meta.data_quality.listing_titles }}</b> product
+           titles. Bullets and A+ content are not synced into Pulse, so a word used only
+           there reads as missing.</div>
+      {% if payload.kpis.paid_share_exceeds %}
+      <div>Ad sales exceed settled revenue: <code>sales_7d</code> is attributed to the click
+           date over a 7-day window and includes halo sales of other SKUs. A paid share
+           above 100% is an attribution property, not an error.</div>
+      {% endif %}
+      <div>Margins are measured on revenue <b>ex-VAT</b>
+           (net factor {{ payload.meta.net_factor }}); displayed revenue stays gross.</div>
+    </div>
+  </details>
+
+{% endif %}
+
+{# ── Run history ─────────────────────────────────────────────────────────── #}
+{% if history %}
+<div class="sti-h2">Report history<span class="note">every run is stored and re-openable</span></div>
+<div class="sti-panel">
+  <table class="sti-table">
+    <thead><tr>
+      <th class="l">Generated</th><th class="l">Window</th><th>Status</th>
+      <th>Duration</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for h in history %}
+      <tr {% if run and h.id == run.id %}style="background:var(--bg4)"{% endif %}>
+        <td class="l">{{ h.generated_at|date:"d M Y H:i" }}</td>
+        <td class="l">{{ h.date_from }} → {{ h.date_to }}</td>
+        <td>{{ h.status }}</td>
+        <td>{{ h.duration_ms }} ms</td>
+        <td><a href="?group={{ group_slug }}&mp={{ marketplace }}&run={{ h.id }}"
+               style="font-size:11px">open</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const STI = {{ payload_json|safe }};
+const STI_STATUS = {{ statuses_json|safe }};
+
+function stiSetMP(mp) {
+  const u = new URL(window.location);
+  u.searchParams.set('mp', mp);
+  u.searchParams.delete('run');
+  window.location = u;
+}
+
+function stiReload(param, value) {
+  const u = new URL(window.location);
+  u.searchParams.set(param, value);
+  u.searchParams.delete('run');
+  if (param !== 'period') u.searchParams.delete('period');
+  window.location = u;
+}
+document.getElementById('stiGroup')?.addEventListener('change', function () {
+  stiReload('group', this.value);
+});
+// Changing the range type re-lists the periods; changing the period just moves
+// the selection to an existing run if there is one.
+document.getElementById('stiPtype')?.addEventListener('change', function () {
+  stiReload('ptype', this.value);
+});
+document.getElementById('stiPeriod')?.addEventListener('change', function () {
+  stiReload('period', this.value);
+});
+
+document.getElementById('stiForm')?.addEventListener('submit', function () {
+  const b = document.getElementById('stiGenBtn');
+  b.disabled = true; b.textContent = 'Generating…';
+});
+
+if (STI && STI.meta) {
+  const sym = STI.meta.symbol || '$';
+  const money = (v, d = 0) => sym + (v == null ? '—' :
+        Number(v).toLocaleString(undefined, {minimumFractionDigits: d, maximumFractionDigits: d}));
+  const pct = (v, d = 1) => (v == null ? '—' : (v * 100).toFixed(d) + '%');
+  // Weighted counts are fractional; they display as whole units.
+  const num = v => v == null ? null : Math.round(Number(v)).toLocaleString();
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+        c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const k = STI.kpis;
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+
+  // ── Data As Of — every dataset states its own period (MKT-D-012) ──────
+  const AS_OF_ORDER = ['ads', 'ba_sqp', 'valuation', 'sku_revenue', 'inventory'];
+  document.getElementById('stiAsOf').innerHTML = AS_OF_ORDER.map(key => {
+    const s = (STI.meta.as_of || {})[key];
+    if (!s) return '';
+    const period = s.period && s.period.start
+      ? (s.period.start === s.period.end ? s.period.start
+         : s.period.start + ' → ' + s.period.end)
+      : '—';
+    const cls = !s.period ? 'none' : (key === 'ba_sqp' && STI.meta.ba_stale ? 'warn' : '');
+    return `<div class="src ${cls}" title="${esc(s.note)}">
+      <div class="nm">${esc(s.label)}</div>
+      <div class="pd">${esc(period)}</div>
+      <div class="ao">${s.as_of ? 'data as of ' + esc(s.as_of) : 'no data'} · ${esc(s.cadence)}</div>
+    </div>`;
+  }).join('');
+
+  // ── Headline: the decision total, then only what frames it ────────────
+  set('kpiOpen',  money(k.open_value));
+  set('kpiCount', (STI.opportunities || []).length + ' open opportunities');
+  set('kpiSpend', money(k.ad_spend));
+  set('kpiAcos',  pct(k.acos));
+  set('kpiShare', k.market_share != null ? pct(k.market_share, 2) : '—');
+  set('kpiCm',    pct(STI.meta.valuation.cm_rate, 1));
+
+  // ── Account context drawer — evidence, not decisions ──────────────────
+  const V = STI.meta.valuation, A = STI.meta.as_of || {};
+  const adPeriod = STI.meta.date_from + ' → ' + STI.meta.date_to;
+  const valPeriod = (A.valuation && A.valuation.period)
+        ? A.valuation.period.start + ' → ' + A.valuation.period.end : '—';
+  const ctxRows = [
+    ['Ad spend',        money(k.ad_spend),                 adPeriod],
+    ['Ad sales',        money(k.ad_sales),                 adPeriod + ' (7-day attributed)'],
+    ['ACOS',            pct(k.acos),                       adPeriod],
+    ['ROAS',            k.roas != null ? k.roas + '×' : '—', adPeriod],
+    ['Clicks',          num(k.clicks),                     adPeriod],
+    ['CTR',             pct(k.ctr, 2),                     adPeriod],
+    ['CVR',             pct(k.cvr, 2),                     adPeriod],
+    ['CPC',             money(k.cpc, 2),                   adPeriod],
+    ['Settled revenue', k.has_revenue ? money(k.group_revenue) : '—',
+                        (A.sku_revenue && A.sku_revenue.period)
+                          ? A.sku_revenue.period.start + ' → ' + A.sku_revenue.period.end : '—'],
+    ['Paid share',      k.paid_share != null ? pct(k.paid_share) : 'withheld',
+                        k.paid_share != null
+                          ? k.paid_share_days + ' days both sources cover'
+                          : esc(k.paid_share_note || '')],
+    ['CM rate',         pct(V.cm_rate, 1) + (V.trusted ? '' : ' (fallback)'), valPeriod],
+    ['Average selling price', money(V.asp, 2),             valPeriod],
+    ['Market share',    k.market_share != null ? pct(k.market_share, 2) : '—',
+                        (A.ba_sqp && A.ba_sqp.period)
+                          ? A.ba_sqp.period.start + ' → ' + A.ba_sqp.period.end : 'no data'],
+  ];
+  document.getElementById('stiContext').innerHTML = ctxRows.map(r =>
+    `<tr><td class="l">${esc(r[0])}</td><td>${r[1]}</td>
+     <td class="l" style="font-family:inherit;font-weight:400;color:var(--text3)">${r[2]}</td></tr>`
+  ).join('');
+
+  // ── Executive cards ───────────────────────────────────────────────────
+  document.getElementById('stiCards').innerHTML = (STI.cards || []).map(c => {
+    const risk = c.key === 'inventory_risk' && c.state === 'ok' ? ' risk' : '';
+    if (c.state !== 'ok') {
+      return `<div class="sti-card ${c.state}">
+        <div class="clbl">${esc(c.label)}</div>
+        <div class="cmsg">${esc(c.message)}</div></div>`;
+    }
+    const click = c.opportunity_id ? ` clickable" onclick="stiOpen(${c.opportunity_id})` : '';
+    return `<div class="sti-card ok${risk}${click}">
+      <div class="clbl">${esc(c.label)}</div>
+      <div class="ctitle">${esc(c.title)}</div>
+      <div class="cwhy">${esc(c.why)}</div>
+      <div class="cval">${esc(c.value_display)}</div></div>`;
+  }).join('');
+
+  // ── Narrator ──────────────────────────────────────────────────────────
+  function stiRenderNarrative(n) {
+    const body = document.getElementById('stiNarBody');
+    if (!body || !n) return;
+    const paras = (n.text || '').split(/\n{2,}/).filter(Boolean)
+      .map(p => `<p>${esc(p)}</p>`).join('');
+    const warn = (n.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join('');
+    body.innerHTML = paras + warn +
+      `<div class="src">Explains the opportunities above; it does not add to them.` +
+      (n.model ? ' · ' + esc(n.model) : '') + `</div>`;
+  }
+  window.stiNarrate = (runId) => {
+    const b = document.getElementById('stiNarBtn');
+    b.disabled = true; b.textContent = 'Reading the report…';
+    fetch(`/dashboard/api/sti/run/${runId}/narrate/`, {
+      method: 'POST', headers: {'X-CSRFToken': CSRF_TOKEN}
+    }).then(r => r.json()).then(d => {
+      b.disabled = false; b.textContent = 'Regenerate';
+      if (d.ok) stiRenderNarrative(d);
+      else document.getElementById('stiNarBody').innerHTML =
+        `<div class="warn">${esc(d.error || 'The narrator did not respond.')}</div>`;
+    }).catch(() => { b.disabled = false; b.textContent = 'Explain this report'; });
+  };
+  if (STI.narrative) {
+    stiRenderNarrative(STI.narrative);
+    const b = document.getElementById('stiNarBtn');
+    if (b) b.textContent = 'Regenerate';
+  }
+
+  // ── What changed since the previous report ────────────────────────────
+  (function renderChanged() {
+    const d = STI.diff || {}, el = document.getElementById('stiChanged');
+    if (!el || d.first_run === undefined) return;
+
+    if (d.first_run) {
+      el.innerHTML = `<div class="sti-chg"><div class="hd">What changed</div>
+        <ul><li>First report for this group and marketplace — ${d.new} opportunities
+        identified. Generate again after acting to see what moved.</li></ul></div>`;
+      return;
+    }
+    if (!d.comparable) {
+      el.innerHTML = `<div class="sti-chg"><div class="hd">What changed</div>
+        <ul><li>${esc(d.not_comparable_reason)} Comparison withheld — ${d.new} opportunities
+        are new to this window.</li></ul></div>`;
+      return;
+    }
+    const nothing = !d.new && !(d.moved || []).length && !(d.disappeared || []).length;
+    if (nothing) {
+      el.innerHTML = `<div class="sti-chg"><div class="hd">What changed since
+        ${esc(d.previous_window)}</div><ul><li>Nothing material moved.</li></ul></div>`;
+      return;
+    }
+    const col = (title, items) => items.length
+      ? `<div><div class="hd">${title}</div><ul>${items.join('')}</ul></div>` : '';
+    el.innerHTML = `<div class="sti-chg">
+      <div class="hd">What changed since the previous report (${esc(d.previous_window)})</div>
+      <div class="cols">
+        ${col('New', (d.new_items || []).map(i =>
+          `<li><span class="nw">+</span> ${esc(i.title)} — ${money(i.score)}/mo</li>`))}
+        ${col('Moved', (d.moved || []).map(m =>
+          `<li><span class="${m.delta > 0 ? 'up' : 'down'}">${m.delta > 0 ? '▲' : '▼'}
+           ${money(Math.abs(m.delta))}</span> ${esc(m.title)}
+           <span style="color:var(--text3)">(${m.pct > 0 ? '+' : ''}${m.pct}%)</span></li>`))}
+        ${col('No longer found', (d.disappeared || []).map(x =>
+          `<li>${esc(x.title)} — was ${money(x.score)}/mo</li>`))}
+      </div></div>`;
+  })();
+
+  // ── Board ─────────────────────────────────────────────────────────────
+  const TYPE_LABEL = {
+    defend: 'Defend', scale_ppc: 'Scale PPC', listing_fix: 'Listing',
+    organic_push: 'Organic', capture_share: 'Capture share', product_gap: 'Product gap',
+    conquest: 'Conquest'
+  };
+  const QUAD_LABEL = {
+    do_now: 'Do now', plan: 'Plan', delegate: 'Delegate', ignore: 'Low priority'
+  };
+  let activeType = 'all', activeQuad = 'all', activeSort = 'value';
+  const opps = STI.opportunities || [];
+  const CONF_RANK = { high: 3, medium: 2, low: 1 };
+  const SORT_LABEL = { value: 'Value', difficulty: 'Easiest first', confidence: 'Confidence', new: 'Newest' };
+  const oppVal = o => (o.blocked_reason ? o.score_if_unblocked : o.score) || 0;
+  function sortRows(rows) {
+    const a = rows.slice();
+    if (activeSort === 'difficulty')
+      a.sort((x, y) => (x.difficulty - y.difficulty) || (oppVal(y) - oppVal(x)));
+    else if (activeSort === 'confidence')
+      a.sort((x, y) => ((CONF_RANK[y.confidence] || 0) - (CONF_RANK[x.confidence] || 0)) || (oppVal(y) - oppVal(x)));
+    else if (activeSort === 'new')
+      a.sort((x, y) => ((y.is_new ? 1 : 0) - (x.is_new ? 1 : 0)) || (oppVal(y) - oppVal(x)));
+    else
+      a.sort((x, y) => oppVal(y) - oppVal(x));
+    return a;
+  }
+
+  function counts(field) {
+    const m = {};
+    opps.forEach(o => { m[o[field]] = (m[o[field]] || 0) + 1; });
+    return m;
+  }
+
+  function renderFilters() {
+    const tc = counts('opp_type'), qc = counts('quadrant');
+    let h = `<span class="sti-pill ${activeType === 'all' ? 'on' : ''}"
+                   onclick="stiFilter('type','all')">All types<span class="n">${opps.length}</span></span>`;
+    Object.keys(TYPE_LABEL).filter(t => tc[t]).forEach(t => {
+      h += `<span class="sti-pill ${activeType === t ? 'on' : ''}"
+                  onclick="stiFilter('type','${t}')">${TYPE_LABEL[t]}<span class="n">${tc[t]}</span></span>`;
+    });
+    h += `<span style="width:14px"></span>`;
+    h += `<span class="sti-pill ${activeQuad === 'all' ? 'on' : ''}"
+                onclick="stiFilter('quad','all')">All priorities</span>`;
+    ['do_now', 'plan', 'delegate', 'ignore'].filter(q => qc[q]).forEach(q => {
+      h += `<span class="sti-pill ${activeQuad === q ? 'on' : ''}"
+                  onclick="stiFilter('quad','${q}')">${QUAD_LABEL[q]}<span class="n">${qc[q]}</span></span>`;
+    });
+    h += `<span class="sti-sort">Sort`;
+    Object.keys(SORT_LABEL).forEach(s => {
+      h += `<span class="sti-pill ${activeSort === s ? 'on' : ''}"
+                  onclick="stiSort('${s}')">${SORT_LABEL[s]}</span>`;
+    });
+    h += `</span>`;
+    document.getElementById('stiFilters').innerHTML = h;
+  }
+
+  window.stiFilter = (kind, v) => {
+    if (kind === 'type') activeType = v; else activeQuad = v;
+    renderFilters(); renderBoard();
+  };
+  window.stiSort = v => { activeSort = v; renderFilters(); renderBoard(); };
+
+  function renderPareto() {
+    const el = document.getElementById('stiPareto');
+    if (!el) return;
+    const vals = opps.map(oppVal).filter(x => x > 0).sort((a, b) => b - a);
+    const total = vals.reduce((s, x) => s + x, 0);
+    if (vals.length < 4 || total <= 0) { el.style.display = 'none'; return; }
+    let cum = 0, n = 0;
+    for (const x of vals) { cum += x; n++; if (cum / total >= 0.8) break; }
+    const top3 = Math.round(vals.slice(0, 3).reduce((s, x) => s + x, 0) / total * 100);
+    el.innerHTML = `<i class="bar" style="--p:${top3}%"></i>`
+      + `<span>Top <b>3</b> opportunities carry <b>${top3}%</b> of the `
+      + `<b>${money(total)}</b>/mo on the board — and <b>${n}</b> of ${vals.length} make up 80%. `
+      + `Start at the top of the list.</span>`;
+  }
+
+  function evRow(label, value) {
+    return value == null || value === '' ? '' :
+      `<div><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div></div>`;
+  }
+
+  function evidenceGrid(o) {
+    const e = o.evidence || {};
+    let h = '';
+    h += evRow('Spend', e.spend != null ? money(e.spend) : null);
+    h += evRow('Sales', e.sales != null ? money(e.sales) : null);
+    h += evRow('Orders', num(e.orders != null ? e.orders : e.ad_orders));
+    h += evRow('Clicks', num(e.clicks));
+    h += evRow('ACOS', e.acos != null ? pct(e.acos) : null);
+    h += evRow('CVR', e.cvr != null ? pct(e.cvr) : null);
+    h += evRow('CTR', e.ctr != null ? pct(e.ctr, 2) : null);
+    h += evRow('Group ACOS', e.group_acos != null ? pct(e.group_acos) : null);
+    h += evRow('Group CVR', e.group_cvr != null ? pct(e.group_cvr) : null);
+    h += evRow('Market / wk', e.market_purchases_wk != null
+                ? Math.round(e.market_purchases_wk) + ' purchases' : null);
+    h += evRow('Ours / wk', e.our_purchases_wk != null
+                ? e.our_purchases_wk.toFixed(1) : null);
+    h += evRow('Our share', e.share != null ? pct(e.share, 2) : null);
+    h += evRow('Attainable', e.attainable_share != null ? pct(e.attainable_share, 1) : null);
+    h += evRow('Market CVR', e.market_cvr != null ? pct(e.market_cvr, 1) : null);
+    h += evRow('Search rank', e.rank);
+    h += evRow('Intensity', e.intensity != null ? pct(e.intensity, 0) + ' top-3' : null);
+    h += evRow('Exact target', e.has_exact_target === undefined ? null
+                : (e.has_exact_target ? 'yes' : 'no'));
+    h += evRow('Tier', e.tier ? e.tier.replace(/_/g, ' ') : null);
+    h += evRow('Terms', num(e.terms));
+    h += evRow('Off-category', e.off_category_spend != null ? money(e.off_category_spend) : null);
+    h += evRow('ASIN targets', num(e.targets));
+    h += evRow('Share of spend', e.share_of_spend != null ? pct(e.share_of_spend, 0) : null);
+    return h;
+  }
+
+  function renderBoard() {
+    const rows = sortRows(opps.filter(o =>
+      (activeType === 'all' || o.opp_type === activeType) &&
+      (activeQuad === 'all' || o.quadrant === activeQuad)));
+
+    if (!rows.length) {
+      document.getElementById('stiBoard').innerHTML =
+        `<div class="sti-banner info">Nothing in this filter.</div>`;
+      return;
+    }
+
+    document.getElementById('stiBoard').innerHTML = rows.map((o, i) => {
+      const st = STI_STATUS[o.id] || o.status || 'open';
+      const dots = [1, 2, 3, 4, 5].map(n =>
+        `<i class="${n <= o.difficulty ? 'on' : ''}"></i>`).join('');
+      const camps = (o.evidence.campaigns || []).map(c =>
+        `<div class="sti-dep">${esc(c.campaign_name)} · ${esc(c.match_type)} ·
+         ${money(c.spend)} · ${c.orders} orders</div>`).join('')
+        || (o.evidence.worst_campaigns || []).map(c =>
+        `<div class="sti-dep">${esc(c.name)} · ${money(c.spend)} across
+         ${c.terms} zero-order terms</div>`).join('')
+        || (o.evidence.top_targets || []).map(c =>
+        `<div class="sti-dep">${esc(c.asin)} · ${money(c.spend)} · ${c.orders} orders ·
+         ACOS ${c.acos != null ? pct(c.acos) : '—'}</div>`).join('');
+
+      return `<div class="sti-opp ${o.blocked_reason ? 'blocked' : ''} ${st === 'done' || st === 'dismissed' ? 'is-done' : ''}" id="opp-${o.id}">
+        <div class="sti-ohead" onclick="stiToggle(${o.id})">
+          <div class="sti-rank">${i + 1}</div>
+          <div>
+            <div class="sti-otitle">${esc(o.title)}</div>
+            <div class="sti-osub">
+              <span class="sti-badge t-${o.opp_type}">${TYPE_LABEL[o.opp_type] || o.opp_type}</span>
+              <span class="sti-badge c-${o.confidence}">${o.confidence} confidence</span>
+              ${o.is_new ? '<span class="sti-badge new">new</span>' : ''}
+              ${st !== 'open' ? `<span class="sti-badge status">${esc(st)}</span>` : ''}
+              ${o.blocked_reason ? `<span class="sti-badge blocked">blocked</span>` : ''}
+              <span class="sti-diff" title="difficulty ${o.difficulty}/5">${dots}</span>
+              <span>${esc(QUAD_LABEL[o.quadrant] || '')}</span>
+              <span>· ${esc(o.timeline)}</span>
+            </div>
+          </div>
+          <div class="sti-oval">
+            <div class="v">${money(o.blocked_reason ? o.score_if_unblocked : o.score)}</div>
+            <div class="u">CM / month</div>
+          </div>
+        </div>
+        <div class="sti-obody" id="body-${o.id}">
+          <div class="why">${esc(o.why)}</div>
+          ${o.blocked_reason ? `<div class="sti-banner warn" style="margin:0 0 10px">
+             <b>Blocked:</b> ${esc(o.blocked_reason)} — worth
+             ${money(o.score_if_unblocked)}/month once cleared.</div>` : ''}
+
+          <div class="sti-sub">Evidence</div>
+          <div class="sti-ev">${evidenceGrid(o)}</div>
+
+          <div class="sti-sub">How the score is built</div>
+          <div class="sti-calc">
+            headroom <b>${money(o.headroom_value)}</b>
+            × win probability <b>${(o.win_probability * 100).toFixed(0)}%</b>
+            × margin <b>${(o.margin_factor * 100).toFixed(0)}%</b>
+            = <b>${money(o.score_if_unblocked)}</b> / month<br>
+            <span style="color:var(--text3)">factors: ${
+              Object.entries(o.factors || {}).map(([kk, vv]) =>
+                kk + ' ' + Number(vv).toFixed(2)).join(' · ')}</span>
+          </div>
+
+          <div class="sti-sub">Required actions</div>
+          <ul class="sti-acts">${(o.required_actions || []).map(a =>
+            `<li><span class="dom">${esc(a.domain)}</span>${esc(a.text)}</li>`).join('')}</ul>
+
+          ${(o.dependencies || []).length ? `<div class="sti-sub">Dependencies</div>
+            ${o.dependencies.map(d => `<div class="sti-dep">
+              <span class="${d.met ? 'met' : 'unmet'}">${d.met ? '✓' : '!'}</span>
+              ${esc(d.text)}</div>`).join('')}` : ''}
+
+          ${camps ? `<div class="sti-sub">Where it happens</div>${camps}` : ''}
+
+          <div class="sti-btns">
+            <button class="sti-btn" onclick="stiStatus(${o.id},'in_progress')">Start</button>
+            <button class="sti-btn" onclick="stiStatus(${o.id},'done')">Mark done</button>
+            <button class="sti-btn" onclick="stiStatus(${o.id},'dismissed')">Dismiss</button>
+            <button class="sti-btn" onclick="stiStatus(${o.id},'open')">Reopen</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  window.stiToggle = id => document.getElementById('body-' + id)?.classList.toggle('open');
+  window.stiOpen = id => {
+    const el = document.getElementById('opp-' + id);
+    if (!el) return;
+    document.getElementById('body-' + id)?.classList.add('open');
+    el.scrollIntoView({behavior: 'smooth', block: 'center'});
+  };
+
+  window.stiStatus = (id, status) => {
+    fetch(`/dashboard/api/sti/opportunity/${id}/status/`, {
+      method: 'POST',
+      headers: {'X-CSRFToken': CSRF_TOKEN,
+                'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'status=' + encodeURIComponent(status) +
+            '&period_key=' + encodeURIComponent((STI.meta || {}).period_key || '')
+    }).then(r => r.json()).then(d => {
+      if (d.ok) { STI_STATUS[id] = d.status; renderBoard();
+                  document.getElementById('body-' + id)?.classList.add('open'); }
+    });
+  };
+
+  // ── Opportunity Map — value vs effort ─────────────────────────────────
+  // Reads the same opportunities the board ranks and plots them: Y = expected
+  // CM/month (sqrt scale so small items stay visible), X = difficulty, colour =
+  // type, bubble = confidence, dashed = blocked. Click a bubble to open it.
+  const TYPE_COLOR = {
+    defend:'#D64541', scale_ppc:'#1E9E6A', listing_fix:'#C08A2E',
+    organic_push:'#1B4A75', capture_share:'#3B82C4', product_gap:'#6B3FA0',
+    conquest:'#A3333D'
+  };
+  window.stiMapOpen = id => {
+    activeType = 'all'; activeQuad = 'all';
+    renderFilters(); renderBoard(); stiOpen(id);
+  };
+  function renderMap() {
+    const wrap = document.getElementById('stiMapWrap');
+    const host = document.getElementById('stiMap');
+    if (!host) return;
+    const valOf = o => (o.blocked_reason ? o.score_if_unblocked : o.score) || 0;
+    const pts = (opps || []).filter(o => valOf(o) > 0);
+    if (pts.length < 2) { if (wrap) wrap.style.display = 'none'; return; }
+    const W = 900, H = 300, padL = 70, padR = 18, padT = 16, padB = 42;
+    const pw = W - padL - padR, ph = H - padT - padB;
+    const maxV = Math.max(...pts.map(valOf), 1);
+    const sy = v => padT + ph - (Math.sqrt(Math.max(v, 0)) / Math.sqrt(maxV)) * ph;
+    const sx = d => padL + ((Math.min(Math.max(d || 1, 1), 5) - 1) / 4) * pw;
+    const rOf = c => c === 'high' ? 8 : c === 'medium' ? 6 : 4.5;
+    // jitter points that share a difficulty so they do not stack on one column
+    const byD = {}; pts.forEach(o => { (byD[o.difficulty] = byD[o.difficulty] || []).push(o); });
+    const jit = new Map();
+    Object.values(byD).forEach(arr => arr.forEach((o, i) =>
+      jit.set(o, arr.length > 1 ? (i / (arr.length - 1) - 0.5) * Math.min(arr.length * 9, 48) : 0)));
+    let g = '';
+    [1, 0.5, 0.25, 0].forEach(f => {
+      const v = maxV * f, y = sy(v);
+      g += `<line class="grid" x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"/>`;
+      g += `<text class="axl" x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end">${money(v)}</text>`;
+    });
+    for (let d = 1; d <= 5; d++)
+      g += `<text class="axl" x="${sx(d).toFixed(1)}" y="${H - padB + 18}" text-anchor="middle">${d}</text>`;
+    g += `<text class="axl" x="${padL}" y="${H - 8}" text-anchor="start">← easier</text>`;
+    g += `<text class="axl" x="${W - padR}" y="${H - 8}" text-anchor="end">harder →</text>`;
+    g += `<text class="axl" transform="translate(15 ${padT + ph / 2}) rotate(-90)" text-anchor="middle">CM / month ↑</text>`;
+    g += `<text class="qlabel" x="${padL + 4}" y="${padT + 11}">do now</text>`;
+    g += `<text class="qlabel" x="${W - padR - 4}" y="${padT + 11}" text-anchor="end">big bets</text>`;
+    pts.slice().sort((a, b) => valOf(b) - valOf(a)).forEach(o => {
+      const cx = sx(o.difficulty) + (jit.get(o) || 0), cy = sy(valOf(o));
+      const col = TYPE_COLOR[o.opp_type] || '#888', blocked = !!o.blocked_reason;
+      const tip = `${o.title} · ${money(valOf(o))}/mo · ${TYPE_LABEL[o.opp_type] || o.opp_type}`
+                + ` · difficulty ${o.difficulty}/5 · ${o.confidence} confidence${blocked ? ' · BLOCKED' : ''}`;
+      g += `<circle class="dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${rOf(o.confidence)}"`
+         + ` fill="${blocked ? 'var(--bg2)' : col}" stroke="${col}" stroke-width="${blocked ? 2 : 1}"`
+         + ` ${blocked ? 'stroke-dasharray="2 2"' : ''} fill-opacity="${blocked ? 1 : 0.78}"`
+         + ` onclick="stiMapOpen(${o.id})"><title>${esc(tip)}</title></circle>`;
+    });
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
+    const present = [...new Set(pts.map(o => o.opp_type))];
+    document.getElementById('stiMapLegend').innerHTML = present.map(t =>
+      `<span><i style="background:${TYPE_COLOR[t] || '#888'}"></i>${TYPE_LABEL[t] || t}</span>`).join('')
+      + `<span style="margin-left:auto;color:var(--text3)">bubble = confidence · dashed = blocked · click a bubble to open it</span>`;
+  }
+
+  renderFilters();
+  renderBoard();
+  renderMap();
+  renderPareto();
+
+  // ── Intent tier table ─────────────────────────────────────────────────
+  const totalSpend = STI.kpis.ad_spend || 1;
+  document.getElementById('stiTiers').innerHTML = (STI.tier_mix || []).map(t => `
+    <tr>
+      <td class="l">${esc(t.label)}</td>
+      <td>${num(t.terms)}</td>
+      <td>${money(t.spend)}</td>
+      <td>${money(t.sales)}</td>
+      <td>${num(t.orders)}</td>
+      <td>${t.acos != null ? pct(t.acos) : '—'}</td>
+      <td>${(t.spend / totalSpend * 100).toFixed(1)}%</td>
+    </tr>`).join('');
+}
+</script>
+{% endblock %}

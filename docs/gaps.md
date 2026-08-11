@@ -43,6 +43,8 @@ project.
 | `MKT-AMS-001` | A dataset that stops delivering is silent | P2 | [marketing](marketing/gaps.md) |
 | `MKT-ADS-001` | A report day that never resolves is invisible | P2 | [marketing](marketing/gaps.md) |
 | `MKT-CAMP-001` | Nothing flags a campaign whose profit rests mostly on fallback margins | P2 | [marketing](marketing/gaps.md) |
+| `MKT-STI-004` | Brand Analytics ingestion may not be scheduled in production | P2 | [marketing](marketing/gaps.md) |
+| `MKT-STI-005` | Campaign names are unavailable for UAE and KSA | P3 | [marketing](marketing/gaps.md) |
 | `REP-PROD-001` | The live fallback builds its own SKU table without the allocator | P2 | [reporting](reporting/gaps.md) |
 | `WM-ERR-001` | The error log has no lifecycle, so a repeating failure buries every real one | P2 | [walmart](walmart/gaps.md) |
 | `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | [inventory](inventory/gaps.md) |

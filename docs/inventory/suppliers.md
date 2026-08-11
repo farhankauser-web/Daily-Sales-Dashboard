@@ -61,7 +61,9 @@ Opening balance upload            Drill: supplier → category → PO → produc
    wastage minus allocated — **plus opening balance**. Nothing else feeds it.
 4. **Opening balance is backlog from before the system went live.** It is owed
    in units, dated, and replaces cleanly on re-upload per supplier and date.
-   It is consumed before PO balance once `INV-D-011` is built (`INV-CONT-002`).
+   It is consumed before PO balance (`INV-D-011` / `INV-CONT-002`, built
+   2026-08-10): a packing list draws opening backlog first, oldest first, then
+   PO lines FIFO, and the drawn units decrement its remaining.
 5. **Outstanding FOB is the money value of the unit balance**, priced at each PO
    group's agreed rate, **in the supplier's currency**. It is a different figure
    in a different currency from a container's FOB (`INV-D-004`) and the two are

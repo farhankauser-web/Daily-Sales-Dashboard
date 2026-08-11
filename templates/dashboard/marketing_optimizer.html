@@ -1,0 +1,359 @@
+{% extends "base/base.html" %}
+{% block title %}Marketing Optimizer{% endblock %}
+{% block nav_marketing_optimizer %}active{% endblock %}
+{% block page_title %}Marketing Optimizer{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for m in allowed_marketplaces %}
+  <button class="mp-btn {% if m == marketplace %}active{% endif %}"
+          onclick="moSetMp('{{ m }}')">
+    {% if m == 'usa' %}🇺🇸 USA{% elif m == 'ca' %}🇨🇦 CA{% elif m == 'uk' %}🇬🇧 UK
+    {% elif m == 'de' %}🇩🇪 DE{% elif m == 'ae' %}🇦🇪 UAE{% elif m == 'sa' %}🇸🇦 KSA
+    {% else %}{{ m|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .mo-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:4px 0 14px; }
+  .mo-tabs { display:flex; gap:4px; }
+  .mo-tab { font-size:13px; font-weight:600; padding:7px 16px; border-radius:8px 8px 0 0;
+            border:1px solid transparent; border-bottom:none; cursor:pointer; color:var(--text2); }
+  .mo-tab.on { background:var(--bg2); border-color:var(--border); color:var(--text); }
+  .mo-sel { font-size:12px; padding:5px 9px; border-radius:7px; border:1px solid var(--border);
+            background:var(--bg2); color:var(--text); }
+  .mo-panel { background:var(--bg2); border:1px solid var(--border); border-radius:0 10px 10px 10px;
+              padding:14px 16px; overflow:hidden; max-width:100%; }
+  /* keep wide tables + charts inside the panel with their own scrollbar,
+     so nothing forces the page (or the chart) wider than the window */
+  #stTable, #bpTable, .mo-chart { overflow-x:auto; max-width:100%; }
+  .mo-chart svg { max-width:100%; }
+  table.mo-t { min-width:720px; }
+  .mo-idnote { font-size:11px; color:var(--warn-ink,#8A6D00); background:var(--warn-weak,#FBF3DF);
+               border:1px solid #EAD499; border-radius:7px; padding:6px 10px; margin:6px 0; }
+  .mo-kpis { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+  .mo-kpi { background:var(--bg4); border-radius:8px; padding:9px 13px; min-width:120px; }
+  .mo-kpi .l { font-size:10px; text-transform:uppercase; letter-spacing:.4px; color:var(--text3); }
+  .mo-kpi .v { font-size:19px; font-weight:700; font-family:'DM Mono',monospace; color:var(--text); }
+  .mo-note { font-size:11.5px; color:var(--text2); background:var(--warn-weak,#FBF3DF);
+             border:1px solid #EAD499; border-radius:8px; padding:8px 11px; margin-bottom:12px; }
+  .mo-chart svg { width:100%; height:auto; display:block; }
+  .mo-pills { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
+  .mo-pill { font-size:11px; padding:4px 11px; border-radius:14px; cursor:pointer;
+             border:1px solid var(--border); background:var(--bg2); color:var(--text2); user-select:none; }
+  .mo-pill.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .mo-pill .n { opacity:.7; margin-left:4px; }
+  .mo-filters { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:4px 0 8px; }
+  .mo-conds { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 10px; }
+  .mo-cond { display:inline-flex; align-items:center; gap:5px; background:var(--bg4);
+             border:1px solid var(--border); border-radius:16px; padding:3px 6px 3px 9px; }
+  .mo-cond .mo-sel { border:none; background:transparent; padding:2px 4px; }
+  .mo-x { cursor:pointer; color:var(--text3); font-weight:700; padding:0 4px; }
+  .mo-x:hover { color:var(--red,#C0392B); }
+  .mo-addcond { font-size:11px; font-weight:600; color:var(--accent); cursor:pointer;
+                border:1px dashed var(--border); border-radius:16px; padding:4px 11px; }
+  .mo-hint { font-size:11px; color:var(--text3); }
+  table.mo-t th:hover { color:var(--accent); }
+  table.mo-t th .ar { color:var(--accent); }
+  table.mo-t { width:100%; border-collapse:collapse; font-size:12px; }
+  table.mo-t th { text-align:right; padding:7px 8px; border-bottom:1px solid var(--border);
+                  color:var(--text3); font-weight:600; font-size:10.5px; text-transform:uppercase;
+                  letter-spacing:.3px; cursor:pointer; white-space:nowrap; }
+  table.mo-t th.l, table.mo-t td.l { text-align:left; }
+  table.mo-t td { padding:7px 8px; border-bottom:1px solid var(--bg4); white-space:nowrap; }
+  table.mo-t tr:hover td { background:var(--bg4); }
+  .mo-act { font-size:11px; font-weight:600; padding:3px 9px; border-radius:12px; display:inline-block; }
+  .a-danger { background:#FDEDEC; color:var(--red,#C0392B); }
+  .a-warn   { background:var(--warn-weak,#FBF3DF); color:var(--warn-ink,#8A6D00); }
+  .a-good   { background:#E0F2EC; color:var(--green,#1E8E5A); }
+  .a-raise  { background:#E0F2EC; color:var(--green,#1E8E5A); }
+  .a-fix    { background:#FDEDEC; color:var(--red,#C0392B); }
+  .a-watch  { background:var(--warn-weak,#FBF3DF); color:var(--warn-ink,#8A6D00); }
+  .a-ok, .a-muted { background:var(--bg3); color:var(--text3); }
+  .mo-anote { font-size:10.5px; color:var(--text3); margin-top:2px; white-space:normal; max-width:320px; }
+  .mo-empty { padding:22px; text-align:center; color:var(--text3); font-size:13px; }
+</style>
+
+<div class="mo-bar">
+  <div class="mo-tabs">
+    <div class="mo-tab on" id="tabBtnTerms" onclick="moTab('terms')">🔍 Search terms</div>
+    <div class="mo-tab" id="tabBtnBudget" onclick="moTab('budget')">💸 Budget pacing</div>
+  </div>
+  <label style="font-size:11px;color:var(--text3);margin-left:auto">Window</label>
+  <select class="mo-sel" id="moPeriod" onchange="moPreset()">
+    {% for p in period_options %}
+    <option value="{{ p.id }}" {% if p.id == '30d' %}selected{% endif %}>{{ p.label }}</option>
+    {% endfor %}
+  </select>
+  <span class="mo-hint">or pick dates</span>
+  <input class="mo-sel" type="date" id="moFrom" onchange="moLoad()" title="From" max="{{ today|date:'Y-m-d' }}">
+  <span class="mo-hint">→</span>
+  <input class="mo-sel" type="date" id="moTo" onchange="moLoad()" title="To" max="{{ today|date:'Y-m-d' }}">
+</div>
+
+<div class="mo-panel" id="panelTerms">
+  <div class="mo-kpis" id="stKpis"></div>
+  <div class="mo-chart" id="stChart"></div>
+  <div class="mo-pills" id="stPills"></div>
+  <div class="mo-idnote" id="stIdNote" style="display:none"></div>
+  <div class="mo-filters">
+    <input class="mo-sel" id="stQuery" placeholder="🔍 search a term…" oninput="stSetQuery(this.value)" style="min-width:160px">
+    <select class="mo-sel" id="stCampaign" onchange="stSetCampaign(this.value)"><option value="all">All campaigns</option></select>
+    <button class="mo-sel" onclick="moExport('terms')" title="Export current view to Excel">⬇ Excel</button>
+    <span class="mo-hint" id="stShown" style="margin-left:auto"></span>
+  </div>
+  <div class="mo-conds" id="stConds"></div>
+  <div id="stTable"></div>
+</div>
+
+<div class="mo-panel" id="panelBudget" style="display:none">
+  <div class="mo-note" id="bpNote"></div>
+  <div class="mo-kpis" id="bpKpis"></div>
+  <div class="mo-chart" id="bpChart"></div>
+  <div class="mo-idnote" id="bpIdNote" style="display:none"></div>
+  <div class="mo-filters">
+    <input class="mo-sel" id="bpQuery" placeholder="🔍 search a campaign…" oninput="bpSetQuery(this.value)" style="min-width:170px">
+    <label class="mo-hint" style="cursor:pointer"><input type="checkbox" id="bpCapped" onchange="bpSetCapped(this.checked)"> capped only</label>
+    <button class="mo-sel" onclick="moExport('budget')" title="Export current view to Excel">⬇ Excel</button>
+    <span class="mo-hint" id="bpShown" style="margin-left:auto"></span>
+  </div>
+  <div class="mo-conds" id="bpConds"></div>
+  <div id="bpTable"></div>
+</div>
+
+<script>
+const MO_MP = '{{ marketplace }}';
+function moSetMp(m){ location.href = `?mp=${m}`; }
+let curTab = 'terms', ST = null, BP = null;
+const money = v => '$' + Math.round(v||0).toLocaleString();
+const num = v => (v==null?'—':Math.round(v).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function moTab(t){
+  curTab = t;
+  tabBtnTerms.classList.toggle('on', t==='terms');
+  tabBtnBudget.classList.toggle('on', t==='budget');
+  panelTerms.style.display = t==='terms' ? '' : 'none';
+  panelBudget.style.display = t==='budget' ? '' : 'none';
+  if (t==='terms' && !ST) loadTerms();
+  if (t==='budget' && !BP) loadBudget();
+}
+function moLoad(){ ST = BP = null; if (curTab==='terms') loadTerms(); else loadBudget(); }
+function kpi(l,v){ return `<div class="mo-kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
+
+function hbars(items, opts){
+  const W=900,H=Math.max(60, items.length*26+24), padL=opts.padL||210, padR=70, padT=8;
+  const max=Math.max(1,...items.map(i=>i.v));
+  let g='';
+  items.forEach((it,i)=>{
+    const y=padT+i*26, bw=(it.v/max)*(W-padL-padR);
+    if(it.bg) g+=`<rect x="${padL}" y="${y+3}" width="${(it.bg/max)*(W-padL-padR)}" height="14" rx="3" fill="var(--bg4)"/>`;
+    g+=`<rect x="${padL}" y="${y+3}" width="${bw.toFixed(1)}" height="14" rx="3" fill="${it.c||'var(--accent)'}"/>`;
+    g+=`<text x="${padL-8}" y="${y+14}" text-anchor="end" font-size="11" fill="var(--text2)">${esc(it.label)}</text>`;
+    g+=`<text x="${(padL+bw+6).toFixed(1)}" y="${y+14}" font-size="11" fill="var(--text)" font-family="'DM Mono',monospace">${it.vlabel||it.v}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}</svg>`;
+}
+
+// ── Search terms tab ──────────────────────────────────────────────────────
+const ST_ACT = {
+  high_spend_no_sales:{label:'Add negative keyword',cls:'a-danger',pr:5,note:'Spend with no orders — stop paying for it.'},
+  losing_money:{label:'Lower bid or negate',cls:'a-danger',pr:4,note:'ACOS above break-even — bleeding money.'},
+  high_ctr_low_cvr:{label:'Fix listing / price',cls:'a-warn',pr:3,note:'They click but do not buy — a listing or price problem, not a bid one.'},
+  scaling_opportunity:{label:'Scale bid up',cls:'a-good',pr:2,note:'Converting below target ACOS — push it.'},
+  high_profit:{label:'Protect & scale',cls:'a-good',pr:1,note:'Strong profit — defend rank and scale.'},
+};
+function actionFor(tags){
+  let best=null;
+  (tags||[]).forEach(t=>{ const a=ST_ACT[t]; if(a && (!best||a.pr>best.pr)) best=a; });
+  return best || {label:'Monitor',cls:'a-muted',note:''};
+}
+function actColor(cls){ return cls==='a-danger'?'#D64541':cls==='a-warn'?'#C08A2E':cls==='a-good'?'#1E9E6A':'#9aa'; }
+// generic click-to-sort + sortable header builder (shared by both tables)
+function moSort(rows,key,dir){
+  return rows.slice().sort((a,b)=>{
+    let x=a[key], y=b[key];
+    if(typeof x==='string'||typeof y==='string')
+      return dir*String(x==null?'':x).toLowerCase().localeCompare(String(y==null?'':y).toLowerCase());
+    x=x==null?-Infinity:x; y=y==null?-Infinity:y; return dir*(x-y);
+  });
+}
+function ths(setter,cols,st){
+  return '<tr>'+cols.map(c=>{ const [label,key,al]=c;
+    if(!key) return `<th class="${al||''}">${label}</th>`;
+    const ar=st.key===key?`<span class="ar">${st.dir<0?' ▼':' ▲'}</span>`:'';
+    return `<th class="${al||''}" onclick="${setter}('${key}')">${label}${ar}</th>`;
+  }).join('')+'</tr>';
+}
+// numeric metric filter, e.g. ACOS > 40
+function numOk(val,op,thr){
+  if(thr===''||thr==null) return true;
+  const t=parseFloat(thr); if(isNaN(t)) return true;
+  if(val==null) return false;
+  return op==='gt'?val>t:op==='lt'?val<t:op==='gte'?val>=t:op==='lte'?val<=t:op==='eq'?val===t:true;
+}
+// UAE/KSA have no synced campaign names — flag it so IDs aren't mistaken for a bug
+function idNote(rows,elId){
+  const el=document.getElementById(elId); if(!el) return;
+  const missing=rows.filter(r=>String(r.campaign).startsWith('#')).length;
+  if(rows.length && missing/rows.length>0.5){
+    el.style.display='';
+    el.textContent=`⚠ Campaign names aren't synced for ${MO_MP.toUpperCase()} — showing campaign IDs (still actionable in Amazon by ID).`;
+  } else { el.style.display='none'; }
+}
+// window: preset dropdown OR a custom From/To calendar
+function moWinQS(){
+  const f=document.getElementById('moFrom').value, t=document.getElementById('moTo').value;
+  if(f&&t) return `start=${f}&end=${t}`;
+  return `period=${document.getElementById('moPeriod').value}`;
+}
+window.moPreset=()=>{ document.getElementById('moFrom').value=''; document.getElementById('moTo').value=''; moLoad(); };
+// compound filters — conditions ANDed, shared by both tables
+const OPS=[['gt','>'],['lt','<'],['gte','≥'],['lte','≤'],['eq','=']];
+const ST_METRICS=[['acos','ACOS %'],['spend','Spend'],['sales','Sales'],['orders','Orders'],['clicks','Clicks'],['cvr','CVR %'],['ctr','CTR %'],['roas','ROAS'],['est_profit','Est profit'],['action','Suggested action']];
+const BP_METRICS=[['capped_days','Capped days'],['active_days','Active days'],['cap_rate','Cap rate %'],['spend','Spend'],['acos','ACOS %']];
+const ST_ACTIONS=['Add negative keyword','Lower bid or negate','Fix listing / price','Scale bid up','Protect & scale','Monitor'];
+let stConds=[], bpConds=[];
+const condsOf=p=>p==='st'?stConds:bpConds;
+const metricsOf=p=>p==='st'?ST_METRICS:BP_METRICS;
+function renderConds(p){
+  const el=document.getElementById(p+'Conds'); if(!el) return;
+  el.innerHTML = condsOf(p).map((c,i)=>{
+    const isA=c.metric==='action';
+    const mo=metricsOf(p).map(([k,l])=>`<option value="${k}" ${c.metric===k?'selected':''}>${l}</option>`).join('');
+    const oo=OPS.map(([k,l])=>`<option value="${k}" ${c.op===k?'selected':''}>${l}</option>`).join('');
+    const val=isA
+      ? `<select class="mo-sel" onchange="condSet('${p}',${i},'val',this.value)">`+ST_ACTIONS.map(a=>`<option ${c.val===a?'selected':''}>${a}</option>`).join('')+`</select>`
+      : `<input class="mo-sel" type="number" style="width:72px" value="${c.val==null?'':c.val}" placeholder="value" oninput="condSet('${p}',${i},'val',this.value)">`;
+    return `<span class="mo-cond"><select class="mo-sel" onchange="condSet('${p}',${i},'metric',this.value)">${mo}</select>`
+      +(isA?`<span class="mo-hint">is</span>`:`<select class="mo-sel" onchange="condSet('${p}',${i},'op',this.value)">${oo}</select>`)
+      +val+`<span class="mo-x" onclick="condDel('${p}',${i})">×</span></span>`;
+  }).join('') + `<span class="mo-addcond" onclick="condAdd('${p}')">+ add filter</span>`;
+}
+window.condAdd=p=>{ condsOf(p).push({metric:metricsOf(p)[0][0],op:'gte',val:''}); renderConds(p); condApply(p); };
+window.condDel=(p,i)=>{ condsOf(p).splice(i,1); renderConds(p); condApply(p); };
+window.condSet=(p,i,f,v)=>{ const c=condsOf(p)[i]; c[f]=v;
+  if(f==='metric'){ if(v==='action'){c.op='is'; c.val=ST_ACTIONS[0];} else if(c.op==='is'){c.op='gte'; c.val='';} renderConds(p); }
+  condApply(p); };
+function condApply(p){ p==='st'?renderStTable():renderBpTable(); }
+function condOk(row,list,actionOf){
+  for(const c of list){
+    if(c.metric==='action'){ if(!actionOf||actionOf(row)!==c.val) return false; }
+    else if(!numOk(row[c.metric], c.op, c.val)) return false;
+  }
+  return true;
+}
+function condStr(list){ return list.filter(c=> c.metric==='action'?c.val:(c.val!=='' && c.val!=null))
+  .map(c=>`${c.metric}:${c.metric==='action'?'is':c.op}:${c.val}`).join(';'); }
+window.moExport=tab=>{
+  let url=`/dashboard/api/mkt-export/?mp=${MO_MP}&tab=${tab}&${moWinQS()}`;
+  if(tab==='terms'){
+    url+=`&q=${encodeURIComponent(stQ)}&campaign=${encodeURIComponent(stCampF)}&action=${encodeURIComponent(stFilter)}&cond=${encodeURIComponent(condStr(stConds))}`;
+  } else {
+    let cs=condStr(bpConds); if(bpCappedOnly) cs=(cs?cs+';':'')+'capped_days:gte:1';
+    url+=`&q=${encodeURIComponent(bpQ)}&cond=${encodeURIComponent(cs)}`;
+  }
+  window.location.href=url;
+};
+
+let stFilter='all', stCampF='all', stQ='', stSort={key:'spend',dir:-1};
+async function loadTerms(){
+  stTable.innerHTML='<div class="mo-empty">Loading…</div>';
+  ST = await (await fetch(`/dashboard/api/mkt-search-terms/?mp=${MO_MP}&${moWinQS()}&limit=1200`)).json();
+  const k=ST.kpi;
+  stKpis.innerHTML = kpi('Term×campaign rows',num(k.rows))+kpi('Distinct terms',num(k.terms))
+    +kpi('Ad spend',money(k.spend))+kpi('Ad sales',money(k.sales))
+    +kpi('Est. profit',money(k.est_profit))+kpi('Orders',num(k.orders));
+  document.getElementById('stCampaign').innerHTML='<option value="all">All campaigns</option>'
+    +(ST.campaigns||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  const byAct={};
+  ST.rows.forEach(r=>{ const a=actionFor(r.tags); byAct[a.label]=byAct[a.label]||{v:0,c:actColor(a.cls)}; byAct[a.label].v+=r.spend; });
+  const items=Object.entries(byAct).map(([label,o])=>({label,v:Math.round(o.v),vlabel:money(o.v),c:o.c})).sort((a,b)=>b.v-a.v);
+  stChart.innerHTML = items.length ? '<div style="font-size:11px;color:var(--text3);margin:2px 0 6px">Ad spend by recommended action</div>'+hbars(items,{padL:180}) : '';
+  idNote(ST.rows,'stIdNote');
+  renderStPills(); renderStTable();
+}
+function renderStPills(){
+  const c={all:ST.rows.length};
+  ST.rows.forEach(r=>{ const a=actionFor(r.tags); c[a.label]=(c[a.label]||0)+1; });
+  let h=`<span class="mo-pill ${stFilter==='all'?'on':''}" onclick="stSetFilter('all')">All<span class="n">${c.all}</span></span>`;
+  Object.keys(c).filter(x=>x!=='all').forEach(l=>{ h+=`<span class="mo-pill ${stFilter===l?'on':''}" onclick="stSetFilter('${esc(l)}')">${esc(l)}<span class="n">${c[l]}</span></span>`; });
+  stPills.innerHTML=h;
+}
+window.stSetFilter=l=>{ stFilter=l; renderStPills(); renderStTable(); };
+window.stSetCampaign=v=>{ stCampF=v; renderStTable(); };
+window.stSetQuery=v=>{ stQ=(v||'').toLowerCase(); renderStTable(); };
+window.stSetSort=k=>{ if(stSort.key===k) stSort.dir*=-1; else stSort={key:k,dir:-1}; renderStTable(); };
+function renderStTable(){
+  let rows=ST.rows.filter(r=>
+    (stFilter==='all'||actionFor(r.tags).label===stFilter) &&
+    (stCampF==='all'||r.campaign===stCampF) &&
+    (!stQ||(r.search_term||'').toLowerCase().includes(stQ)) &&
+    condOk(r, stConds, x=>actionFor(x.tags).label));
+  rows=moSort(rows,stSort.key,stSort.dir).slice(0,400);
+  document.getElementById('stShown').textContent = `${rows.length} row(s)`;
+  if(!rows.length){ stTable.innerHTML='<div class="mo-empty">No rows for this filter.</div>'; return; }
+  const cols=[['Search term','search_term','l'],['Campaign','campaign','l'],['Spend','spend',''],
+    ['Sales','sales',''],['Orders','orders',''],['Clicks','clicks',''],['ACOS','acos',''],
+    ['CVR','cvr',''],['CTR','ctr',''],['Suggested action','','l']];
+  stTable.innerHTML=`<table class="mo-t"><thead>${ths('stSetSort',cols,stSort)}</thead><tbody>`
+    + rows.map(r=>{ const a=actionFor(r.tags); return `<tr>
+      <td class="l"><b>${esc(r.search_term)}</b></td>
+      <td class="l">${esc(r.campaign)}</td>
+      <td>${money(r.spend)}</td><td>${money(r.sales)}</td><td>${num(r.orders)}</td><td>${num(r.clicks)}</td>
+      <td>${r.acos==null?'—':r.acos+'%'}</td><td>${r.cvr==null?'—':r.cvr+'%'}</td><td>${r.ctr==null?'—':r.ctr+'%'}</td>
+      <td class="l"><span class="mo-act ${a.cls}">${a.label}</span><div class="mo-anote">${esc(a.note)}</div></td>
+    </tr>`; }).join('') + '</tbody></table>';
+}
+
+// ── Budget pacing tab ─────────────────────────────────────────────────────
+async function loadBudget(){
+  bpTable.innerHTML='<div class="mo-empty">Loading…</div>';
+  BP = await (await fetch(`/dashboard/api/budget-pacing/?mp=${MO_MP}&${moWinQS()}`)).json();
+  const exact = BP.method === 'exact';
+  bpNote.innerHTML = `<b>${exact ? '✓ Exact data' : '⚠ Estimated'}</b> — ${esc(BP.estimate_note)}`;
+  bpNote.style.cssText = exact
+    ? 'background:#E0F2EC;border:1px solid #8FD3B6;color:var(--green,#1E8E5A)'
+    : '';
+  const k=BP.kpi;
+  bpKpis.innerHTML = kpi('Campaigns',num(k.campaigns))+kpi('Capped ≥1 day',num(k.campaigns_capped))
+    +kpi('Total capped-days',num(k.capped_days))+kpi('Spend on capped',money(k.spend_capped));
+  const top=BP.rows.filter(r=>r.capped_days>0).slice(0,12)
+    .map(r=>({label:r.campaign.slice(0,30),v:r.capped_days,bg:r.active_days,c:'#D85A30',
+              vlabel:`${r.capped_days}/${r.active_days} d`}));
+  bpChart.innerHTML = top.length ? '<div style="font-size:11px;color:var(--text3);margin:2px 0 6px">Days a campaign likely hit its budget (orange) out of its active days (grey) — top 12</div>'+hbars(top,{padL:220}) : '';
+  idNote(BP.rows,'bpIdNote');
+  renderBpTable();
+}
+let bpSort={key:'capped_days',dir:-1}, bpQ='', bpCappedOnly=false;
+window.bpSetQuery=v=>{ bpQ=(v||'').toLowerCase(); renderBpTable(); };
+window.bpSetCapped=c=>{ bpCappedOnly=c; renderBpTable(); };
+window.bpSetSort=k=>{ if(bpSort.key===k) bpSort.dir*=-1; else bpSort={key:k,dir:-1}; renderBpTable(); };
+function renderBpTable(){
+  let rows=(BP.rows||[]).filter(r=>
+    (!bpQ||(r.campaign||'').toLowerCase().includes(bpQ)) &&
+    (!bpCappedOnly||r.capped_days>0) &&
+    condOk(r, bpConds, null));
+  rows=moSort(rows,bpSort.key,bpSort.dir).slice(0,300);
+  document.getElementById('bpShown').textContent = `${rows.length} campaign(s)`;
+  if(!rows.length){ bpTable.innerHTML='<div class="mo-empty">No campaigns for this filter.</div>'; return; }
+  const cols=[['Campaign','campaign','l'],['Capped days','capped_days',''],['Active days','active_days',''],
+    ['Cap rate','cap_rate',''],['Spend','spend',''],['ACOS','acos',''],['Detail','','l'],['Recommendation','','l']];
+  bpTable.innerHTML=`<table class="mo-t"><thead>${ths('bpSetSort',cols,bpSort)}</thead><tbody>`
+    + rows.map(r=>`<tr>
+      <td class="l"><b>${esc(r.campaign)}</b></td>
+      <td>${r.capped_days}</td><td>${r.active_days}</td><td>${r.cap_rate}%</td>
+      <td>${money(r.spend)}</td><td>${r.acos==null?'—':r.acos+'%'}</td>
+      <td class="l" style="color:var(--text3)">${esc(r.detail||'')}</td>
+      <td class="l"><span class="mo-act a-${r.action.level}">${esc(r.action.label)}</span>
+        <div class="mo-anote">${esc(r.action.note)}</div></td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+renderConds('st'); renderConds('bp');
+loadTerms();
+</script>
+{% endblock %}

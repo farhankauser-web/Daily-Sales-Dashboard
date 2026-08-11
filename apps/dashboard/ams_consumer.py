@@ -268,6 +268,39 @@ def _num(payload: dict, cast, *keys):
     return cast(0)
 
 
+def extract_budget_usage(payload: dict, tz_name: str) -> dict | None:
+    """Pull one budget-usage event into {date, campaign_id, usage_pct, budget_value}.
+
+    Budget-usage is NOT folded into the hourly snapshot (it is not a spend
+    metric); it is persisted separately by the ingest command into
+    CampaignBudgetUsageDaily. Returns None when the event has no campaign or no
+    usable timestamp.
+    """
+    campaign_id = str(payload.get('campaign_id') or '').strip()
+    if not campaign_id:
+        return None
+    dh = time_window_to_local(payload, tz_name)
+    date_str = dh[0] if dh else None
+    if not date_str:
+        # budget-usage may stamp its own field rather than time_window_start
+        for k in ('usage_updated_timestamp', 'budget_updated_timestamp',
+                  'time_window_end'):
+            v = payload.get(k)
+            if v:
+                dh2 = time_window_to_local({'time_window_start': v}, tz_name)
+                if dh2:
+                    date_str = dh2[0]
+                    break
+    if not date_str:
+        return None
+    usage = float(_num(payload, Decimal, 'percentage_of_budget_used',
+                       'percent_of_budget_consumed', 'budget_usage_percent'))
+    budget = float(_num(payload, Decimal, 'campaign_budget_amount',
+                        'budget_amount', 'daily_budget'))
+    return {'date': date_str, 'campaign_id': campaign_id,
+            'usage_pct': usage, 'budget_value': budget}
+
+
 def fold_into_bucket(
     buckets: dict,
     marketplace: str,

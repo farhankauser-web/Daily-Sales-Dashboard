@@ -42,7 +42,7 @@ from django.utils import timezone
 
 from apps.dashboard.ams_consumer import (
     HourlyBucket, parse_envelope, infer_dataset, fold_into_bucket,
-    iter_json_objects,
+    iter_json_objects, extract_budget_usage,
 )
 from apps.dashboard.completeness import log_sync
 
@@ -131,6 +131,7 @@ class Command(BaseCommand):
     def _ingest_marketplace(self, s3, mp, cfg, since_dt, max_objects, dry_run):
         from apps.dashboard.models import (
             AmsProcessedObject, PPCCampaignHourlySnapshot, AdsStreamSubscription,
+            CampaignBudgetUsageDaily,
         )
 
         bucket = cfg['bucket']
@@ -150,6 +151,8 @@ class Command(BaseCommand):
 
         # 3) Process each, accumulating buckets across the batch
         all_buckets: dict[tuple, HourlyBucket] = {}
+        # budget-usage rolled to (date, campaign_id) → peak usage % for the day.
+        budget_rows: dict[tuple, dict] = {}
         per_object_stats = []   # (key, size, records_parsed, records_used)
         total_parsed = total_used = total_skipped = 0
         budget_records = 0
@@ -190,7 +193,19 @@ class Command(BaseCommand):
                     continue
                 if dataset == 'budget-usage':
                     budget_records += 1
-                    continue   # not folded into hourly snapshot
+                    bu = extract_budget_usage(payload, tz_name)
+                    if bu:
+                        bk = (bu['date'], bu['campaign_id'])
+                        cur = budget_rows.get(bk)
+                        if cur is None:
+                            budget_rows[bk] = {'usage': bu['usage_pct'],
+                                               'budget': bu['budget_value'], 'n': 1}
+                        else:
+                            cur['usage'] = max(cur['usage'], bu['usage_pct'])
+                            if bu['budget_value']:
+                                cur['budget'] = bu['budget_value']
+                            cur['n'] += 1
+                    continue   # persisted separately, not folded into hourly
                 if fold_into_bucket(all_buckets, mp, tz_name, payload, dataset):
                     n_used += 1
 
@@ -238,6 +253,24 @@ class Command(BaseCommand):
             self._additive_upsert(traffic_rows,    'traffic')
             self._additive_upsert(conversion_rows, 'conversion')
 
+            # 4b) Budget-usage → one row per campaign/day, keeping the PEAK usage
+            #     %. Not additive (a percentage never sums); MAX is idempotent, so
+            #     the AmsProcessedObject ledger plus max() makes re-delivery safe.
+            for (d_iso, cid), v in budget_rows.items():
+                obj, created = CampaignBudgetUsageDaily.objects.get_or_create(
+                    marketplace=mp, date=date_cls.fromisoformat(d_iso),
+                    campaign_id=cid,
+                    defaults={'budget_value': v['budget'],
+                              'usage_pct': v['usage'], 'events': v['n']})
+                if not created:
+                    if v['usage'] > float(obj.usage_pct):
+                        obj.usage_pct = v['usage']
+                    if v['budget']:
+                        obj.budget_value = v['budget']
+                    obj.events += v['n']
+                    obj.save(update_fields=['usage_pct', 'budget_value',
+                                            'events', 'updated_at'])
+
             # 5) Mark each S3 object processed (dedup ledger)
             AmsProcessedObject.objects.bulk_create([
                 AmsProcessedObject(
@@ -278,6 +311,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f'    ✓ upserted {len(all_buckets)} hourly buckets · '
+            f'{len(budget_rows)} budget-usage day rows · '
             f'logged {len(dates_seen)} day(s) as sp_hourly=ok'
         ))
 

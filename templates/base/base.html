@@ -642,11 +642,17 @@ tfoot td:first-child { text-align: left; }
   {% endif %}
 
   <div class="nav-section">Marketing</div>
+  <a href="{% url 'dashboard:search_intelligence' %}" class="nav-item {% block nav_sti %}{% endblock %}">
+    <span class="nav-icon">🧠</span> Search Intelligence
+  </a>
   <a href="{% url 'dashboard:campaigns_list' %}" class="nav-item {% block nav_campaigns %}{% endblock %}">
     <span class="nav-icon">🎯</span> Campaigns
   </a>
   <a href="{% url 'dashboard:search_terms' %}" class="nav-item {% block nav_search_terms %}{% endblock %}">
     <span class="nav-icon">🔍</span> Search Terms
+  </a>
+  <a href="{% url 'dashboard:marketing_optimizer' %}" class="nav-item {% block nav_marketing_optimizer %}{% endblock %}">
+    <span class="nav-icon">⚡</span> Optimizer &amp; Budget
   </a>
   <a href="{% url 'dashboard:placements' %}" class="nav-item {% block nav_placements %}{% endblock %}">
     <span class="nav-icon">📍</span> Placements

@@ -93,3 +93,73 @@ class ProductForm(forms.ModelForm):
             'fba_fee':           forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'referral_fee_pct':  forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
         }
+
+
+class ProductGroupForm(forms.ModelForm):
+    """
+    Curate a Search Intelligence product group.
+
+    The catalog defines the group (`MKT-D-012` scoping rule): categories route
+    both the ASINs and — through the advertised-product report — the ad spend.
+    Campaign initials are recorded for reading a report and are deliberately
+    NOT editable here, because editing them would imply they scope something.
+
+    ASIN overrides are free text rather than a picker: they exist for the cases
+    the category rule gets wrong, which are by definition the ones a picker
+    built from the same categories would not offer.
+    """
+    categories = forms.MultipleChoiceField(
+        required=False, choices=(),
+        widget=forms.CheckboxSelectMultiple,
+        help_text='Every catalog category in this group. This is the definition — '
+                  'ad spend follows the ASINs these categories contain.')
+    extra_asins_raw = forms.CharField(
+        required=False, label='Extra ASINs',
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3,
+                                     'placeholder': 'B0XXXXXXXX, one per line'}),
+        help_text='Added on top of the categories, for ASINs the rule misses.')
+    excluded_asins_raw = forms.CharField(
+        required=False, label='Excluded ASINs',
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        help_text='Removed after every other rule has been applied.')
+
+    class Meta:
+        from .models import ProductGroup
+        model = ProductGroup
+        fields = ['name', 'lexicon_key', 'active']
+        widgets = {
+            'name':        forms.TextInput(attrs={'class': 'form-control'}),
+            'lexicon_key': forms.TextInput(attrs={'class': 'form-control'}),
+        }
+
+    def __init__(self, *args, category_choices=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        # Choices arrive as (value, label) so the label can carry the product
+        # count — picking a category blind is how a group ends up wrong.
+        self.fields['categories'].choices = list(category_choices)
+        if self.instance and self.instance.pk:
+            self.fields['categories'].initial = self.instance.categories or []
+            self.fields['extra_asins_raw'].initial = \
+                '\n'.join(self.instance.extra_asins or [])
+            self.fields['excluded_asins_raw'].initial = \
+                '\n'.join(self.instance.excluded_asins or [])
+
+    @staticmethod
+    def _asins(raw: str) -> list:
+        parts = (raw or '').replace(',', ' ').split()
+        return sorted({p.strip().upper() for p in parts if p.strip()})
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        # dict.fromkeys: dedupe while keeping the order the user sees. A
+        # duplicated category is harmless in an IN clause and still wrong
+        # everywhere it is counted or displayed.
+        obj.categories = sorted(dict.fromkeys(self.cleaned_data.get('categories') or []))
+        obj.extra_asins = self._asins(self.cleaned_data.get('extra_asins_raw'))
+        obj.excluded_asins = self._asins(self.cleaned_data.get('excluded_asins_raw'))
+        if not obj.slug:
+            from django.utils.text import slugify
+            obj.slug = slugify(obj.name)
+        if commit:
+            obj.save()
+        return obj

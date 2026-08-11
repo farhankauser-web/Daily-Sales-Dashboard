@@ -129,6 +129,7 @@ const N = n => (n||0).toLocaleString();
 const Z = n => n ? N(n) : '<span class="zero">0</span>';
 const M = n => '$' + (n||0).toLocaleString(undefined,{maximumFractionDigits:0});
 let SUP = [], CATS = [], POS = [], curSup = null, curCat = null, upKind = 'po';
+let CUR_PO = null, CUR_PP = null, OPENING = [];
 const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
 let SHOW_INACTIVE = false;
 const URLS = {
@@ -163,8 +164,11 @@ function renderSup(){
         style="${s.is_active === false ? 'opacity:.5' : ''}">
       <td class="l"><span class="lnk">${s.name}</span>${
         s.is_active === false ? ' <span class="muted">(inactive)</span>' : ''}${CAN_EDIT
-        ? ` <span class="lnk" style="font-weight:400"
-             onclick="event.stopPropagation();openSup(${s.id})">✎</span>` : ''}</td>
+        ? ` <span class="lnk" style="font-weight:400" title="Edit supplier"
+             onclick="event.stopPropagation();openSup(${s.id})">✎</span>
+            <span class="lnk" style="font-weight:400;color:var(--danger,#c0392b)"
+             title="Delete supplier"
+             onclick="event.stopPropagation();delSup(${s.id},'${esc(s.name)}')">🗑</span>` : ''}</td>
       <td>${N(s.open_pos)}</td><td>${Z(s.opening)}</td><td>${N(s.ordered)}</td>
       <td>${Z(s.wastage)}</td><td>${N(s.allocated)}</td><td>${N(s.in_transit)}</td>
       <td>${N(s.received)}</td><td><b>${N(s.remaining)}</b></td>
@@ -261,6 +265,118 @@ async function saveSup(e){
 
 function toggleInactive(cb){ SHOW_INACTIVE = cb.checked; load(); }
 
+// ── delete / edit helpers ─────────────────────────────────────────────────
+async function postJSON(url, body){
+  const r = await fetch(url, {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+    body: JSON.stringify(body)});
+  const j = await r.json().catch(() => ({}));
+  return {ok: r.ok, status: r.status, j};
+}
+
+// Supplier delete (safe: deactivates if it has history)
+async function delSup(id, name){
+  if (!await ixConfirm(`Delete supplier "${name}"? If it has any purchase `
+      + `orders or opening balance it will be deactivated instead, keeping its `
+      + `history.`, {title:'Delete supplier'})) return;
+  const {j} = await postJSON('{% url "inventory_planning:api_supplier_delete" %}', {id});
+  await ixAlert(j.error || j.message || 'Done.');
+  if (j.status === 'ok') load();
+}
+
+// PO edit
+function openPOEdit(){
+  const p = CUR_PO; if (!p) return;
+  document.getElementById('upCard').innerHTML = `
+    <h3>Edit PO ${p.po_number}</h3>
+    <form id="poForm">
+      <div class="f"><label>PO number</label>
+        <input id="po_num" required value="${p.po_number||''}"></div>
+      <div class="f"><label>Order date</label>
+        <input id="po_od" type="date" value="${p.order_date||''}"></div>
+      <div class="f"><label>Expected ready date</label>
+        <input id="po_rd" type="date" value="${p.ready||''}"></div>
+      <div class="f"><label>Payment terms</label>
+        <input id="po_terms" value="${(p.terms||'').replace(/"/g,'&quot;')}"></div>
+      <div class="f"><label>Currency</label>
+        <input id="po_cur" value="${p.currency||'USD'}"></div>
+      <div class="f"><label>Status</label>
+        <select id="po_status">${['draft','open','partial','allocated','closed','cancelled']
+          .map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="f"><label>Notes</label>
+        <input id="po_notes" value="${(p.notes||'').replace(/"/g,'&quot;')}"></div>
+      <div style="text-align:right;margin-top:14px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeUp()">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-left:6px">Save</button>
+      </div>
+    </form>`;
+  document.getElementById('poForm').onsubmit = savePO;
+  upModal.classList.add('on');
+}
+async function savePO(e){
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const {j} = await postJSON('{% url "inventory_planning:api_po_save" %}', {
+    id: CUR_PO.id, po_number: po_num.value, order_date: po_od.value,
+    expected_ready_date: po_rd.value, payment_terms: po_terms.value,
+    currency: po_cur.value, status: po_status.value, notes: po_notes.value});
+  if (j.status === 'ok'){ closeUp(); await ixAlert(j.message);
+    if (curSup) openSupplier(curSup.id); }
+  else { await ixAlert(j.error || 'Save failed.'); btn.disabled=false; btn.textContent='Save'; }
+}
+// PO delete (safe: blocked if received/allocated)
+async function delPO(){
+  const p = CUR_PO; if (!p) return;
+  if (!await ixConfirm(`Delete PO ${p.po_number} and all its production plans and `
+      + `SKU lines? This cannot be undone.`, {title:'Delete PO'})) return;
+  const {j} = await postJSON('{% url "inventory_planning:api_po_delete" %}', {id: p.id});
+  await ixAlert(j.error || j.message || 'Done.');
+  if (j.status === 'ok'){ closeUp(); if (curSup) openSupplier(curSup.id); }
+}
+
+// Production plan edit
+function openPPEdit(){
+  const p = CUR_PP; if (!p) return;
+  document.getElementById('upCard').innerHTML = `
+    <h3>Edit ${p.pp || 'production plan'} · ${p.category}</h3>
+    <form id="ppForm">
+      <div class="f"><label>PP number</label>
+        <input id="pp_num" value="${p.pp||''}" placeholder="PP-1"></div>
+      <div class="f"><label>Expected ready date</label>
+        <input id="pp_rd" type="date" value="${p.ready||''}"></div>
+      <div class="f"><label>Status</label>
+        <select id="pp_status">${['open','partial','allocated','closed','short_closed','cancelled']
+          .map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s.replace(/_/g,' ')}</option>`).join('')}</select></div>
+      <div class="f"><label>Notes</label>
+        <input id="pp_notes" value="${(p.notes||'').replace(/"/g,'&quot;')}"></div>
+      <div style="text-align:right;margin-top:14px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="openPP(${p.id})">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-left:6px">Save</button>
+      </div>
+    </form>`;
+  document.getElementById('ppForm').onsubmit = savePP;
+}
+async function savePP(e){
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const {j} = await postJSON('{% url "inventory_planning:api_production_plan_save" %}', {
+    id: CUR_PP.id, pp_number: pp_num.value, expected_ready_date: pp_rd.value,
+    status: pp_status.value, notes: pp_notes.value});
+  if (j.status === 'ok'){ await ixAlert(j.message); openPP(CUR_PP.id); }
+  else { await ixAlert(j.error || 'Save failed.'); btn.disabled=false; btn.textContent='Save'; }
+}
+// Production plan delete (safe: blocked if received/allocated)
+async function delPP(){
+  const p = CUR_PP; if (!p) return;
+  if (!await ixConfirm(`Delete ${p.pp || 'this production plan'} (${p.category}) and `
+      + `its SKU lines from ${p.po}? This cannot be undone.`, {title:'Delete production plan'})) return;
+  const {j} = await postJSON('{% url "inventory_planning:api_production_plan_delete" %}', {id: p.id});
+  await ixAlert(j.error || j.message || 'Done.');
+  if (j.status === 'ok'){ closeUp(); if (CUR_PO) openPO(CUR_PO.id); else if (curSup) openSupplier(curSup.id); }
+}
+
 function showSuppliers(){
   curSup = curCat = null; crumb();
   pnl_sup.style.display=''; pnl_cat.style.display='none';
@@ -271,6 +387,7 @@ function backToSupplier(){ curCat=null; openSupplier(curSup.id); }
 async function openSupplier(id){
   const r = await (await fetch(`/planning/api/supplier/${id}/`)).json();
   curSup = r.supplier; curCat = null; CATS = r.categories; POS = r.purchase_orders;
+  OPENING = r.opening_lines || [];
   crumb();
   cat_title.textContent = curSup.name;
   renderCats(); renderPOs();
@@ -305,13 +422,18 @@ async function openPO(id){
   const po = r.po;
   po_title.textContent = `${po.po_number} · ${po.supplier}`
       + (curCat ? ` · ${curCat}` : '');
+  CUR_PO = po;
   let h = `<div style="padding:10px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid #EDEFF1">
       PO Issued <b style="color:var(--text)">${N(po.ordered)}</b> ·
       Wastage <b style="color:var(--text)">${N(po.wastage)}</b> ·
       Allocated <b style="color:var(--text)">${N(po.allocated)}</b> ·
       Received <b style="color:var(--text)">${N(po.received)}</b> ·
       Balance <b style="color:var(--text)">${N(po.remaining)}</b> ·
-      FOB <b style="color:var(--text)">${M(po.fob_value)}</b> · ${pill(po.status)}</div>`;
+      FOB <b style="color:var(--text)">${M(po.fob_value)}</b> · ${pill(po.status)}
+      ${CAN_EDIT ? `<span style="float:right">
+        <span class="lnk" onclick="openPOEdit()">✎ edit</span>
+        <span class="lnk" style="margin-left:10px;color:var(--danger,#c0392b)"
+              onclick="delPO()">🗑 delete</span></span>` : ''}</div>`;
   const groups = curCat ? r.groups.filter(g => g.category === curCat) : r.groups;
   for (const g of groups){
     h += `<div style="padding:9px 14px;background:var(--surface2);border-bottom:1px solid #EDEFF1;font-size:12px">
@@ -330,6 +452,27 @@ async function openPO(id){
         <td><b>${N(l.remaining)}</b></td><td class="l">${pill(l.status)}</td></tr>`).join('')
       + `</tbody></table>`;
   }
+  // INV-CONT-002: opening backlog is SUPPLIER-level, not tied to any PO — so it
+  // is rendered here from the supplier's own opening lines, and shows even for a
+  // category that has opening backlog but no PO line on this PO (e.g. Hand Towel).
+  const ocats = curCat ? [curCat] : [...new Set(OPENING.map(o => o.category))];
+  let openingShown = 0;
+  for (const c of ocats){
+    const ol = OPENING.filter(o => o.category === c && (o.units || o.allocated));
+    if (!ol.length) continue;
+    openingShown += ol.length;
+    h += `<div style="padding:7px 14px;font-size:11px;color:var(--text2);background:var(--surface2);border-bottom:1px solid #EDEFF1">
+        📦 <b>Opening backlog · ${c}</b> <span class="muted">— supplier-level backlog, drawn before any PO</span></div>
+      <table class="t"><thead><tr><th class="l">SKU</th><th class="l">Name</th><th>Opening</th>
+        <th>Allocated</th><th>Received</th><th>Balance</th><th>FOB</th></tr></thead><tbody>`
+      + ol.map(o => `<tr><td class="l">${o.sku}</td><td class="l">${o.name||''}</td>
+        <td>${N(o.units)}</td><td>${N(o.allocated)}</td><td>${N(o.received)}</td>
+        <td><b>${N(o.remaining)}</b></td><td>${o.fob ? ('$'+o.fob.toFixed(2)) : '—'}</td></tr>`).join('')
+      + `</tbody></table>`;
+  }
+  if (!groups.length && !openingShown)
+    h += `<div class="l muted" style="padding:14px">No PO lines or opening backlog for `
+       + `${curCat || 'this PO'}.</div>`;
   po_body.innerHTML = h;
   pnl_lines.style.display=''; pnl_cat.style.display='none'; pnl_po.style.display='none';
 }
@@ -337,6 +480,7 @@ async function openPO(id){
 async function openPP(id){
   const r = await (await fetch(`/planning/api/production-plan/${id}/`)).json();
   const p = r.plan;
+  CUR_PP = p;
   let h = `<h3>${p.pp} · ${p.category}</h3>
     <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
       ${p.supplier} · ${p.po} · FOB $${p.fob.toFixed(2)}/unit${p.ready ? ' · ready by '+p.ready : ''}<br>
@@ -361,7 +505,12 @@ async function openPP(id){
       `</tbody></table>`
     : `<div class="hint">No container allocations yet — this plan is fully outstanding.
        Allocations appear here once a container packing list is uploaded.</div>`;
-  h += `<div style="text-align:right;margin-top:14px"><button class="btn btn-ghost btn-sm" onclick="closeUp()">Close</button></div>`;
+  h += `<div style="text-align:right;margin-top:14px">
+      ${CAN_EDIT ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger,#c0392b)"
+            onclick="delPP()">🗑 Delete</button>
+        <button class="btn btn-secondary btn-sm" style="margin-left:6px"
+            onclick="openPPEdit()">✎ Edit</button>` : ''}
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="closeUp()">Close</button></div>`;
   document.getElementById('upCard').innerHTML = h;
   upModal.classList.add('on');
 }

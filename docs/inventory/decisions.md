@@ -18,7 +18,7 @@ Never edit a decision to change its meaning. Add a new one, mark the old
 | `INV-D-008` | Amazon closing a shipment archives the container; no loss is valued | 2026-08-05 | accepted |
 | `INV-D-009` | In Transit and Receiving are a partition, keyed off receipts | 2026-08-04 | accepted |
 | `INV-D-010` | Re-uploading a packing list replaces the lines | 2026-08-05 | accepted |
-| `INV-D-011` | Opening balance is consumed before PO balance | 2026-08-05 | accepted, not built |
+| `INV-D-011` | Opening balance is consumed before PO balance | 2026-08-05 | accepted · built 2026-08-10 |
 | `INV-D-012` | Amazon's case pack wins over ours | 2026-08-05 | accepted |
 | `INV-D-013` | One receipt sync per Amazon API, never merged | 2026-08-05 | accepted |
 | `INV-D-014` | Units draw FIFO — oldest purchase order first | 2026-08-04 | accepted |
@@ -331,7 +331,16 @@ units first so it does not compete with itself.
 
 | | |
 |---|---|
-| **Date** | 2026-08-05 · **Status** accepted, **not built** |
+| **Date** | 2026-08-05 · **Status** accepted · **built 2026-08-10** |
+
+**Built as** — a two-tier supply pool. `SupplierOpeningBalance` is now an
+allocatable source mirroring `POLine` (`remaining = units − allocations`);
+`InTransitLine.opening_balance` links a container line to the backlog it drew;
+`procurement._open_sources_for` draws opening (oldest as_of) then PO lines FIFO;
+a re-upload that would replace a drawn-against balance is refused. Opening
+balance also gained an optional FOB rate (INV-SUP-001) so Outstanding FOB is
+priced. An explicit PO number on a packing-list row still overrides to that PO
+(INV-D-014).
 
 **Context** — Opening balance is backlog a supplier owed before the system went
 live. Today it is a static display figure that nothing draws down, so a packing

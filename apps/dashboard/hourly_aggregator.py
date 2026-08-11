@@ -40,10 +40,26 @@ from .completeness import (
     CORE_SOURCES, ADS_SOURCES,
 )
 from .models import (
+    Campaign,
     HourlyMetricSnapshot, HourlySkuSnapshot,
     PPCCampaignHourlySnapshot, PPCCampaignSnapshot,
     Product,
 )
+
+
+def _norm_pair(pair):
+    """Case/format-insensitive key for a (product_type, pack_size) group.
+
+    Product titles are hand-entered and occasionally disagree on casing/spacing
+    with the canonical campaign map (e.g. a title says '4-pack' while campaigns
+    resolve to '4-Pack'). Comparing on this normalised key prevents a valid
+    group selection from silently matching nothing.
+    """
+    if not pair:
+        return pair
+    pt, pack = pair
+    return (str(pt).strip().lower(),
+            str(pack).strip().lower().replace(' ', '-'))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,7 +89,15 @@ def list_product_groups(marketplace: str) -> list[dict]:
         if g:
             seen.add(g)
     out = [{'id': 'all', 'label': 'All Groups'}]
+    # Dedupe groups that differ only by casing/spacing (e.g. '4-Pack' vs
+    # '4-pack' from an inconsistent product title). sorted() puts the
+    # canonically-cased variant first ('P' < 'p'), so it wins.
+    _emitted: set = set()
     for (pt, pack) in sorted(seen):
+        key = _norm_pair((pt, pack))
+        if key in _emitted:
+            continue
+        _emitted.add(key)
         out.append({'id': f'{pt}|{pack}', 'label': f'{pt} · {pack}'})
     out.append({'id': 'unallocated', 'label': '⚠️ Unallocated PPC'})
     return out
@@ -105,7 +129,7 @@ def _group_sku_set(marketplace: str, group: tuple) -> set[str]:
               .values_list('sku', 'title')):
         sku, title = p
         g = _split_title(title)
-        if g and g[0] == pt and g[1] == pack and sku:
+        if g and _norm_pair(g) == _norm_pair((pt, pack)) and sku:
             skus.add(sku.upper())
     return skus
 
@@ -284,15 +308,38 @@ def build_hourly_cells(
     #        two sources use different campaign_id schemas).
     #      • Otherwise → use AMS rows (source!='manual').
     #    SB and SD on days with no hourly data fall back to daily÷24 below.
-    def _campaign_passes(campaign_name: str) -> bool:
+    # AMS SP-hourly rows store campaign_name='' — the real identity lives in
+    # campaign_id. Name-only group matching therefore drops 100% of SP spend for
+    # any single-group view. Resolve the name from the Campaign catalog by id.
+    _id2name: dict = {}
+    if group_mode != 'all':
+        _id2name = {
+            str(cid): (nm or '')
+            for cid, nm in (Campaign.objects
+                            .filter(marketplace=marketplace)
+                            .values_list('campaign_id', 'campaign_name'))
+        }
+
+    def _resolve_group(campaign_name, campaign_id=None):
+        """(product_type, pack) for a campaign, resolving blank/unmatched hourly
+        names via the Campaign catalog by campaign_id."""
+        name = (campaign_name or '').strip()
+        g = _match_campaign_to_group(name) if name else None
+        if g is None and campaign_id is not None:
+            alt = _id2name.get(str(campaign_id), '')
+            if alt and alt != name:
+                g = _match_campaign_to_group(alt)
+        return g
+
+    def _campaign_passes(campaign_name, campaign_id=None) -> bool:
         """Apply the group filter: matching group, or 'unallocated' = no match."""
         if group_mode == 'all':
             return True
-        g = _match_campaign_to_group(campaign_name or '')
+        g = _resolve_group(campaign_name, campaign_id)
         if group_mode == 'unallocated':
             return g is None
         if group_mode == 'group':
-            return g == group_payload
+            return _norm_pair(g) == _norm_pair(group_payload)
         return True
 
     def _real_hourly(ad_product: str):
@@ -309,22 +356,22 @@ def build_hourly_cells(
                           date__in=renderable)
                   .exclude(date__in=manual_days)
                   .exclude(source='manual')
-                  .values('date', 'hour', 'campaign_name')
+                  .values('date', 'hour', 'campaign_id', 'campaign_name')
                   .annotate(spend=Sum('spend')))
         # Step c: manual rows for manual dates
         man_qs = (PPCCampaignHourlySnapshot.objects
                   .filter(marketplace=marketplace, campaign_type=ad_product,
                           date__in=manual_days, source='manual')
-                  .values('date', 'hour', 'campaign_name')
+                  .values('date', 'hour', 'campaign_id', 'campaign_name')
                   .annotate(spend=Sum('spend')))
         by_dh: dict = {}
         for r in ams_qs:
-            if not _campaign_passes(r['campaign_name']):
+            if not _campaign_passes(r['campaign_name'], r['campaign_id']):
                 continue
             k = (r['date'], r['hour'])
             by_dh[k] = by_dh.get(k, 0.0) + float(r['spend'] or 0)
         for r in man_qs:
-            if not _campaign_passes(r['campaign_name']):
+            if not _campaign_passes(r['campaign_name'], r['campaign_id']):
                 continue
             k = (r['date'], r['hour'])
             by_dh[k] = by_dh.get(k, 0.0) + float(r['spend'] or 0)
@@ -452,7 +499,7 @@ def _daily_totals(marketplace: str, dates: list[date_cls],
     Sum of campaign spend by date for one campaign type (sb or sd) — used to
     derive the per-hour allocation (daily ÷ 24).
 
-    `campaign_filter` is an optional callable `(campaign_name: str) -> bool`.
+    `campaign_filter` is an optional callable `(campaign_name, campaign_id) -> bool`.
     When provided, campaigns whose name fails the filter are excluded from the
     daily totals so a group-scoped Hourly Patterns view stays consistent.
     """
@@ -463,8 +510,8 @@ def _daily_totals(marketplace: str, dates: list[date_cls],
         agg = qs.values('date').annotate(spend=Sum('spend'))
         return {r['date']: float(r['spend'] or 0) for r in agg}
     out: dict = {}
-    for r in qs.values('date', 'campaign_name', 'spend'):
-        if not campaign_filter(r['campaign_name'] or ''):
+    for r in qs.values('date', 'campaign_id', 'campaign_name', 'spend'):
+        if not campaign_filter(r['campaign_name'] or '', r['campaign_id']):
             continue
         out[r['date']] = out.get(r['date'], 0.0) + float(r['spend'] or 0)
     return out

@@ -308,7 +308,7 @@ function render(){
     const opts = optionsFor(r.sku, r.supplier_id ? r.supplier : null);
     let from;
     if (!r.allocs.length) from = '<span class="muted">—</span>';
-    else if (r.allocs.length === 1 && opts.length > 1){
+    else if (r.allocs.length === 1 && r.allocs[0].po_line_id && opts.length > 1){
       from = `<select class="posel" onchange="reassign(${i}, this.value)">` +
         opts.map(o => `<option value="${o.po_line_id}"
           ${o.po_line_id===r.allocs[0].po_line_id?'selected':''}>${o.label} — ${N(o.remaining)} open</option>`).join('')
@@ -355,8 +355,8 @@ async function commit(){
   const allocs = [];
   for (const r of PREV.rows)
     for (const a of r.allocs)
-      allocs.push({sku:r.sku, po_line_id:a.po_line_id, units:a.units,
-                   fnsku:r.fnsku, po:a.po});
+      allocs.push({sku:r.sku, po_line_id:a.po_line_id, opening_id:a.opening_id,
+                   src:a.src, units:a.units, fnsku:r.fnsku, fob:r.fob, po:a.po});
   const payload = {
     region: PREV.region,
     container: {container_no: f_cno.value, warehouse: f_wh.value,

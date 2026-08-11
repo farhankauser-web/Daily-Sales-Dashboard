@@ -159,7 +159,7 @@ A line additionally distinguishes **closed** (fully allocated) from
 |---|---|---|
 | `INV-SUP-004` | the PO upload takes free text for the supplier and mints one on a typo | bug |
 | `INV-SUP-002` | `POLineGroup.pcs` is written and never read | legacy schema |
-| `INV-CONT-002` | opening balance is not consumable, so it never shields PO balance | missing implementation |
+| `INV-CONT-002` | ~~opening balance is not consumable~~ — **built 2026-08-10**: drawn before PO balance | resolved |
 | `INV-RECV-003` | shortage properties read the human count alone — auto-closed containers overstate transit shortage | bug |
 
 ## Related decisions

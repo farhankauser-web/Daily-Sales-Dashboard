@@ -214,6 +214,12 @@ class InTransitLine(models.Model):
     po_line  = models.ForeignKey('POLine', null=True, blank=True,
                                  on_delete=models.SET_NULL,
                                  related_name='allocations')
+    # INV-CONT-002: a container line may instead be drawn from a supplier's
+    # opening backlog. Exactly one of po_line / opening_balance is set on a new
+    # line; both null = a legacy line imported before either existed.
+    opening_balance = models.ForeignKey('SupplierOpeningBalance', null=True,
+                                        blank=True, on_delete=models.SET_NULL,
+                                        related_name='allocations')
     fnsku    = models.CharField(max_length=16, blank=True)   # region label applied
     # What we pay the factory per unit, IN THE REGION'S CURRENCY — the packing
     # list carries it and it is snapshotted here at commit.
@@ -696,15 +702,51 @@ class ReorderSuggestion(models.Model):
 
 class SupplierOpeningBalance(models.Model):
     """Backlog carried in from before the system went live. Seeded at zero;
-    ops uploads the real figures later and they back-date cleanly."""
+    ops uploads the real figures later and they back-date cleanly.
+
+    INV-CONT-002 / INV-D-011: this is an allocatable supply source, drawn down
+    before PO balance. It mirrors the POLine pattern exactly — remaining =
+    units − allocations — so a container line drawn from it (InTransitLine
+    .opening_balance) is counted, never a decrementing counter.
+    """
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE,
                                  related_name='opening_balances')
     sku      = models.CharField(max_length=64)
     category = models.CharField(max_length=64, blank=True)
     units    = models.IntegerField(default=0)
+    # INV-SUP-001: per-unit FOB in the SUPPLIER's currency (like POLineGroup.
+    # fob_rate). Feeds the supplier ledger's Outstanding FOB only — never the
+    # container value, which is priced in the region's currency on the packing
+    # list. Optional; 0 keeps the old behaviour.
+    fob_rate = models.DecimalField(max_digits=10, decimal_places=4, default=0)
     as_of    = models.DateField()
     note     = models.CharField(max_length=128, blank=True)
 
     class Meta:
         unique_together = [('supplier', 'sku', 'as_of')]
         indexes = [models.Index(fields=['supplier', 'sku'])]
+
+    def __str__(self):
+        return f'{self.supplier_id}·{self.sku}·{self.as_of} = {self.units}'
+
+    # ── allocatable-source rollups (mirror POLine) ──
+    def _live_allocations(self):
+        return self.allocations.exclude(shipment__status='cancelled')
+
+    @property
+    def allocated_units(self):
+        return sum(a.units for a in self._live_allocations())
+
+    @property
+    def received_units(self):
+        return sum(a.received_units for a in self._live_allocations())
+
+    @property
+    def remaining_units(self):
+        """Open backlog not yet drawn onto a container."""
+        return max(self.units - self.allocated_units, 0)
+
+    @property
+    def fob_value(self):
+        """Outstanding money value of the remaining backlog, supplier currency."""
+        return float(self.fob_rate) * self.remaining_units

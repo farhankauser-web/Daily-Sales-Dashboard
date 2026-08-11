@@ -1,0 +1,97 @@
+{% extends "base/base.html" %}
+{% block title %}Edit Product Group{% endblock %}
+{% block nav_sti %}active{% endblock %}
+{% block page_title %}{% if instance %}Edit “{{ instance.name }}”{% else %}New Product Group{% endif %}{% endblock %}
+
+{% block topbar_controls %}
+<a class="btn btn-secondary" style="padding:6px 14px;font-size:11px"
+   href="{% url 'dashboard:sti_groups' %}">← All groups</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .gf { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+        padding:18px 20px; margin-bottom:12px; max-width:900px; }
+  .gf h3 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+           color:var(--text3); margin:0 0 4px; }
+  .gf .help { font-size:11.5px; color:var(--text3); line-height:1.6; margin-bottom:10px; }
+  .gf .row { margin-bottom:20px; }
+  .gf label { display:block; font-size:12px; font-weight:600; color:var(--text);
+              margin-bottom:4px; }
+  .gf ul { list-style:none; padding:0; margin:0;
+           display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:2px; }
+  .gf ul li label { font-weight:400; font-size:12px; display:flex; gap:7px;
+                    align-items:center; padding:4px 6px; border-radius:5px; cursor:pointer; }
+  .gf ul li label:hover { background:var(--bg4); }
+  .gf .cnt { color:var(--text3); font-size:11px; font-family:'DM Mono',monospace; }
+  .gf-actions { display:flex; gap:8px; align-items:center; }
+  .gf-err { background:#FDEDEC; border:1px solid #F3B7B2; color:var(--red);
+            border-radius:6px; padding:9px 12px; font-size:12px; margin-bottom:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="post" class="gf">
+  {% csrf_token %}
+  {% if form.errors %}
+    <div class="gf-err">{{ form.errors }}</div>
+  {% endif %}
+
+  <div class="row">
+    <label for="{{ form.name.id_for_label }}">Group name</label>
+    {{ form.name }}
+  </div>
+
+  <div class="row">
+    <h3>Catalog categories — the definition</h3>
+    <div class="help">
+      These select the ASINs, and the ASINs select the advertising. Changing them
+      changes what every future report for this group contains. A category in no group
+      is invisible to the Center entirely.
+    </div>
+    <ul>
+      {% for c in form.categories %}
+      <li><label>{{ c.tag }} {{ c.choice_label }}</label></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="row">
+    <label for="{{ form.extra_asins_raw.id_for_label }}">Extra ASINs</label>
+    <div class="help">{{ form.extra_asins_raw.help_text }}</div>
+    {{ form.extra_asins_raw }}
+  </div>
+
+  <div class="row">
+    <label for="{{ form.excluded_asins_raw.id_for_label }}">Excluded ASINs</label>
+    <div class="help">{{ form.excluded_asins_raw.help_text }}</div>
+    {{ form.excluded_asins_raw }}
+  </div>
+
+  <div class="row">
+    <label for="{{ form.lexicon_key.id_for_label }}">Intent lexicon</label>
+    <div class="help">Which vocabulary classifies this group's search terms.</div>
+    {{ form.lexicon_key }}
+  </div>
+
+  <div class="row">
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400">
+      {{ form.active }} Active — offered in the report selector</label>
+  </div>
+
+  {% if instance %}
+  <div class="help" style="margin-bottom:14px">
+    Campaign initials for this group ({{ instance.initials|join:", "|default:"none" }})
+    are shown on reports to make them easier to read against Seller Central. They are
+    not editable here because they scope nothing.
+  </div>
+  {% endif %}
+
+  <div class="gf-actions">
+    <button type="submit" class="btn btn-primary"
+            style="padding:7px 18px;font-size:12px;font-weight:600">Save group</button>
+    <a href="{% url 'dashboard:sti_groups' %}" class="btn btn-secondary"
+       style="padding:7px 18px;font-size:12px">Cancel</a>
+  </div>
+</form>
+{% endblock %}

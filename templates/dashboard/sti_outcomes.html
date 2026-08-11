@@ -1,0 +1,138 @@
+{% extends "base/base.html" %}
+{% block title %}Outcomes{% endblock %}
+{% block nav_sti %}active{% endblock %}
+{% block page_title %}Search Intelligence — Outcomes{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector">
+  <a href="?{% if group_slug %}group={{ group_slug }}{% endif %}"
+     class="mp-btn {% if not marketplace %}active{% endif %}">All</a>
+  {% for mp in allowed_marketplaces %}
+  <a href="?mp={{ mp }}{% if group_slug %}&group={{ group_slug }}{% endif %}"
+     class="mp-btn {% if mp == marketplace %}active{% endif %}">{{ mp|upper }}</a>
+  {% endfor %}
+</div>
+<select class="form-control" style="margin-left:12px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="window.location='?group='+this.value+'{% if marketplace %}&mp={{ marketplace }}{% endif %}'">
+  <option value="">All product groups</option>
+  {% for g in groups %}
+  <option value="{{ g.slug }}" {% if g.slug == group_slug %}selected{% endif %}>{{ g.name }}</option>
+  {% endfor %}
+</select>
+<a class="btn btn-primary" style="margin-left:8px;padding:6px 14px;font-size:11px;font-weight:600"
+   href="?export=csv{% if marketplace %}&mp={{ marketplace }}{% endif %}{% if group_slug %}&group={{ group_slug }}{% endif %}">
+   Export CSV</a>
+<a class="btn btn-secondary" style="margin-left:6px;padding:6px 14px;font-size:11px"
+   href="{% url 'dashboard:search_intelligence' %}">← Back to opportunities</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .oc-tally { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+              gap:9px; margin-bottom:16px; }
+  .oc-t { background:var(--bg2); border:1px solid var(--border); border-radius:9px;
+          padding:10px 13px; }
+  .oc-t .l { font-size:10px; text-transform:uppercase; letter-spacing:.35px;
+             color:var(--text3); }
+  .oc-t .v { font-size:22px; font-weight:700; font-family:'DM Mono',monospace;
+             color:var(--text); margin-top:2px; }
+  .oc-t.win  { border-left:3px solid var(--green); }
+  .oc-t.win .v  { color:var(--green); }
+  .oc-t.lose { border-left:3px solid var(--red); }
+  .oc-t.lose .v { color:var(--red); }
+  .oc-t.rate { border-left:3px solid var(--accent); }
+
+  .oc-panel { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+              padding:14px 16px; margin-bottom:12px; overflow-x:auto; }
+  .oc-note { font-size:11.5px; color:var(--text3); line-height:1.65; margin-bottom:10px; }
+  .oc-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .oc-table th { background:var(--bg); padding:7px 9px; text-align:right; font-size:10.5px;
+                 font-weight:600; color:var(--text2); white-space:nowrap; }
+  .oc-table th.l, .oc-table td.l { text-align:left; }
+  .oc-table td { padding:6px 9px; text-align:right; border-bottom:1px solid var(--bg3);
+                 font-family:'DM Mono',monospace; }
+  .oc-table td.l { font-family:inherit; }
+  .oc-table tbody tr:hover { background:var(--bg4); }
+  .oc-v { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px;
+          padding:2px 7px; border-radius:9px; white-space:nowrap; }
+  .oc-v.improved     { background:#E0F2EC; color:var(--green); }
+  .oc-v.worsened     { background:#FDEDEC; color:var(--red); }
+  .oc-v.flat         { background:var(--bg3); color:var(--text2); }
+  .oc-v.pending      { background:var(--warn-weak); color:var(--warn-ink); }
+  .oc-v.unmeasurable { background:var(--bg3); color:var(--text3); }
+  .oc-empty { background:var(--bg2); border:1px dashed var(--border2); border-radius:10px;
+              padding:40px 24px; text-align:center; }
+  .oc-empty h3 { font-size:15px; margin:0 0 7px; color:var(--text); }
+  .oc-empty p { font-size:12.5px; color:var(--text2); max-width:560px; margin:0 auto;
+                line-height:1.65; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if not board.rows %}
+  <div class="oc-empty">
+    <h3>Nothing has been acted on yet</h3>
+    <p>An opportunity appears here once it is marked <b>done</b> on the opportunity board.
+       Marking it records which reporting period you acted in, and the following period
+       becomes the test. Because periods are Amazon's own fixed weeks, "before" and
+       "after" cover the same days on the same grid — which is what makes the comparison
+       mean anything.</p>
+  </div>
+{% else %}
+
+  <div class="oc-tally">
+    <div class="oc-t win"><div class="l">Improved</div><div class="v">{{ board.tally.improved }}</div></div>
+    <div class="oc-t lose"><div class="l">Worsened</div><div class="v">{{ board.tally.worsened }}</div></div>
+    <div class="oc-t"><div class="l">No material change</div><div class="v">{{ board.tally.flat }}</div></div>
+    <div class="oc-t rate"><div class="l">Hit rate</div>
+      <div class="v">{% if board.hit_rate != None %}{{ board.hit_rate }}%{% else %}—{% endif %}</div></div>
+    <div class="oc-t"><div class="l">Awaiting data</div><div class="v">{{ board.tally.pending }}</div></div>
+  </div>
+
+  <div class="oc-panel">
+    <div class="oc-note">
+      Each row compares its subject in the period you acted against the next one.
+      <b>What counts as success differs by type</b> and is stated per row — negating a
+      wasteful term succeeds when its spend <i>falls</i>, scaling succeeds when sales
+      <i>rise</i>. Movement under 10% is treated as noise. Rows marked
+      <b>awaiting data</b> need a period Amazon has not published yet — organic share
+      needs Brand Analytics for both periods.
+    </div>
+    <table class="oc-table">
+      <thead><tr>
+        <th class="l">Opportunity</th><th class="l">Type</th><th class="l">Market</th>
+        <th class="l">Measure</th><th class="l">Acted</th><th class="l">Result</th>
+        <th>Before</th><th>After</th><th>Change</th><th class="l">Verdict</th>
+        <th>Value at action</th>
+      </tr></thead>
+      <tbody>
+        {% for r in board.rows %}
+        <tr>
+          <td class="l" style="max-width:280px">{{ r.title }}</td>
+          <td class="l">{{ r.opp_type }}</td>
+          <td class="l">{{ r.marketplace|upper }}</td>
+          <td class="l">{{ r.metric_label }} <span style="color:var(--text3)">({{ r.good_when }} = good)</span></td>
+          <td class="l">{{ r.acted_period }}</td>
+          <td class="l">{{ r.result_period }}</td>
+          <td>{% if r.before != None %}{{ r.before|floatformat:2 }}{% else %}—{% endif %}</td>
+          <td>{% if r.after != None %}{{ r.after|floatformat:2 }}{% else %}—{% endif %}</td>
+          <td>{% if r.delta_pct != None %}{{ r.delta_pct }}%{% else %}—{% endif %}</td>
+          <td class="l"><span class="oc-v {{ r.verdict }}">{{ r.verdict }}</span></td>
+          <td>{{ r.score_at_action|floatformat:0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="oc-panel oc-note" style="margin-bottom:0">
+    <b>Why this page exists.</b> Recommending is the easy half and every keyword tool
+    does it. Checking afterwards needs the history and the margins, which is why this
+    belongs in Pulse rather than in a tool that only sees keywords. The hit rate is the
+    honest measure of whether the opportunity engine is worth trusting — including when
+    it is wrong.
+  </div>
+
+{% endif %}
+{% endblock %}

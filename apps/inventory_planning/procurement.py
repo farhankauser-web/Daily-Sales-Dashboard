@@ -352,11 +352,25 @@ def import_opening_balance(file_obj, supplier_id, as_of) -> dict:
     c_sku = _pick(cm, 'sku')
     c_cat = _pick(cm, 'category')
     c_qty = _pick(cm, 'units', 'qty', 'quantity', 'opening', 'balance')
+    # INV-SUP-001: an optional per-unit FOB rate, in the SUPPLIER's currency.
+    c_rate = _pick(cm, 'fob', 'rate', 'fob rate', 'fob_rate', 'price')
     if not c_qty:
         raise ValueError('Opening balance file: no quantity column found.')
 
-    SupplierOpeningBalance.objects.filter(supplier=supplier,
-                                          as_of=as_of).delete()
+    # INV-CONT-002 guard: opening balance is now consumable, so a re-upload
+    # that would replace units already drawn onto a container is refused —
+    # exactly like re-importing a PO with allocations. Delete the container
+    # allocations first, or upload under a different date.
+    prior = (SupplierOpeningBalance.objects.filter(supplier=supplier, as_of=as_of)
+             .prefetch_related('allocations__shipment'))
+    drawn = sum(b.allocated_units for b in prior)
+    if drawn:
+        raise ValueError(
+            f'This opening balance for {supplier.name} as at {as_of} has '
+            f'{drawn:,} units already allocated to containers — it cannot be '
+            f'replaced. Remove those container allocations first, or upload '
+            f'under a different date.')
+    prior.delete()
     # Case-insensitive: now that the file no longer carries a Category column,
     # this lookup is the ONLY source, so a lower-case SKU in the sheet would
     # otherwise leave every row uncategorised.
@@ -374,30 +388,70 @@ def import_opening_balance(file_obj, supplier_id, as_of) -> dict:
             or cat_of.get(sku.upper(), '')
         if not cat and sku not in res['unknown_skus']:
             res['unknown_skus'].append(sku)
+        rate = _num(ws.cell(r, c_rate).value) if c_rate else 0
         SupplierOpeningBalance.objects.create(
             supplier=supplier, sku=sku, category=cat,
-            units=qty, as_of=as_of)
+            units=qty, fob_rate=rate, as_of=as_of)
         res['rows'] += 1
         res['units'] += qty
     return res
 
 
 def opening_by_supplier() -> dict:
-    """{supplier_id: units} — uploaded opening backlog per supplier."""
+    """{supplier_id: {remaining, allocated, received, value}} — opening backlog
+    per supplier, draw-aware (INV-CONT-002). `remaining` is the undrawn backlog
+    that still carries into the ledger balance; `value` is its Outstanding FOB
+    in the supplier's currency (INV-SUP-001)."""
     from .models import SupplierOpeningBalance
-    out: dict[int, int] = {}
-    for b in SupplierOpeningBalance.objects.all():
-        out[b.supplier_id] = out.get(b.supplier_id, 0) + b.units
+    out: dict[int, dict] = {}
+    for b in (SupplierOpeningBalance.objects.all()
+              .prefetch_related('allocations__shipment')):
+        a = out.setdefault(b.supplier_id,
+                           {'remaining': 0, 'allocated': 0, 'received': 0, 'value': 0.0})
+        a['remaining'] += b.remaining_units
+        a['allocated'] += b.allocated_units
+        a['received']  += b.received_units
+        a['value']     += b.fob_value
     return out
 
 
 def opening_by_category(supplier_id) -> dict:
+    """{category: {remaining, allocated, received, value}} for one supplier."""
     from .models import SupplierOpeningBalance
-    out: dict[str, int] = {}
-    for b in SupplierOpeningBalance.objects.filter(supplier_id=supplier_id):
+    out: dict[str, dict] = {}
+    for b in (SupplierOpeningBalance.objects.filter(supplier_id=supplier_id)
+              .prefetch_related('allocations__shipment')):
         key = b.category or 'Uncategorised'
-        out[key] = out.get(key, 0) + b.units
+        a = out.setdefault(key,
+                           {'remaining': 0, 'allocated': 0, 'received': 0, 'value': 0.0})
+        a['remaining'] += b.remaining_units
+        a['allocated'] += b.allocated_units
+        a['received']  += b.received_units
+        a['value']     += b.fob_value
     return out
+
+
+def opening_lines_for(supplier_id, category=None) -> list:
+    """Per-SKU opening backlog for a supplier (optionally one category), with
+    remaining after container draws — for the ledger's per-SKU view."""
+    from .models import PlanningSku, SupplierOpeningBalance
+    qs = (SupplierOpeningBalance.objects.filter(supplier_id=supplier_id)
+          .prefetch_related('allocations__shipment').order_by('sku', 'as_of'))
+    if category is not None:
+        qs = qs.filter(category=category)
+    # Product name comes from the catalogue (opening balance has no name of its
+    # own), same rule as PO lines and the packing list.
+    names: dict[str, str] = {}
+    for sku, nm in PlanningSku.objects.values_list('sku', 'name'):
+        if sku and nm and sku.upper() not in names:
+            names[sku.upper()] = nm
+    return [{'id': b.pk, 'sku': b.sku, 'name': names.get(b.sku.upper(), ''),
+             'category': b.category or 'Uncategorised',
+             'as_of': b.as_of.isoformat(),
+             'units': b.units, 'allocated': b.allocated_units,
+             'received': b.received_units, 'remaining': b.remaining_units,
+             'fob': float(b.fob_rate), 'value': round(b.fob_value, 2)}
+            for b in qs if b.units or b.allocated_units]
 
 
 # ── Product identifiers: SKU × region → FNSKU/UPC/ASIN ──────────────────────
@@ -546,6 +600,47 @@ def _open_lines_for(sku, supplier_id, po_number='', release_container_id=None):
             if _remaining_for(l, release_container_id) > 0]
 
 
+def _remaining_ob(ob, release_container_id=None) -> int:
+    """Open backlog on an opening-balance source — mirrors `_remaining_for`."""
+    rem = ob.remaining_units
+    if release_container_id:
+        rem += sum(a.units for a in ob._live_allocations()
+                   if a.shipment_id == int(release_container_id))
+    return rem
+
+
+def _open_sources_for(sku, supplier_id, po_number='', release_container_id=None):
+    """Draw sources for a SKU on a supplier, IN DRAW ORDER (INV-D-011).
+
+    Opening balance first (oldest as_of), then PO lines FIFO. A PO number on the
+    row is an exact override (INV-D-014): draw from that PO only — opening
+    balance is a system-wide backlog, not a purchase order, so an explicit PO
+    request bypasses it. Each source is a dict the preview/commit both speak:
+        {kind:'opening'|'po', id, remaining, po, po_id, pp, category}
+    """
+    from .models import SupplierOpeningBalance
+    sources = []
+    if not po_number:
+        obs = (SupplierOpeningBalance.objects
+               .filter(sku__iexact=sku, supplier_id=supplier_id)
+               .prefetch_related('allocations__shipment')
+               .order_by('as_of', 'pk'))
+        for ob in obs:
+            rem = _remaining_ob(ob, release_container_id)
+            if rem > 0:
+                sources.append({'kind': 'opening', 'id': ob.pk, 'remaining': rem,
+                                'po': 'Opening balance', 'po_id': None, 'pp': '',
+                                'category': ob.category or ''})
+    for l in _open_lines_for(sku, supplier_id, po_number, release_container_id):
+        plan = getattr(l.group, 'plan', None)
+        sources.append({'kind': 'po', 'id': l.pk,
+                        'remaining': _remaining_for(l, release_container_id),
+                        'po': l.po.po_number, 'po_id': l.po_id,
+                        'pp': plan.pp_number if plan else '',
+                        'category': l.group.category})
+    return sources
+
+
 def preview_packing_list(rows, supplier_id, region, container_size='',
                          exclude_container_id=None) -> dict:
     """Resolve every packing-list row to Production Plan allocations, and
@@ -660,30 +755,35 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
         # Falling back to the form's supplier here would attribute them to the
         # wrong factory and draw down the wrong PO — silently, since the row
         # would otherwise look allocated. Leave it unallocated instead.
-        lines = (_open_lines_for(sku, row_sup.pk, r.get('po_number', ''),
-                                 release_container_id=exclude_container_id)
-                 if (sup_ok and row_sup) else [])
+        # INV-CONT-002 / INV-D-011: draw from opening balance first (oldest),
+        # then PO lines FIFO.
+        sources = (_open_sources_for(sku, row_sup.pk, r.get('po_number', ''),
+                                     release_container_id=exclude_container_id)
+                   if (sup_ok and row_sup) else [])
         if not sup_ok:
             pass                      # the supplier error already says why
-        elif not lines:
+        elif not sources:
             row['errors'].append(
                 f'No open balance for {sku} on {row_sup.name}'
                 + (f' PO {r["po_number"]}' if r.get('po_number') else '')
                 + ' — nothing to draw these units from.')
         else:
             left = r['units']
-            for l in lines:
+            for s in sources:
                 if left <= 0:
                     break
-                avail = _remaining_for(l, exclude_container_id)
-                take = min(left, avail)
-                plan = getattr(l.group, 'plan', None)
-                row['allocs'].append({
-                    'po_line_id': l.pk, 'po': l.po.po_number,
-                    'po_id': l.po_id,
-                    'pp': plan.pp_number if plan else '',
-                    'category': l.group.category, 'units': take,
-                    'line_remaining': avail})
+                take = min(left, s['remaining'])
+                if take <= 0:
+                    continue
+                alloc = {'po_line_id': None, 'opening_id': None,
+                         'src': s['kind'], 'po': s['po'], 'po_id': s['po_id'],
+                         'pp': s['pp'], 'category': s['category'],
+                         'units': take, 'line_remaining': s['remaining']}
+                if s['kind'] == 'opening':
+                    alloc['opening_id'] = s['id']
+                else:
+                    alloc['po_line_id'] = s['id']
+                row['allocs'].append(alloc)
                 left -= take
             if left > 0:
                 row['errors'].append(
@@ -691,10 +791,13 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
                     f'open balance left on {row_sup.name}.')
             elif len(row['allocs']) > 1:
                 row['warnings'].append(
-                    f'Split across {len(row["allocs"])} POs (oldest first).')
+                    f'Split across {len(row["allocs"])} sources '
+                    f'(opening balance first, then POs oldest-first).')
         if not r.get('po_number'):
-            row['warnings'].append('No PO number on the packing list — '
-                                   'matched FIFO; check the PO shown.')
+            row['warnings'].append(
+                'No PO number on the packing list — matched automatically: '
+                'opening balance first, then POs oldest-first. Check the '
+                'source shown under "Drawn from".')
 
         out['errors'] += len(row['errors'])
         out['warnings'] += len(row['warnings'])
@@ -744,7 +847,7 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
     from datetime import datetime
 
     from .models import (InTransitLine, InTransitShipment, POLine, Supplier,
-                         Warehouse)
+                         SupplierOpeningBalance, Warehouse)
 
     # Optional: the vendor on the container is derived from the PO lines the
     # units are drawn from, so this is only a last-resort label for the odd
@@ -773,17 +876,25 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
 
     sh = InTransitShipment.objects.filter(
         region=region, container_no=container['container_no']).first()
-    new_pos = sorted({a['po'] for a in allocs if a.get('po')})
+    # 'Opening balance' is not a purchase order, so it never enters the
+    # container's PO-number label — only real PO allocations do.
+    new_pos = sorted({a['po'] for a in allocs
+                      if a.get('po_line_id') and a.get('po')})
 
-    # Vendor is DERIVED from the PO lines the units are actually drawn from,
-    # never from the form. With a Supplier column a single file can carry two
-    # factories, and the derived name is the only one that cannot disagree
-    # with the lines. Sorting also ends 'J.Sons + Ghazali' vs
-    # 'Ghazali + J.Sons' being two different strings for one arrangement.
+    # Vendor is DERIVED from the sources the units are actually drawn from,
+    # never from the form — PO lines AND opening balances both name a supplier.
+    # With a Supplier column a single file can carry two factories, and the
+    # derived name is the only one that cannot disagree with the lines. Sorting
+    # also ends 'J.Sons + Ghazali' vs 'Ghazali + J.Sons' being two strings for
+    # one arrangement.
     _po_lines = POLine.objects.filter(
         pk__in=[int(a['po_line_id']) for a in allocs if a.get('po_line_id')]
     ).select_related('po__supplier')
-    new_vendors = sorted({l.po.supplier.name for l in _po_lines})
+    _obs = SupplierOpeningBalance.objects.filter(
+        pk__in=[int(a['opening_id']) for a in allocs if a.get('opening_id')]
+    ).select_related('supplier')
+    new_vendors = sorted({l.po.supplier.name for l in _po_lines}
+                         | {ob.supplier.name for ob in _obs})
     if not new_vendors and supplier:
         new_vendors = [supplier.name]
 
@@ -818,17 +929,23 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
         sh.notes = (container.get('notes') or '')[:256]
         sh.save()
 
-    # merge duplicate (sku, po_line) pairs so one SKU = one container line
+    # merge duplicate (sku, source) triples so one SKU per source = one line.
+    # A source is a PO line OR an opening balance (INV-CONT-002).
     merged: dict[tuple, dict] = {}
     for a in allocs:
         units = int(a['units'])
         if units <= 0:
             continue
-        key = (a['sku'].upper(), int(a['po_line_id']))
+        if a.get('opening_id'):
+            key = (a['sku'].upper(), 'opening', int(a['opening_id']))
+        elif a.get('po_line_id'):
+            key = (a['sku'].upper(), 'po', int(a['po_line_id']))
+        else:
+            continue                       # unattributed — never write blind
         if key in merged:
             merged[key]['units'] += units
         else:
-            merged[key] = {'sku': a['sku'], 'po_line_id': int(a['po_line_id']),
+            merged[key] = {'sku': a['sku'], 'kind': key[1], 'src_id': key[2],
                            'units': units, 'fnsku': a.get('fnsku', ''),
                            'fob': float(a.get('fob') or 0)}
 
@@ -836,23 +953,31 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
            'mode': mode, 'lines': 0, 'units': 0, 'value': 0.0,
            'over_allocated': [], 'vendor': sh.vendor}
     for m in merged.values():
-        line = POLine.objects.filter(pk=m['po_line_id']).first()
-        if line is None:
-            continue
+        # Resolve the source (PO line or opening balance) and its open figure.
         # On append the container's existing lines are staying, so they are
         # already counted in remaining_units — no release, unlike replace
         # (whose lines were deleted a few lines above).
-        avail = line.remaining_units
+        if m['kind'] == 'po':
+            src = POLine.objects.filter(pk=m['src_id']).first()
+            if src is None:
+                continue
+            avail, label = src.remaining_units, src.po.po_number
+            src_kwargs, dup_filter = {'po_line': src}, {'po_line': src}
+        else:
+            src = SupplierOpeningBalance.objects.filter(pk=m['src_id']).first()
+            if src is None:
+                continue
+            avail, label = src.remaining_units, 'opening balance'
+            src_kwargs, dup_filter = {'opening_balance': src}, {'opening_balance': src}
         if m['units'] > avail:
             res['over_allocated'].append(
                 {'sku': m['sku'], 'requested': m['units'], 'available': avail})
             raise ValueError(
                 f'{m["sku"]}: {m["units"]:,} units requested but only '
-                f'{avail:,} remain open on {line.po.po_number}.')
-        # Same SKU drawn from the SAME PO line is genuinely additive; a
-        # different po_line stays its own row so each supplier's attribution
-        # survives.
-        existing = (sh.lines.filter(sku=m['sku'], po_line=line).first()
+                f'{avail:,} remain open on {label}.')
+        # Same SKU drawn from the SAME source is genuinely additive; a
+        # different source stays its own row so each attribution survives.
+        existing = (sh.lines.filter(sku=m['sku'], **dup_filter).first()
                     if mode == 'append' else None)
         if existing:
             # Weighted average, so appending more of the same SKU at a
@@ -866,8 +991,8 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
         else:
             InTransitLine.objects.create(
                 shipment=sh, sku=m['sku'], units=m['units'],
-                po_line=line, fnsku=(m.get('fnsku') or '')[:16],
-                fob_rate=m['fob'])
+                fnsku=(m.get('fnsku') or '')[:16], fob_rate=m['fob'],
+                **src_kwargs)
         res['lines'] += 1
         res['units'] += m['units']
         res['value'] += m['fob'] * m['units']

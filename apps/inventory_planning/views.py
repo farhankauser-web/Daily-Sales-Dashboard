@@ -658,8 +658,13 @@ def master_template(request):
     tpl_whs = list(Warehouse.objects.filter(region=region, is_active=True,
                                             kind='3pl').order_by('name'))
     wb = Workbook(); ws = wb.active; ws.title = 'Master'
+    # Each 3PL warehouse is its OWN column, headed with the warehouse's name.
+    # When a region has no 3PL warehouse yet, seed a placeholder column so the
+    # field is always present — the importer treats any unknown column as a 3PL
+    # warehouse (by name) and creates it on upload.
+    wh_names = [w.name for w in tpl_whs] or ['My 3PL Warehouse']
     hdr = ['SKU', 'Name', 'Category', 'SKU Type', 'Status', 'PDS',
-           'In Hand Pakistan', 'In Production'] + [w.name for w in tpl_whs]
+           'In Hand Pakistan', 'In Production'] + wh_names
     ws.append(hdr)
     for c in ws[1]:
         c.font = Font(bold=True)
@@ -673,10 +678,30 @@ def master_template(request):
         row = [ps.sku, ps.name, ps.category, ps.sku_type, ps.product_status,
                pds.get(ps.sku.upper(), ''), ps.factory_stock,
                ps.factory_production]
-        row += [stock[ps.sku.upper()].get(w.name, 0) for w in tpl_whs]
+        row += [stock[ps.sku.upper()].get(n, 0) for n in wh_names]
         ws.append(row)
     for i in range(1, len(hdr) + 1):
         ws.column_dimensions[ws.cell(1, i).column_letter].width = 16
+
+    # A short "how to" sheet so the 3PL-column convention is discoverable.
+    notes = wb.create_sheet('How to use')
+    for line in [
+        ['Updating 3PL warehouse stock'],
+        [''],
+        ['Each 3PL warehouse is its OWN column, headed with the warehouse name.'],
+        ['Put the current units of each SKU under the matching warehouse column.'],
+        [''],
+        ['To ADD a new 3PL warehouse: add a column and head it with the new name —'],
+        ['it is created automatically on upload as a 3PL location for this region.'],
+        [''],
+        ['Uploading REPLACES the imported 3PL stock for this region (a fresh snapshot).'],
+        ['FBA and AWD stock come from Amazon (use "Refresh Amazon Stock") — do not enter them here.'],
+        ['The other columns (Name, Category, PDS, In Hand Pakistan, In Production) update the SKU master.'],
+    ]:
+        notes.append(line)
+    notes['A1'].font = Font(bold=True, size=13)
+    notes.column_dimensions['A'].width = 95
+
     resp = HttpResponse(content_type='application/vnd.openxmlformats-'
                                      'officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = 'attachment; filename="inventory_master.xlsx"'
@@ -831,9 +856,9 @@ def opening_balance_template(request):
     ws = wb.active; ws.title = 'Opening Balance'
     # SKU and Units only. Category is looked up from the catalogue, same rule
     # as the PO workbook and the packing list.
-    _xlsx_header(ws, ['SKU', 'Units'], [24, 12])
-    ws.append(['TW-WHT-BTH-4', 1200])
-    ws.append(['TW-GRY-KTH-6', 3600])
+    _xlsx_header(ws, ['SKU', 'Units', 'FOB'], [24, 12, 12])
+    ws.append(['TW-WHT-BTH-4', 1200, 9.42])
+    ws.append(['TW-GRY-KTH-6', 3600, 2.89])
 
     _xlsx_notes(wb, 'Opening Balance', [
         ['What this is', 'Units this supplier still owed you before Pulse went '
@@ -843,6 +868,9 @@ def opening_balance_template(request):
                 'containing "SKU"; it does not have to be row 1.'],
         ['Units', 'Required. The column may also be headed Qty, Quantity, '
                   'Opening or Balance.'],
+        ['FOB', 'Optional. Per-unit price in the SUPPLIER\'s currency — it '
+                'sets this backlog\'s Outstanding FOB, exactly like a PO rate. '
+                'Column may also be headed Rate or Price. Leave blank for 0.'],
         ['No category', 'The SKU already carries its category in the '
                         'catalogue, so it is filled in for you. A Category '
                         'column on an older file is still read, and the typed '
@@ -1220,7 +1248,12 @@ def api_suppliers(request):
         a = agg.get(s.pk, {'ordered': 0, 'wastage': 0, 'allocated': 0,
                            'loaded': 0, 'received': 0, 'remaining': 0,
                            'value': 0.0, 'pos': set()})
-        op = opening.get(s.pk, 0)
+        op = opening.get(s.pk, {'remaining': 0, 'allocated': 0,
+                                'received': 0, 'value': 0.0})
+        # opening backlog is now an allocatable source, so its own draws count
+        # as allocated/received and its UNDRAWN remainder carries the balance.
+        allocated = a['allocated'] + op['allocated']
+        received  = a['received'] + op['received']
         rows.append({
             'id': s.pk, 'code': s.code, 'name': s.name,
             'country': s.country, 'currency': s.currency,
@@ -1231,14 +1264,14 @@ def api_suppliers(request):
             'sea_lead_days': s.sea_lead_days,
             'port_to_wh_days': s.port_to_wh_days,
             'open_pos': len(a['pos']),
-            'opening': op,
+            'opening': op['remaining'],
             'ordered': a['ordered'], 'wastage': a['wastage'],
-            'allocated': a['allocated'], 'loaded': a['loaded'],
-            'in_transit': a['allocated'] - a['received'],
-            'received': a['received'],
+            'allocated': allocated, 'loaded': a['loaded'],
+            'in_transit': allocated - received,
+            'received': received,
             # opening backlog carries into what is still owed to us
-            'remaining': op + a['remaining'],
-            'outstanding_value': round(a['value'], 2),
+            'remaining': op['remaining'] + a['remaining'],
+            'outstanding_value': round(a['value'] + op['value'], 2),
             'lead_days': s.production_lead_days + s.sea_lead_days
                          + s.port_to_wh_days,
             'capacity': s.monthly_capacity_units,
@@ -1320,14 +1353,15 @@ def api_supplier_save(request):
 def api_supplier_detail(request, pk):
     """Drill 1 — a supplier's ledger broken down BY PRODUCT CATEGORY."""
     from .models import Supplier
-    from .procurement import opening_by_category
+    from .procurement import opening_by_category, opening_lines_for
 
     s = Supplier.objects.get(pk=pk)
     opening = opening_by_category(pk)
     cats = {}
     for l in _all_lines().filter(po__supplier_id=pk):
         c = l.group.category or 'Uncategorised'
-        a = cats.setdefault(c, {'category': c, 'opening': opening.get(c, 0),
+        a = cats.setdefault(c, {'category': c,
+                                'opening': opening.get(c, {}).get('remaining', 0),
                                 'ordered': 0, 'wastage': 0, 'allocated': 0,
                                 'loaded': 0, 'received': 0, 'remaining': 0,
                                 'value': 0.0, 'skus': set()})
@@ -1340,12 +1374,12 @@ def api_supplier_detail(request, pk):
         a['value']     += float(l.group.fob_rate) * l.remaining_units
         a['skus'].add(l.sku)
     # categories that exist only as opening backlog (no PO yet)
-    for c, units in opening.items():
+    for c, od in opening.items():
         if c not in cats:
-            cats[c] = {'category': c, 'opening': units, 'ordered': 0,
-                       'wastage': 0, 'allocated': 0, 'loaded': 0,
-                       'received': 0, 'remaining': 0, 'value': 0.0,
-                       'skus': set()}
+            cats[c] = {'category': c, 'opening': od['remaining'], 'ordered': 0,
+                       'wastage': 0, 'allocated': od['allocated'], 'loaded': 0,
+                       'received': od['received'], 'remaining': 0,
+                       'value': round(od['value'], 2), 'skus': set()}
     rows = []
     for a in cats.values():
         a['skus'] = len(a['skus'])
@@ -1364,7 +1398,8 @@ def api_supplier_detail(request, pk):
                       .order_by('-order_date')]
     return JsonResponse({'supplier': {'id': s.pk, 'name': s.name,
                                       'code': s.code, 'country': s.country},
-                         'categories': rows, 'purchase_orders': pos})
+                         'categories': rows, 'purchase_orders': pos,
+                         'opening_lines': opening_lines_for(pk)})
 
 
 @login_required
@@ -1424,6 +1459,7 @@ def api_po_detail(request, pk):
                'ready': (po.expected_ready_date.isoformat()
                          if po.expected_ready_date else None),
                'terms': po.payment_terms, 'status': po.status,
+               'currency': po.currency, 'notes': po.notes,
                'fob_value': float(po.fob_value),
                'ordered': po.ordered_units, 'wastage': po.wastage_units,
                'allocated': po.allocated_units, 'received': po.received_units,
@@ -1461,10 +1497,210 @@ def api_production_plan(request, pk):
                  'allocated': p.allocated_qty, 'loaded': p.loaded_qty,
                  'received': p.received_qty, 'transit': p.in_transit_qty,
                  'remaining': p.remaining_qty, 'status': p.status,
+                 'notes': p.notes,
                  'ready': (p.expected_ready_date.isoformat()
                            if p.expected_ready_date else None)},
         'lines': _line_rows(p.group.lines.all()),
         'allocations': allocs})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
+def api_supplier_delete(request):
+    """Safe-delete a supplier.
+
+    A supplier with ANY history — purchase orders or opening balances — is
+    DEACTIVATED (is_active=False), never removed, so the ledger it underpins
+    stays intact. Only a supplier with no POs and no opening balances is
+    actually deleted. PurchaseOrder.supplier is PROTECT, so a hard delete of a
+    supplier-with-POs would raise anyway; this makes the softer outcome explicit.
+    """
+    from .models import Supplier
+    try:
+        pk = json.loads(request.body or '{}')['id']
+    except (ValueError, KeyError):
+        return JsonResponse({'status': 'failed', 'error': 'Bad payload.'},
+                            status=400)
+    s = Supplier.objects.filter(pk=pk).first()
+    if not s:
+        return JsonResponse({'status': 'failed', 'error': 'Supplier not found.'},
+                            status=404)
+    has_pos     = s.purchase_orders.exists()
+    has_opening = s.opening_balances.exists()
+    if has_pos or has_opening:
+        if s.is_active:
+            s.is_active = False
+            s.save(update_fields=['is_active'])
+        return JsonResponse({
+            'status': 'ok', 'softened': True,
+            'message': (f'{s.name} has history (purchase orders or opening '
+                        f'balance), so it was deactivated instead of deleted — '
+                        f'its records stay intact. Tick "Show inactive" to see '
+                        f'it.')})
+    name = s.name
+    s.delete()
+    return JsonResponse({'status': 'ok',
+                         'message': f'Supplier {name} deleted.'})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
+def api_po_save(request):
+    """Edit a PO's header fields (dates, terms, currency, status, notes).
+    Line items come from the workbook import and are not edited here."""
+    from datetime import date as _date
+    from .models import PurchaseOrder, PO_STATUSES
+    try:
+        d = json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'status': 'failed', 'error': 'Bad payload.'},
+                            status=400)
+    po = PurchaseOrder.objects.filter(pk=d.get('id')).first()
+    if not po:
+        return JsonResponse({'status': 'failed', 'error': 'PO not found.'},
+                            status=404)
+    num = (d.get('po_number') or '').strip()
+    if not num:
+        return JsonResponse({'status': 'failed',
+                             'error': 'PO number is required.'}, status=400)
+    if PurchaseOrder.objects.filter(po_number=num).exclude(pk=po.pk).exists():
+        return JsonResponse({'status': 'failed',
+                             'error': f'PO number "{num}" already exists.'},
+                            status=400)
+    status = d.get('status')
+    if status and status not in {s for s, _ in PO_STATUSES}:
+        return JsonResponse({'status': 'failed', 'error': 'Invalid status.'},
+                            status=400)
+    for f in ('order_date', 'expected_ready_date'):
+        if f in d:
+            v = (d.get(f) or '').strip()
+            if not v:
+                setattr(po, f, None)
+            else:
+                try:
+                    setattr(po, f, _date.fromisoformat(v))
+                except ValueError:
+                    return JsonResponse({'status': 'failed',
+                                         'error': f'{f} must be YYYY-MM-DD.'},
+                                        status=400)
+    po.po_number = num
+    for f in ('payment_terms', 'currency', 'notes'):
+        if d.get(f) is not None:
+            setattr(po, f, str(d[f]))
+    if status:
+        po.status = status
+    po.save()
+    return JsonResponse({'status': 'ok', 'id': po.pk,
+                         'message': f'PO {po.po_number} saved.'})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
+def api_po_delete(request):
+    """Safe-delete a PO. Blocked once anything has been received or allocated to
+    a container (that is receiving/shipping history). Otherwise the PO and its
+    groups, production plans, SKU lines and reservations are removed."""
+    from .models import PurchaseOrder
+    try:
+        pk = json.loads(request.body or '{}')['id']
+    except (ValueError, KeyError):
+        return JsonResponse({'status': 'failed', 'error': 'Bad payload.'},
+                            status=400)
+    po = PurchaseOrder.objects.filter(pk=pk).first()
+    if not po:
+        return JsonResponse({'status': 'failed', 'error': 'PO not found.'},
+                            status=404)
+    if po.received_units > 0:
+        return JsonResponse({'status': 'failed',
+            'error': (f'{po.po_number} has {po.received_units:,} received units '
+                      f'and is part of the receiving history — set its status to '
+                      f'Cancelled instead of deleting.')})
+    if po.allocated_units > 0:
+        return JsonResponse({'status': 'failed',
+            'error': (f'{po.po_number} has {po.allocated_units:,} units allocated '
+                      f'to containers. Remove those container allocations first, '
+                      f'or cancel the PO.')})
+    num = po.po_number
+    po.delete()   # cascades groups → production plans → lines → reservations
+    return JsonResponse({'status': 'ok', 'message': f'PO {num} deleted.'})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
+def api_production_plan_save(request):
+    """Edit a production plan's own fields (PP number, ready date, status, notes)."""
+    from datetime import date as _date
+    from .models import ProductionPlan, PO_LINE_STATUSES
+    try:
+        d = json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'status': 'failed', 'error': 'Bad payload.'},
+                            status=400)
+    p = ProductionPlan.objects.filter(pk=d.get('id')).first()
+    if not p:
+        return JsonResponse({'status': 'failed',
+                             'error': 'Production plan not found.'}, status=404)
+    if 'pp_number' in d:
+        p.pp_number = (d.get('pp_number') or '').strip()
+    if d.get('notes') is not None:
+        p.notes = str(d['notes'])
+    status = d.get('status')
+    if status:
+        if status not in {s for s, _ in PO_LINE_STATUSES}:
+            return JsonResponse({'status': 'failed', 'error': 'Invalid status.'},
+                                status=400)
+        p.status = status
+    if 'expected_ready_date' in d:
+        v = (d.get('expected_ready_date') or '').strip()
+        if not v:
+            p.expected_ready_date = None
+        else:
+            try:
+                p.expected_ready_date = _date.fromisoformat(v)
+            except ValueError:
+                return JsonResponse({'status': 'failed',
+                    'error': 'expected_ready_date must be YYYY-MM-DD.'},
+                    status=400)
+    p.save()
+    return JsonResponse({'status': 'ok',
+                         'message': f'{p.pp_number or "Production plan"} saved.'})
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
+def api_production_plan_delete(request):
+    """Safe-delete a production plan — the product block on a PO. Removes the
+    plan, its line-group and the SKU lines under it. Blocked once anything has
+    been allocated to a container or received."""
+    from .models import ProductionPlan
+    try:
+        pk = json.loads(request.body or '{}')['id']
+    except (ValueError, KeyError):
+        return JsonResponse({'status': 'failed', 'error': 'Bad payload.'},
+                            status=400)
+    p = ProductionPlan.objects.select_related('group').filter(pk=pk).first()
+    if not p:
+        return JsonResponse({'status': 'failed',
+                             'error': 'Production plan not found.'}, status=404)
+    g = p.group
+    lines = list(g.lines.all())
+    received  = sum(l.received_units  for l in lines)
+    allocated = sum(l.allocated_units for l in lines)
+    if received > 0 or allocated > 0:
+        return JsonResponse({'status': 'failed',
+            'error': (f'{p.pp_number or "This plan"} has {allocated:,} allocated '
+                      f'and {received:,} received units, so it cannot be deleted. '
+                      f'Cancel it or remove its container allocations first.')})
+    label = p.pp_number or 'Production plan'
+    n = len(lines)
+    g.delete()   # OneToOne/CASCADE also removes the plan and its POLines
+    return JsonResponse({'status': 'ok',
+                         'message': f'{label} removed ({n} SKU line(s)).'})
 
 
 def _post_date(request, key):

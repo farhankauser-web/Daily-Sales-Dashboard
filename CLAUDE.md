@@ -112,3 +112,37 @@ today**, **How it should work**, and a **Gaps** table.
 
 **Touching a file means updating its doc's `verified against` line in the same
 commit.** A doc that lies is worse than no doc, because it gets believed.
+
+## God Mode Swarm (agent operating system)
+
+A 25-agent "God Mode Swarm" is installed *around* this application to add a
+structured, risk-based delivery pipeline. It does not change app behaviour.
+
+- **Agents (executable/delegatable):** `.claude/agents/godmode_*.md` — 25 Claude
+  Code subagents, invoked via the **Task tool**. `godmode_orchestrator` is the
+  entry point/router.
+- **Skills (detailed personas):** `.claude/skills/godmode_*/SKILL.md` — the deep
+  operating instructions behind each agent. (The existing `search-term-dashboard`
+  skill is untouched.)
+- **Global rules:** `.claude/god_mode/AGENTS.md` (project-init, file-storage, QA
+  testing, pipeline, risk-based orchestration) and `god_mode_delegation.md`.
+- **Vault / SSOT / Shadow Context:** `_vault/` — `00_Master_Source_Of_Truth.md`
+  (living SSOT), `00_Shadow_Context/` (context that survives lost chats), `Tasks/`,
+  `Assets/`, `Reports/`, `Master_Development_Log.md`.
+
+**How orchestration works.** The main session acts as `godmode_orchestrator` and
+delegates to specialists via the Task tool (subagents don't spawn subagents). It is
+**risk-based** — a typo uses one specialist; a schema change uses PM → Architect →
+DBA → dev → QA; a production deploy requires the **mandatory** QA, Cybersecurity and
+UAT gates before DevOps. Chain: PM (scope) → Architect (design/SSOT) → specialists →
+QA → Security → UAT → DevOps → docs/archivist.
+
+**Mandatory rules.** No deployment without `godmode_cybersecurity_agent` clearance;
+no schema/API change without `godmode_lead_architect`; agents expose conclusions,
+decisions, assumptions, evidence, plans, risks and verification — never private
+chain-of-thought.
+
+**Precedence.** These God Mode rules are generic scaffolding. **This file's
+invariants, conventions, and safety constraints above are authoritative** and win
+on any conflict. QA uses this project's Django test suite (`python manage.py check`
+/ `test`), not the source system's QAHub, unless QAHub is explicitly configured.

@@ -1,6 +1,8 @@
 from django.urls import path
 from . import views
 from . import views_inventory as vi
+from . import views_sti
+from . import views_marketing
 
 app_name = 'dashboard'
 
@@ -62,10 +64,27 @@ urlpatterns = [
     path('api/campaigns/<str:campaign_id>/targeting/',views.api_campaign_targeting, name='api_campaign_targeting'),
     path('api/campaigns/<str:campaign_id>/hourly/',   views.api_campaign_hourly,    name='api_campaign_hourly'),
 
+    # Marketing Optimizer (search-term actions + budget pacing) — read-only
+    path('marketing-optimizer/',           views_marketing.marketing_optimizer, name='marketing_optimizer'),
+    path('api/mkt-search-terms/',          views_marketing.api_mkt_search_terms, name='api_mkt_search_terms'),
+    path('api/budget-pacing/',             views_marketing.api_budget_pacing,   name='api_budget_pacing'),
+    path('api/mkt-export/',                views_marketing.mkt_export,          name='mkt_export'),
+
     # Search Term Intelligence
     path('search-terms/',                  views.search_terms,            name='search_terms'),
     path('api/search-terms/',              views.api_search_terms,        name='api_search_terms'),
     path('api/search-terms/detail/',       views.api_search_term_detail,  name='api_search_term_detail'),
+
+    # Phase 5 — Search Intelligence Center
+    path('search-intelligence/',            views_sti.search_intelligence,   name='search_intelligence'),
+    path('search-intelligence/generate/',   views_sti.sti_generate,          name='sti_generate'),
+    path('search-intelligence/outcomes/',   views_sti.sti_outcomes,          name='sti_outcomes'),
+    path('search-intelligence/groups/',     views_sti.sti_groups,            name='sti_groups'),
+    path('search-intelligence/groups/new/', views_sti.sti_group_form,        name='sti_group_create'),
+    path('search-intelligence/groups/<int:pk>/', views_sti.sti_group_form,   name='sti_group_edit'),
+    path('api/sti/run/<int:pk>/narrate/',   views_sti.sti_narrate,           name='sti_narrate'),
+    path('api/sti/opportunity/<int:pk>/status/',
+                                            views_sti.sti_opportunity_status, name='sti_opportunity_status'),
 
     # Placement Analytics
     path('placements/',                    views.placements,              name='placements'),

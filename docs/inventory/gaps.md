@@ -27,7 +27,7 @@ does not follow from the cause is how a register turns into a wishlist.
 | ID | Title | Priority | Classification | Status |
 |---|---|---|---|---|
 | `INV-CONT-001` | In-transit lines carry no FOB rate | P1 | legacy data | open |
-| `INV-CONT-002` | Opening balance is not consumable | P1 | missing implementation | open |
+| `INV-CONT-002` | Opening balance is not consumable | P1 | missing implementation | resolved 2026-08-10 |
 | `INV-RECV-001` | No active container carries an Amazon shipment ID | P1 | missing operational process | open |
 | `INV-RECV-002` | Archived containers with no count report as a total loss | P1 | legacy data | open |
 | `INV-CONT-003` | No stall alert for a container stuck in Receiving | P2 | missing implementation | open |
@@ -36,7 +36,7 @@ does not follow from the cause is how a register turns into a wishlist.
 | `INV-RECV-004` | A SKU with nothing received reports no shortfall | P2 | bug | open |
 | `INV-ALLOC-003` | The container-manifest import strips FOB and PO attribution | P2 | bug | open |
 | `INV-PLAN-001` | Lead times exist twice, and the two disagree | P2 | bug | open |
-| `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | missing implementation | open |
+| `INV-SUP-001` | Opening balance has no rate, so Outstanding FOB understates | P2 | missing implementation | resolved 2026-08-10 |
 | `INV-SUP-004` | The PO upload takes free text for the supplier and mints one on a typo | P2 | bug | open |
 | `INV-CASH-001` | Opening-balance backlog never reaches cash flow | P2 | missing implementation · blocked | blocked |
 | `INV-CONT-004` | Goods receipt writes AWD stock the sync overwrites | P3 | bug | open |
@@ -115,10 +115,18 @@ work to a single upload.
 | | |
 |---|---|
 | **Priority** | P1 |
-| **Status** | open — decided, not built |
+| **Status** | **resolved 2026-08-10** — two-tier pool + INV-SUP-001 rate built |
 | **Classification** | missing implementation |
 | **Code alone fixes it** | yes |
-| **Dependencies** | `INV-SUP-001` (a rate makes the drawdown valuable) |
+| **Dependencies** | `INV-SUP-001` (a rate makes the drawdown valuable) — built together |
+
+**Resolution** — `SupplierOpeningBalance` became an allocatable source mirroring
+`POLine` (`remaining = units − allocations`); `InTransitLine.opening_balance`
+links a container line to the backlog; `procurement._open_sources_for` draws
+opening (oldest as_of) then PO FIFO; `import_opening_balance` refuses to replace
+a drawn-against balance and reads an optional FOB rate. Ledger and PO drill-down
+show opening remaining per SKU and fold it into Balance. Verified end-to-end
+(opening-first, decrement, over-alloc guard, re-upload guard, rate).
 
 **Current behaviour** — A packing list draws only from PO lines. Opening balance
 is a static figure that nothing decrements, so units are deducted from purchase

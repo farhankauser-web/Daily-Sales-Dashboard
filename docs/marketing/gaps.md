@@ -28,6 +28,8 @@ legacy data — a root cause, and whether a code change alone would close it.
 | `MKT-ADS-001` | A report day that never resolves is invisible | P2 | missing implementation | open |
 | `MKT-AMS-002` | The legacy dataset map covers SP only outside North America | P3 | missing implementation | open |
 | `MKT-CAMP-001` | Nothing flags a campaign whose profit rests mostly on fallback margins | P2 | missing implementation | open |
+| `MKT-STI-004` | Brand Analytics ingestion may not be scheduled in production | P2 | configuration | open |
+| `MKT-STI-005` | Campaign names are unavailable for UAE and KSA | P3 | configuration | open |
 | `MKT-UPL-001` | An unmatched campaign name on upload is logged, never reported | P3 | missing implementation | open |
 | `MKT-TERM-001` | Signal thresholds are fixed in code and identical across marketplaces | P3 | missing implementation | open |
 
@@ -534,6 +536,88 @@ defaults. Do it when UK advertising starts being managed here, not before.
 
 ---
 
+## `MKT-STI-004` · Brand Analytics ingestion may not be scheduled in production
+
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | open |
+| **Classification** | configuration |
+| **Code alone fixes it** | no — a scheduled job has to run |
+| **Dependencies** | `INFRA-001` |
+
+**Current behaviour** — The Search Intelligence Center labels how old its market
+data is and suppresses trend claims when the weeks cannot support them. That
+labelling is by design (`MKT-D-012`, `MKT-D-013`) and is not a defect. What is a
+defect is the refresh behind it: locally the newest Brand Analytics week is 60
+days old.
+
+**Expected behaviour** — Brand Analytics refreshes weekly, so the Center's market
+read is at most a week or two behind and trend claims become available.
+
+**Root cause** — Configuration. `ingest_brand_analytics` exists as a management
+command but appears in no scheduled job. `INFRA-001` records that
+`deploy/crontab.txt` cannot be installed on EC2 and the server's crontab is
+hand-maintained and drifted, so whether it runs in production is unknown from
+the development machine.
+
+**Evidence** — source: code and dev snapshot. `apps/amazon_api/management/
+commands/ingest_brand_analytics.py` exists; `grep ingest_brand_analytics
+deploy/crontab.txt` returns nothing. Newest week held locally: 2026-05-31 →
+2026-06-06, against an advertising window ending 2026-08-05.
+
+**Business impact** — Market share, organic-gap and product-gap opportunities
+describe an older market than the advertising beside them. Under `MKT-D-013`
+they are still shown, because a dated strategic read beats no read — but trend
+and momentum scoring stay switched off, which is where the real loss is.
+
+**Technical impact** — None. The degradation ladder and the labelling are
+implemented; only the data is behind.
+
+**Recommendation** — Confirm the EC2 crontab; schedule weekly ingestion if it is
+absent. Trend and momentum scoring switch on automatically once three or more
+recent weeks exist.
+
+**Related documents** — [search-intelligence.md](search-intelligence.md), [../brand-analytics/search-queries.md](../brand-analytics/search-queries.md)
+**Related decisions** — `MKT-D-012`, `MKT-D-013`
+
+## `MKT-STI-005` · Campaign names are unavailable for UAE and KSA
+
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | open |
+| **Classification** | configuration |
+| **Code alone fixes it** | no — the campaign sync has to cover AE and SA |
+| **Dependencies** | none |
+
+**Current behaviour** — Recommendations for UAE and KSA name the campaign to
+edit by its id rather than its name, because the campaign dimension has no rows
+for those marketplaces.
+
+**Expected behaviour** — Campaign names everywhere, so an action can be carried
+to Seller Central without a lookup.
+
+**Root cause** — Configuration. The campaign dimension is built from the PPC
+campaign snapshot, which has no AE or SA rows. This was the root of the former
+`MKT-STI-001`; catalog scoping removed its impact on the numbers, leaving only
+the display.
+
+**Evidence** — source: dev snapshot; **provisional**. PPC campaign snapshot rows
+by marketplace: `{'uk': 195, 'usa': 16934}`. Advertised-product rows exist for
+all four, which is why scoping works and naming does not.
+
+**Business impact** — A small extra step for whoever executes a UAE or KSA
+action. No number is affected.
+
+**Technical impact** — None; the lookup already falls back to the id.
+
+**Recommendation** — Extend the campaign sync to AE and SA. Low priority.
+
+**Related documents** — [search-intelligence.md](search-intelligence.md), [campaigns.md](campaigns.md)
+
+---
+
 ## Production verification queue
 
 Findings below rest on local development data and **cannot be settled here**.
@@ -548,8 +632,15 @@ what it shows. Nothing here blocks a document.
 |---|---|
 | `MKT-ALLOC-003` | does any active ASIN carry more than one non-excluded SKU? Non-zero makes this P1 today |
 | `MKT-ALLOC-001` | how much spend sits in "Unallocated PPC" on production? Sets the real priority |
+| `MKT-STI-005` | does the PPC campaign snapshot hold AE and SA rows on production? If yes, this is local-only and closes |
+| `MKT-STI-004` | is `ingest_brand_analytics` on the EC2 crontab, and how many recent weeks exist per marketplace? Three or more switches trend scoring on |
+| — | what is the real `DailySkuSnapshot` lag behind the ads tables on production? Decides how often paid share is withheld |
+| `MKT-STI-004` | how many SQP weeks exist per marketplace, and how recent is the newest? Three or more recent weeks switches trends on |
 
 ## Closed
 
 | ID | Title | Closed by |
 |---|---|---|
+| `MKT-STI-001` | UAE and KSA cannot be scoped — the campaign dimension has no rows for them | catalog/ASIN scoping — ad groups now resolve from the advertised-product report, covering 98.6% of UAE and 95.5% of KSA search-term spend. Display-only remnant is `MKT-STI-005` |
+| `MKT-STI-002` | Campaigns with no parsed initials belong to no product group | catalog/ASIN scoping — campaign naming no longer scopes anything. Unplaced advertised spend is now 0.0% USA · 3.9% UK · 0.0% UAE · 2.6% KSA, reported in the footer |
+| `MKT-STI-003` | Contribution margin is estimated from partial attribution | per-SKU actuals from DailySkuSnapshot — no coverage correction, all four marketplaces. Exposed a trap: stored `cm` is ex-VAT while the revenue column is gross, so the rate divides by `revenue × net_factor` (UK 33.5%, not 27.9%) |

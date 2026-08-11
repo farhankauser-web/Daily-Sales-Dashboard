@@ -18,7 +18,7 @@ It does not own the profit those campaigns contribute to. Margin, COGS and the
 P&L belong to **[financials](../financials/README.md)**. This section supplies the ad cost;
 that one decides what it means.
 
-**This section is complete and frozen** except for future feature changes. Seven
+**This section is complete and frozen** except for future feature changes. Eight
 features are documented; the registers are the backlog, not unwritten work. The
 process lessons are in [RETROSPECTIVE.md](RETROSPECTIVE.md).
 
@@ -31,6 +31,7 @@ process lessons are in [RETROSPECTIVE.md](RETROSPECTIVE.md).
 | [hourly-upload.md](hourly-upload.md) | Seller Central hourly CSV → the same table | an uploaded day disagrees with the stream |
 | [sku-allocation.md](sku-allocation.md) | campaign spend → SKU | per-SKU ad cost or TACoS looks wrong |
 | [campaigns.md](campaigns.md) | campaign centre, profit, detail tabs | a campaign's figures look wrong |
+| [search-intelligence.md](search-intelligence.md) | ranked business opportunities priced in margin | you need to decide what to do next, not what happened |
 | [search-terms.md](search-terms.md) | search-term performance and summaries | a term's spend or conversion looks wrong |
 | [placements.md](placements.md) | placement performance | placement multipliers or splits look wrong |
 

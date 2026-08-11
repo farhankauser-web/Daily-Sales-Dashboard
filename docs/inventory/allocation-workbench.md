@@ -169,7 +169,7 @@ workbench — *provisional; re-measure on production.*
 
 | Gap | | Classification |
 |---|---|---|
-| `INV-CONT-002` | opening balance is not consumable, so packing lists never draw it down | missing implementation |
+| `INV-CONT-002` | ~~opening balance is not consumable~~ — **built 2026-08-10**: packing lists draw opening backlog first (oldest), then PO FIFO | resolved |
 | `INV-ALLOC-003` | the container-manifest import strips FOB and PO attribution from the lines it replaces | bug |
 | `INV-CONT-011` | the status-workbook import deletes every container in the region | bug |
 | `INV-ALLOC-004` | append mode is unreachable, and its docstring still presents it as the two-supplier route | bug — stale documentation |

@@ -1446,8 +1446,12 @@ class BASearchQueryWeekly(models.Model):
     """
 
     marketplace                = models.CharField(max_length=8)
-    week_start                 = models.DateField(help_text='Monday (start of week)')
-    week_end                   = models.DateField(help_text='Sunday (end of week)')
+    week_start                 = models.DateField(
+        help_text="SUNDAY — Amazon's week runs Sunday to Saturday, and the stored data "
+                  "confirms it (2026-05-31 is a Sunday, week_end 2026-06-06 a Saturday). "
+                  "This field previously claimed Monday. Never derive the boundary from "
+                  "isocalendar(); anything assuming an ISO week is off by one day.")
+    week_end                   = models.DateField(help_text='Saturday (end of week)')
     asin                       = models.CharField(max_length=16, default='',
         help_text='Amazon now requires SQP reports to be ASIN-scoped — each '
                   '(week × ASIN) yields one report, and each report can list '
@@ -2069,3 +2073,323 @@ class ManualPnLUpload(models.Model):
 
     def __str__(self):
         return f'{self.marketplace.upper()} {self.month} {self.original_filename} [{self.status}]'
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PHASE 5 — SEARCH INTELLIGENCE CENTER
+#
+# Design: plans/search-intelligence-center.md (v2).
+#
+# The Center is a REPORT RUN, not a live page: the user picks
+# (product group × marketplace × date range), Pulse computes a complete JSON
+# payload, and the UI renders that payload. Rationale:
+#   1. The pipeline joins a multi-million-row fact table with weekly Brand
+#      Analytics data, a profit proxy and a scoring model — seconds of work.
+#      Acceptable per explicit run, not per page-load.
+#   2. Stored runs give history, so the diff engine ("what changed since last
+#      time?") and outcome tracking become possible at all.
+#   3. Opportunities carry a STABLE KEY across runs, so "Capture face towels
+#      (USA)" is the same row week after week and can be tracked to outcome.
+#
+# Phase 1 implements: ProductGroup · SearchTermTag · StiReportRun ·
+# StiOpportunity · StiOpportunitySnapshot.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class ProductGroup(models.Model):
+    """
+    The reporting scope for a Search Intelligence run.
+
+    THE CATALOG DEFINES THE GROUP. Membership is `Product.category`, plus the
+    manual ASIN overrides. The advertising that belongs to a group is derived
+    from which ad groups advertised those ASINs — see
+    `apps.dashboard.sti.mapping`. Campaign naming never scopes anything.
+
+    That is not only cleaner, it is more correct. Scoping by campaign-name
+    initials covered none of UAE or KSA (the campaign dimension has no rows for
+    them) and undercovered the UK, where the dimension held 74 campaigns
+    against 315 that actually advertised. The catalog route attributes
+    95.5–99.9% of search-term spend in all four marketplaces.
+
+    Groups are marketplace-agnostic — SKU logic is region-blind in Pulse.
+    Membership resolves per-marketplace at query time via Product.marketplace.
+    """
+
+    name          = models.CharField(max_length=64, unique=True)
+    slug          = models.SlugField(max_length=64, unique=True)
+
+    initials      = models.JSONField(default=list, blank=True,
+                     help_text='DISPLAY ONLY — campaign initials commonly used for this '
+                               'group, e.g. ["BTH"]. Recorded so a report is easier to '
+                               'read against Seller Central. Never used to scope a query; '
+                               'scoping is by Product.category.')
+    categories    = models.JSONField(default=list, blank=True,
+                     help_text='Product.category values that define this group. '
+                               'THE definition — routes both ASINs and ad spend in.')
+    extra_asins   = models.JSONField(default=list, blank=True,
+                     help_text='Manual additions — ASINs the category rule misses.')
+    excluded_asins= models.JSONField(default=list, blank=True,
+                     help_text='Manual subtractions — applied after every other rule.')
+
+    lexicon_key   = models.CharField(max_length=32, default='towel',
+                     help_text='Which intent lexicon applies (apps.dashboard.sti.lexicon).')
+    active        = models.BooleanField(default=True)
+
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ix_sti_product_group'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class SearchTermTag(models.Model):
+    """
+    Persisted multi-dimensional classification of one search term.
+
+    Why persist rather than regex on the fly: the fact table can carry >100k
+    distinct terms per marketplace. Classifying inline would re-run the whole
+    lexicon on every report. Instead a term is classified once and reused;
+    a lexicon version bump triggers reclassification of stale rows only.
+
+    `tags` shape (see apps.dashboard.sti.taxonomy):
+        {product_type: str, attributes: [str], room_usage: str|None,
+         brand_class: str, is_asin: bool}
+    """
+
+    marketplace      = models.CharField(max_length=8)
+    search_term_hash = models.CharField(max_length=40,
+                        help_text='SHA1(lower(term)) — same recipe as '
+                                  'AdsSearchTermDailySnapshot.search_term_hash, so the '
+                                  'two join without a text comparison.')
+    search_term      = models.CharField(max_length=512)
+
+    tags             = models.JSONField(default=dict)
+    lexicon_version  = models.IntegerField(default=1,
+                        help_text='Bumping LEXICON_VERSION invalidates every row.')
+    classified_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table        = 'ix_sti_search_term_tag'
+        unique_together = [['marketplace', 'search_term_hash']]
+        indexes = [
+            models.Index(fields=['marketplace', 'lexicon_version']),
+        ]
+
+    def __str__(self):
+        return f'{self.marketplace.upper()} {self.search_term[:40]}'
+
+
+class StiReportRun(models.Model):
+    """
+    One generation of the Search Intelligence Center.
+
+    `payload` holds every computed section. `schema_version` lets old runs stay
+    renderable when later phases add sections — the template renders known keys
+    and ignores the rest, so no migration of stored payloads is ever needed.
+    """
+
+    STATUS = [
+        ('running',  'Running'),
+        ('complete', 'Complete'),
+        ('failed',   'Failed'),
+    ]
+
+    product_group   = models.ForeignKey(ProductGroup, on_delete=models.CASCADE,
+                                        related_name='runs')
+    marketplace     = models.CharField(max_length=8)
+
+    # The report runs on Amazon's own reporting grid — Sunday-start weeks, or
+    # calendar months — rather than a rolling range. A named period is fixed
+    # forever, which is what makes "we acted in Week 30; did Week 31 improve?"
+    # answerable at all. A rolling window resolves differently every day, so two
+    # runs never cover the same days and no comparison between them is valid.
+    period_type     = models.CharField(max_length=8, default='weekly',
+                       help_text='weekly | monthly — see apps.dashboard.sti.periods')
+    period_key      = models.CharField(max_length=16, default='', db_index=True,
+                       help_text="'2026-W31' or '2026-07'. Amazon's week numbering, "
+                                 "NOT ISO — Amazon's Week 31 of 2026 is ISO week 30.")
+    date_from       = models.DateField()
+    date_to         = models.DateField()
+
+    status          = models.CharField(max_length=10, choices=STATUS, default='running')
+    schema_version  = models.IntegerField(default=1)
+    payload         = models.JSONField(default=dict, blank=True)
+    error           = models.TextField(blank=True, default='')
+
+    duration_ms     = models.IntegerField(default=0)
+    generated_at    = models.DateTimeField(auto_now_add=True)
+    generated_by    = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                        null=True, blank=True, related_name='sti_runs')
+
+    class Meta:
+        db_table = 'ix_sti_report_run'
+        ordering = ['-generated_at']
+        indexes = [
+            models.Index(fields=['product_group', 'marketplace', '-generated_at']),
+        ]
+
+    def __str__(self):
+        return (f'{self.product_group.name} · {self.marketplace.upper()} · '
+                f'{self.date_from}→{self.date_to} [{self.status}]')
+
+
+class StiOpportunity(models.Model):
+    """
+    A business case, not a task — the product of the whole Center.
+
+    IDENTITY IS THE POINT. `key` is a stable hash of
+    (type · group · marketplace · subject), so the same real-world opportunity
+    keeps one row across runs. Without that, "what changed since last report?"
+    and outcome measurement are both impossible.
+
+    Money fields are per MONTH in the marketplace's own currency, and profit is
+    contribution margin measured on revenue EX-VAT (the Pulse margin invariant).
+    """
+
+    TYPES = [
+        ('capture_share', 'Capture share'),
+        ('product_gap',   'Product gap'),
+        ('organic_push',  'Organic push'),
+        ('listing_fix',   'Listing fix'),
+        ('scale_ppc',     'Scale PPC'),
+        ('defend',        'Defend (waste)'),
+        ('conquest',      'Conquest'),      # Phase 2 — needs competitor detectors
+    ]
+    STATUS = [
+        ('open',        'Open'),
+        ('in_progress', 'In progress'),
+        ('done',        'Done'),
+        ('dismissed',   'Dismissed'),
+        ('expired',     'Expired'),
+    ]
+    CONFIDENCE = [('high', 'High'), ('medium', 'Medium'), ('low', 'Low')]
+
+    key             = models.CharField(max_length=40, unique=True,
+                       help_text='Stable across runs — see class docstring.')
+    product_group   = models.ForeignKey(ProductGroup, on_delete=models.CASCADE,
+                                        related_name='opportunities')
+    marketplace     = models.CharField(max_length=8)
+    opp_type        = models.CharField(max_length=16, choices=TYPES)
+
+    title           = models.CharField(max_length=200)
+    why             = models.TextField(blank=True, default='')
+    subject         = models.CharField(max_length=512, blank=True, default='',
+                       help_text='The term / node / SKU this is about.')
+
+    # ── The score and its three factors (design §5: dollars × probability) ──
+    score           = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                       help_text='Expected contribution margin per month. THE ranking key.')
+    headroom_value  = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                       help_text='Attainable incremental revenue per month, before probability.')
+    win_probability = models.DecimalField(max_digits=5, decimal_places=4, default=0)
+    margin_factor   = models.DecimalField(max_digits=5, decimal_places=4, default=0)
+
+    difficulty      = models.IntegerField(default=3, help_text='1 (PPC-only) … 5 (new product)')
+    confidence      = models.CharField(max_length=6, choices=CONFIDENCE, default='low')
+    blocked_reason  = models.CharField(max_length=120, blank=True, default='',
+                       help_text='Non-empty when a hard gate fired (stockout, no margin).')
+
+    evidence        = models.JSONField(default=dict, blank=True,
+                       help_text='Every number cited in the UI, so the card is auditable.')
+    required_actions= models.JSONField(default=list, blank=True)
+    dependencies    = models.JSONField(default=list, blank=True)
+    timeline        = models.CharField(max_length=32, blank=True, default='')
+
+    status          = models.CharField(max_length=12, choices=STATUS, default='open')
+    status_note     = models.TextField(blank=True, default='')
+    acted_period_key= models.CharField(max_length=16, blank=True, default='',
+                       help_text='The reporting period during which this was marked done — '
+                                 'the anchor for measuring whether it worked.')
+
+    first_seen_run  = models.ForeignKey(StiReportRun, on_delete=models.SET_NULL, null=True,
+                                        blank=True, related_name='opportunities_first_seen')
+    last_seen_run   = models.ForeignKey(StiReportRun, on_delete=models.SET_NULL, null=True,
+                                        blank=True, related_name='opportunities_last_seen')
+    runs_unseen     = models.IntegerField(default=0,
+                       help_text='Consecutive runs where the generator no longer emitted it.')
+
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ix_sti_opportunity'
+        ordering = ['-score']
+        indexes = [
+            models.Index(fields=['product_group', 'marketplace', 'status', '-score']),
+            models.Index(fields=['opp_type', '-score']),
+        ]
+
+    def __str__(self):
+        return f'[{self.opp_type}] {self.title}'
+
+
+class StiOpportunitySnapshot(models.Model):
+    """
+    One opportunity's numbers as of one run — the raw material for the
+    "what changed?" diff and, later, for outcome measurement.
+    """
+
+    opportunity   = models.ForeignKey(StiOpportunity, on_delete=models.CASCADE,
+                                      related_name='snapshots')
+    run           = models.ForeignKey(StiReportRun, on_delete=models.CASCADE,
+                                      related_name='opportunity_snapshots')
+
+    period_key    = models.CharField(max_length=16, default='', db_index=True,
+                     help_text='Copied from the run. Makes a snapshot series comparable '
+                               'period-to-period rather than run-to-run.')
+    score         = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    headroom_value= models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    current_share = models.DecimalField(max_digits=7, decimal_places=4, default=0,
+                     help_text='Our share of the market pool, 0-100.')
+    difficulty    = models.IntegerField(default=3)
+    confidence    = models.CharField(max_length=6, default='low')
+    evidence      = models.JSONField(default=dict, blank=True)
+
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table        = 'ix_sti_opportunity_snapshot'
+        unique_together = [['opportunity', 'run']]
+        ordering        = ['-created_at']
+
+    def __str__(self):
+        return f'{self.opportunity.title[:40]} @ run {self.run_id}'
+
+
+class CampaignBudgetUsageDaily(models.Model):
+    """Amazon Marketing Stream budget-usage, rolled to one row per campaign/day.
+
+    The stream delivers `percentage_of_budget_used` + `campaign_budget_amount`
+    events through the day; we keep the MAX usage % seen (the peak — a day that
+    ever reached 100% ran out of budget) and the latest budget value. This makes
+    "how many days did this campaign run out of budget" an exact count instead
+    of the hourly-spend estimate the Budget Pacing tab falls back to.
+    """
+    marketplace  = models.CharField(max_length=8)
+    date         = models.DateField()
+    campaign_id  = models.CharField(max_length=64)
+    budget_value = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                       help_text='Daily budget amount for the day.')
+    usage_pct    = models.DecimalField(max_digits=7, decimal_places=2, default=0,
+                                       help_text='Peak % of daily budget consumed that day.')
+    events       = models.IntegerField(default=0,
+                                       help_text='Budget-usage events folded into this row.')
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    OUT_OF_BUDGET_PCT = 100.0
+
+    class Meta:
+        db_table        = 'ix_campaign_budget_usage_daily'
+        unique_together = [['marketplace', 'date', 'campaign_id']]
+        ordering        = ['-date', 'marketplace', '-usage_pct']
+        indexes = [models.Index(fields=['marketplace', '-date'])]
+
+    def __str__(self):
+        return f'{self.marketplace}/{self.campaign_id} {self.date} — {self.usage_pct}%'
+
+    @property
+    def out_of_budget(self) -> bool:
+        return float(self.usage_pct) >= self.OUT_OF_BUDGET_PCT
