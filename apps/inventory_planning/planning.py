@@ -222,6 +222,19 @@ def build_projection(region: str = 'usa', horizon: int = HORIZON_DAYS) -> dict:
             if stockout is None and demand_basis > 0 \
                     and pos <= demand_basis * SAFETY_STOCK_DAYS:
                 stockout = day
+        # Parallel 120-day depletion driven by ADS-30 (actual average daily
+        # sales over the last 30 days) rather than PDS — so the runway can be
+        # read on real sell-through as well as the sales team's PDS intent.
+        pos30 = float(total_amazon + total_wh)
+        series_ads30, stockout30 = [], None
+        for i in range(horizon):
+            day = today + timedelta(days=i)
+            pos30 += arrivals[sku].get(day, 0)
+            pos30 -= a30
+            series_ads30.append(round(pos30, 1))
+            if stockout30 is None and a30 > 0 and pos30 <= a30 * SAFETY_STOCK_DAYS:
+                stockout30 = day
+
         order_by = (stockout - timedelta(days=lead)) if stockout else None
         cover_total_days = round((total_amazon + total_wh + transit) / demand_basis, 1) \
             if demand_basis > 0 else None
@@ -275,6 +288,8 @@ def build_projection(region: str = 'usa', horizon: int = HORIZON_DAYS) -> dict:
             'order_by': order_by.isoformat() if order_by else None,
             'order_overdue': bool(order_by and order_by <= today),
             'status': status, 'series': series,
+            'series_ads30': series_ads30,
+            'runs_out_ads30': stockout30.isoformat() if stockout30 else None,
             'arrival_markers': arrival_markers,
             'has_transit': transit > 0,
             'demand_basis': round(demand_basis, 2),

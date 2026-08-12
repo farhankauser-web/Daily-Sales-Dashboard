@@ -34,13 +34,19 @@
   .mono { font-family:'DM Mono',monospace; }
 
   /* the runway track */
-  .track { position:relative; height:24px; background:#F0F2F4; border-radius:5px; overflow:visible; }
-  .track .cover { position:absolute; top:0; bottom:0; background:#4FB68A; }
-  .track .short { position:absolute; top:0; bottom:0; background:repeating-linear-gradient(45deg,#F7C6C0,#F7C6C0 5px,#F3B0A8 5px,#F3B0A8 10px); }
-  .track .arr { position:absolute; top:-3px; width:0;height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:8px solid #2456A6; transform:translateX(-5px); }
+  .track { position:relative; height:26px; background:#F0F2F4; border-radius:5px; overflow:visible; }
+  .track .bar { position:absolute; left:0; right:0; height:12px; overflow:hidden; }
+  .track .bar.pds { top:0; border-radius:5px 5px 0 0; }
+  .track .bar.ads { bottom:0; border-radius:0 0 5px 5px; }
+  .track .seg { position:absolute; top:0; bottom:0; }
+  .seg.cover.pds { background:#4FB68A; }
+  .seg.short.pds { background:repeating-linear-gradient(45deg,#F7C6C0,#F7C6C0 5px,#F3B0A8 5px,#F3B0A8 10px); }
+  .seg.cover.ads { background:#2E6FBF; }
+  .seg.short.ads { background:repeating-linear-gradient(45deg,#B9D2ED,#B9D2ED 5px,#9CBFE6 5px,#9CBFE6 10px); }
+  .track .arr { position:absolute; top:-3px; width:0;height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:8px solid #2456A6; transform:translateX(-5px); z-index:4; }
   .track .arr.late { border-bottom-color:var(--warn-ink); }
-  .track .tick { position:absolute; top:0; bottom:0; width:1px; background:#DFE3E6; }
-  .track .stockout { position:absolute; top:-2px; bottom:-2px; width:2px; background:#C0392B; }
+  .track .tick { position:absolute; top:0; bottom:0; width:1px; background:#DFE3E6; z-index:2; }
+  .track .stockout { position:absolute; top:-2px; bottom:-2px; width:2px; background:#C0392B; z-index:3; }
   .badge { display:inline-block; padding:2px 7px; border-radius:9px; font-size:10px; font-weight:700; }
   .badge.gap { background:var(--crit-weak); color:#C0392B; }
   .badge.tr  { background:var(--warn-weak); color:var(--warn-ink); }
@@ -70,13 +76,14 @@
 </div>
 
 <div class="legend">
-  <span><span class="sw" style="background:#4FB68A"></span>Covered (stock on hand)</span>
-  <span><span class="sw" style="background:#F3B0A8"></span>Shortfall (out of stock)</span>
+  <span><span class="sw" style="background:#4FB68A"></span>PDS runway — covered</span>
+  <span><span class="sw" style="background:#F3B0A8"></span>PDS runway — shortfall</span>
+  <span><span class="sw" style="background:#2E6FBF"></span>ADS-30 runway (last-30-day sales)</span>
   <span><span style="color:#2456A6">▲</span> Transit arrives (in time)</span>
   <span><span style="color:var(--warn-ink)">▲</span> Transit arrives (after stockout)</span>
   <span><span style="display:inline-block;width:2px;height:12px;background:#C0392B;vertical-align:-2px"></span> Stockout day</span>
   <span><span style="display:inline-block;width:2px;height:12px;background:#9D6500;vertical-align:-2px"></span> Ship-by (last day to ship & still arrive)</span>
-  <span style="margin-left:auto">Timeline: today → +<span id="horiz">120</span> days · demand = PDS from Inventory Planner (or 7-day sales if no PDS)</span>
+  <span style="margin-left:auto">Timeline: today → +<span id="horiz">120</span> days · top bar = PDS runway · bottom blue bar = ADS-30 (last-30-day sales) runway</span>
 </div>
 
 <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
@@ -88,13 +95,14 @@
 <table class="rwtable">
   <thead><tr>
     <th style="width:230px" class="sorth" onclick="sortBy('sku')">SKU <span class="ar" data-k="sku"></span></th>
+    <th style="width:66px" class="sorth" onclick="sortBy('ads30')" title="Average daily sales, last 30 days">ADS-30 <span class="ar" data-k="ads30"></span></th>
     <th style="width:60px" class="sorth" onclick="sortBy('pds')">PDS <span class="ar" data-k="pds"></span></th>
     <th style="width:72px" class="sorth" onclick="sortBy('onhand')">On-hand <span class="ar" data-k="onhand"></span></th>
     <th style="width:70px" class="sorth" onclick="sortBy('transit')">Transit <span class="ar" data-k="transit"></span></th>
     <th style="width:110px" class="sorth" onclick="sortBy('runs')">Runs out <span class="ar" data-k="runs"></span></th>
     <th>Runway (next <span id="horiz2">120</span> days)</th>
   </tr></thead>
-  <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Loading…</td></tr></tbody>
+  <tbody id="tbody"><tr><td colspan="7" style="text-align:center;color:var(--text3);padding:30px">Loading…</td></tr></tbody>
 </table>
 {% endblock %}
 
@@ -151,22 +159,26 @@ function offset(dateStr){
   return Math.round((d-t)/86400000);
 }
 
-function track(r){
-  const s = r.series || [];
-  const H = s.length || horizon;
-  let html = '<div class="track">';
-  for(let d=30; d<H; d+=30) html += `<div class="tick" style="left:${d/H*100}%"></div>`;
-  // segment the actual depletion series: covered (>0) vs short (<=0). This
-  // shows the GAP between running out and a container landing at FC, and the
-  // recovery when it arrives.
-  let i=0;
+// segment a depletion series into covered (>0) / short (<=0) spans, coloured
+// per basis: 'pds' (green/coral) or 'ads' (blue).
+function segBar(series, cls){
+  const s = series || []; const H = s.length || horizon;
+  let html='', i=0;
   while(i<H){
     const shortSeg = s[i] <= 0;
     let j=i; while(j<H && (s[j]<=0)===shortSeg) j++;
-    const left=i/H*100, w=(j-i)/H*100;
-    html += `<div class="${shortSeg?'short':'cover'}" style="left:${left}%;width:${w}%"></div>`;
+    html += `<div class="seg ${cls} ${shortSeg?'short':'cover'}" style="left:${i/H*100}%;width:${(j-i)/H*100}%"></div>`;
     i=j;
   }
+  return html;
+}
+function track(r){
+  const H = (r.series||[]).length || horizon;
+  let html = '<div class="track">';
+  for(let d=30; d<H; d+=30) html += `<div class="tick" style="left:${d/H*100}%"></div>`;
+  // Two stacked bars: PDS runway (top) and ADS-30 runway (bottom, blue).
+  html += `<div class="bar pds">${segBar(r.series,'pds')}</div>`;
+  html += `<div class="bar ads">${segBar(r.series_ads30,'ads')}</div>`;
   const so = offset(r.stockout_date);
   if (so!==null && so<H) html += `<div class="stockout" style="left:${so/H*100}%"></div>`;
   const sb = offset(r.ship_by);
@@ -189,8 +201,12 @@ function tipHtml(r){
   let h = `<b>${FLAG[curRegion]||''} ${esc(r.sku)}</b> <span class="g">${esc((r.name||'').slice(0,32))}</span><br>`;
   h += `<span class="g">Demand</span> ${n(r.demand_basis)}/day · <span class="g">on-hand</span> ${n(r.total_amazon+r.total_wh)} (${r.cover_onhand_days??'—'}d)<br>`;
   if (r.stockout_date)
-    h += `<span class="rc">Runs out ${r.stockout_date} — in ${so}d</span>`;
-  else h += `<span class="ok">Covered through +${horizon}d</span>`;
+    h += `<span class="rc">PDS runs out ${r.stockout_date} — in ${so}d</span>`;
+  else h += `<span class="ok">PDS: covered through +${horizon}d</span>`;
+  const so30 = offset(r.runs_out_ads30);
+  h += `<br><span class="g">ADS-30</span> ${n(r.avg30)}/day · ` + (r.runs_out_ads30
+    ? `<span style="color:#8FB6EA">runs out ${r.runs_out_ads30} (in ${so30}d)</span>`
+    : `<span class="ok">covered +${horizon}d</span>`);
   if (r.ship_by) h += `<br><span class="g">Ship by ${r.ship_by}</span> (last day sea can still arrive)`;
   const arr = (r.arrival_markers||[]);
   if (arr.length){
@@ -216,7 +232,7 @@ function render(){
     && (!fc || r.category===fc)
     && (!q || r.sku.toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q)));
   if (sortKey){
-    const val=r=>({sku:r.sku, pds:r.pds??-1, onhand:(r.total_amazon+r.total_wh),
+    const val=r=>({sku:r.sku, ads30:r.avg30??-1, pds:r.pds??-1, onhand:(r.total_amazon+r.total_wh),
                    transit:r.transit, runs:(offset(r.stockout_date)??1e9)})[sortKey];
     rows.sort((a,b)=>{ const x=val(a),y=val(b);
       return (typeof x==='string'? x.localeCompare(y): x-y)*sortDir; });
@@ -240,13 +256,14 @@ function render(){
     return `<tr class="rw">
       <td><span class="mono">${esc(r.sku)}</span> <span class="badge ${badge[c]}">${label[c]}</span>
         <div style="font-size:10px;color:var(--text3)">${esc((r.name||'').slice(0,40))}</div></td>
+      <td class="mono" style="color:#2E6FBF">${n(r.avg30)}</td>
       <td>${pdsCell}</td>
       <td title="Amazon ${n(r.total_amazon)} + WH ${n(r.total_wh)} = ${r.cover_onhand_days??'—'}d cover">${n(r.total_amazon + r.total_wh)}</td>
       <td>${r.transit?n(r.transit):'<span style="color:#C0392B">0</span>'}</td>
       <td>${runs}</td>
       <td data-tip="${encodeURIComponent(tipHtml(r))}">${track(r)}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">No SKUs match.</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:30px">No SKUs match.</td></tr>';
   wireTips();
 }
 

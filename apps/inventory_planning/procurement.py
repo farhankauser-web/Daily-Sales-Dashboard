@@ -612,25 +612,25 @@ def _remaining_ob(ob, release_container_id=None) -> int:
 def _open_sources_for(sku, supplier_id, po_number='', release_container_id=None):
     """Draw sources for a SKU on a supplier, IN DRAW ORDER (INV-D-011).
 
-    Opening balance first (oldest as_of), then PO lines FIFO. A PO number on the
-    row is an exact override (INV-D-014): draw from that PO only — opening
-    balance is a system-wide backlog, not a purchase order, so an explicit PO
-    request bypasses it. Each source is a dict the preview/commit both speak:
+    Opening balance first (oldest as_of), then PO lines FIFO. Opening backlog is
+    ALWAYS drawable — it is the supplier's pre-system debt, not tied to any PO —
+    so a container fills from opening balance AND/OR a PO. A PO number on the row
+    only narrows the PO side to that specific PO (INV-D-014); it never excludes
+    opening balance. Each source is a dict the preview/commit both speak:
         {kind:'opening'|'po', id, remaining, po, po_id, pp, category}
     """
     from .models import SupplierOpeningBalance
     sources = []
-    if not po_number:
-        obs = (SupplierOpeningBalance.objects
-               .filter(sku__iexact=sku, supplier_id=supplier_id)
-               .prefetch_related('allocations__shipment')
-               .order_by('as_of', 'pk'))
-        for ob in obs:
-            rem = _remaining_ob(ob, release_container_id)
-            if rem > 0:
-                sources.append({'kind': 'opening', 'id': ob.pk, 'remaining': rem,
-                                'po': 'Opening balance', 'po_id': None, 'pp': '',
-                                'category': ob.category or ''})
+    obs = (SupplierOpeningBalance.objects
+           .filter(sku__iexact=sku, supplier_id=supplier_id)
+           .prefetch_related('allocations__shipment')
+           .order_by('as_of', 'pk'))
+    for ob in obs:
+        rem = _remaining_ob(ob, release_container_id)
+        if rem > 0:
+            sources.append({'kind': 'opening', 'id': ob.pk, 'remaining': rem,
+                            'po': 'Opening balance', 'po_id': None, 'pp': '',
+                            'category': ob.category or ''})
     for l in _open_lines_for(sku, supplier_id, po_number, release_container_id):
         plan = getattr(l.group, 'plan', None)
         sources.append({'kind': 'po', 'id': l.pk,
