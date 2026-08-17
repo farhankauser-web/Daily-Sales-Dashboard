@@ -3,6 +3,7 @@ from . import views
 from . import views_inventory as vi
 from . import views_sti
 from . import views_marketing
+from . import views_actions
 
 app_name = 'dashboard'
 
@@ -63,12 +64,25 @@ urlpatterns = [
     path('api/campaigns/<str:campaign_id>/daily/',    views.api_campaign_daily,     name='api_campaign_daily'),
     path('api/campaigns/<str:campaign_id>/targeting/',views.api_campaign_targeting, name='api_campaign_targeting'),
     path('api/campaigns/<str:campaign_id>/hourly/',   views.api_campaign_hourly,    name='api_campaign_hourly'),
+    # P3 — contextual opportunities for one campaign (lazy, tab-triggered)
+    path('api/campaigns/<str:campaign_id>/opportunities/',
+                                                      views.api_campaign_opportunities,
+                                                      name='api_campaign_opportunities'),
 
     # Marketing Optimizer (search-term actions + budget pacing) — read-only
     path('marketing-optimizer/',           views_marketing.marketing_optimizer, name='marketing_optimizer'),
     path('api/mkt-search-terms/',          views_marketing.api_mkt_search_terms, name='api_mkt_search_terms'),
     path('api/budget-pacing/',             views_marketing.api_budget_pacing,   name='api_budget_pacing'),
     path('api/mkt-export/',                views_marketing.mkt_export,          name='mkt_export'),
+
+    # P4 — Action Queue (propose → review → approve → execute; human-only)
+    path('actions/',                       views_actions.action_queue,       name='action_queue'),
+    path('api/actions/',                   views_actions.api_actions_list,   name='api_actions_list'),
+    path('api/actions/propose/',           views_actions.api_action_propose, name='api_action_propose'),
+    path('api/actions/<int:pk>/',          views_actions.api_action_detail,  name='api_action_detail'),
+    path('api/actions/<int:pk>/approve/',  views_actions.api_action_approve, name='api_action_approve'),
+    path('api/actions/<int:pk>/reject/',   views_actions.api_action_reject,  name='api_action_reject'),
+    path('api/actions/<int:pk>/execute/',  views_actions.api_action_execute, name='api_action_execute'),
 
     # Search Term Intelligence
     path('search-terms/',                  views.search_terms,            name='search_terms'),
@@ -99,6 +113,8 @@ urlpatterns = [
     path('api/pnl/',                   views.api_pnl_daily,        name='api_pnl_daily'),
     path('pnl/skus/',                  views.pnl_skus,             name='pnl_skus'),
     path('api/pnl/skus/',              views.api_pnl_skus,         name='api_pnl_skus'),
+    # SKU Intelligence P0 — campaign drivers for one SKU (lazy, per expanded row)
+    path('api/pnl/skus/campaigns/',    views.api_sku_campaigns,    name='api_sku_campaigns'),
     path('pnl/breakdown/',             views.pnl_breakdown,        name='pnl_breakdown'),
     path('api/pnl/breakdown/',         views.api_pnl_breakdown,    name='api_pnl_breakdown'),
     path('morning-report/',            views.morning_report,       name='morning_report'),

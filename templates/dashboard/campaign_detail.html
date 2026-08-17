@@ -24,13 +24,55 @@
           data-period="{{ p.id }}" onclick="setPeriod('{{ p.id }}', this)">{{ p.label }}</button>
   {% endfor %}
 </div>
+{% if from_sku %}
+<a href="{% url 'dashboard:pnl_skus' %}?mp={{ marketplace }}"
+   class="btn btn-secondary btn-sm"
+   title="Back to SKU Intelligence — {{ from_sku }}"
+   style="margin-left:8px;padding:5px 10px;font-size:11px;text-decoration:none">← SKU Intelligence / {{ from_sku }}</a>
+{% else %}
 <a href="{% url 'dashboard:campaigns_list' %}?mp={{ marketplace }}"
    class="btn btn-secondary btn-sm"
    style="margin-left:8px;padding:5px 10px;font-size:11px;text-decoration:none">← Back</a>
+{% endif %}
 {% endblock %}
 
 {% block extra_head %}
 <style>
+  /* P3 — opportunity cards (same component/shape as SKU Intelligence) */
+  .opp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+               gap:8px; }
+  .opp-card { border:1px solid var(--border); border-left:3px solid var(--text3);
+               border-radius:6px; padding:9px 11px; background:var(--bg2); }
+  .opp-card.scale, .opp-card.term_scale, .opp-card.scale_ppc { border-left-color:#067D62; }
+  .opp-card.efficiency, .opp-card.term_waste, .opp-card.defend { border-left-color:#C7522A; }
+  .opp-card.ppc_dependency, .opp-card.term_cvr, .opp-card.listing_fix { border-left-color:#3B4FA0; }
+  .opp-card.organic_decline { border-left-color:#9C5700; }
+  .opp-head { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:5px; }
+  .opp-kind { font-size:9px; font-weight:700; letter-spacing:.4px;
+               padding:1px 6px; border-radius:3px; background:var(--bg3); color:var(--text2); }
+  .opp-card.scale .opp-kind, .opp-card.term_scale .opp-kind, .opp-card.scale_ppc .opp-kind { background:var(--good-weak); color:var(--green); }
+  .opp-card.efficiency .opp-kind, .opp-card.term_waste .opp-kind, .opp-card.defend .opp-kind { background:var(--crit-weak); color:var(--crit-ink); }
+  .opp-card.ppc_dependency .opp-kind, .opp-card.term_cvr .opp-kind, .opp-card.listing_fix .opp-kind { background:var(--info-weak); color:var(--info-ink); }
+  .opp-ttl { font-size:11px; font-weight:700; color:var(--text); max-width:230px;
+              overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .opp-stake { margin-left:auto; font-size:10px; font-family:'DM Mono',monospace; color:var(--text2); }
+  .opp-ev { display:flex; flex-wrap:wrap; gap:3px 12px; margin:5px 0;
+             font-size:10px; font-family:'DM Mono',monospace; }
+  .opp-ev span { color:var(--text3); }
+  .opp-ev b { color:var(--text); margin-left:3px; }
+  .opp-reason { font-size:11px; color:var(--text); line-height:1.4; }
+  .opp-foot { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .opp-conf { font-size:9px; padding:1px 6px; border-radius:3px; cursor:help; }
+  .opp-conf.authoritative, .opp-conf.high { background:var(--good-weak); color:var(--green); }
+  .opp-conf.provisional, .opp-conf.medium { background:var(--warn-weak); color:var(--warn-ink); }
+  .opp-conf.estimated, .opp-conf.low      { background:var(--info-weak); color:var(--info-ink); }
+  .opp-conf.unlinked, .opp-conf.unknown   { background:var(--bg3); color:var(--text2); }
+  .opp-src { font-size:9px; color:var(--text3); }
+  .opp-drill { margin-left:auto; font-size:10px; font-weight:600; color:#067D62;
+                text-decoration:none; cursor:pointer; }
+  .opp-drill:hover { text-decoration:underline; }
+  .opp-sec { font-size:11px; font-weight:700; color:var(--text2);
+              text-transform:uppercase; letter-spacing:.4px; margin:12px 0 6px; }
   /* KPI strip */
   .cd-meta { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
               padding:10px 14px; margin-bottom:10px; display:flex;
@@ -113,6 +155,13 @@
     · State: {{ campaign_state }}
     · ID: <code>{{ campaign_id }}</code>
   </span>
+  {% if from_sku %}
+  <span class="sub" style="margin-left:auto;background:var(--info-weak);
+        color:var(--info-ink);padding:3px 10px;border-radius:12px;font-size:11px"
+        title="You arrived here while investigating this SKU — its context is carried into the search-term drill.">
+    Investigating SKU <b>{{ from_sku }}</b>
+  </span>
+  {% endif %}
 </div>
 
 <div class="cd-kpi-strip">
@@ -152,6 +201,7 @@
 
 <div class="cd-tabs">
   <div class="cd-tab active"  data-tab="skus"          onclick="switchTab('skus')">Top Contributing SKUs</div>
+  <div class="cd-tab"         data-tab="opportunities" onclick="switchTab('opportunities')">Opportunities</div>
   <div class="cd-tab"         data-tab="daily"         onclick="switchTab('daily')">Daily Performance</div>
   <div class="cd-tab"         data-tab="search_terms"  onclick="switchTab('search_terms')">Search Terms</div>
   <div class="cd-tab"         data-tab="targeting"     onclick="switchTab('targeting')">Targeting</div>
@@ -201,18 +251,30 @@
   </div>
 </div>
 
+<!-- P3 — contextual opportunities for this campaign (diagnosis only) -->
+<div class="cd-tab-pane" id="pane-opportunities">
+  <div id="oppBody" style="color:var(--text3);font-size:12px">Loading…</div>
+  <div id="oppFootnote" style="margin-top:8px;font-size:11px;color:var(--text3)"></div>
+</div>
+
 <div class="cd-tab-pane" id="pane-search_terms">
+  <!-- P2 — shown when drilled in from a Targeting row -->
+  <div id="stTargetBar" style="display:none;background:var(--bg2);
+       border:1px solid var(--border);border-left:3px solid var(--info-ink);
+       border-radius:6px;padding:7px 12px;margin-bottom:8px;
+       display:flex;gap:10px;align-items:center;flex-wrap:wrap"></div>
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:8px;overflow:auto;max-height:calc(100vh - 480px)">
     <table class="cd-table" id="stTermsTable">
       <thead><tr>
         <th class="text-left">Search Term</th>
+        <th>Match</th>
         <th>Est. Profit</th><th>Spend</th><th>Sales</th>
         <th>ACoS</th><th>ROAS</th>
         <th>Orders</th><th>Clicks</th><th>CTR</th><th>CVR</th>
         <th>Impr.</th><th class="text-left">Tags</th>
       </tr></thead>
-      <tbody id="stTermsBody"><tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
+      <tbody id="stTermsBody"><tr><td colspan="13" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
     </table>
   </div>
   <div id="stTermsFootnote" style="margin-top:6px;font-size:11px;color:var(--text3)"></div>
@@ -232,8 +294,9 @@
         <th>Orders</th><th>Clicks</th>
         <th>CTR</th><th>CVR</th><th>CPC</th>
         <th>Impr.</th>
+        <th class="text-left"></th>
       </tr></thead>
-      <tbody id="tgtBody"><tr><td colspan="14" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
+      <tbody id="tgtBody"><tr><td colspan="15" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
     </table>
   </div>
   <div id="tgtFootnote" style="margin-top:6px;font-size:11px;color:var(--text3)"></div>
@@ -387,9 +450,22 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const CAMPAIGN_ID = '{{ campaign_id|escapejs }}';
+const CAMPAIGN_ID   = '{{ campaign_id|escapejs }}';
+const CAMPAIGN_NAME = '{{ campaign_name|escapejs }}';
+const FROM_SKU      = '{{ from_sku|escapejs }}';
 let currentMP     = '{{ marketplace }}';
-let currentPeriod = '7d';
+// SKU Intelligence P0 — honour ?period= handed over by the SKU drivers panel.
+const _VALID_PERIODS = new Set(
+  [{% for p in period_options %}'{{ p.id }}',{% endfor %}]);
+let currentPeriod = (() => {
+  const p = new URLSearchParams(location.search).get('period');
+  return _VALID_PERIODS.has(p) ? p : '7d';
+})();
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.date-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.period === currentPeriod);
+  });
+});
 let detailData    = null;
 let skusData      = null;
 let dailyData     = null;
@@ -587,7 +663,8 @@ function switchTab(tabId) {
   document.querySelectorAll('.cd-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
   document.querySelectorAll('.cd-tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-'+tabId));
   // Lazy load — fetch only when a tab is opened, never refetch unless period/mp changes
-  if (tabId === 'daily'        && !dailyData)   loadDaily();
+  if (tabId === 'daily'         && !dailyData)  loadDaily();
+  if (tabId === 'opportunities' && !oppData)    loadCampaignOpportunities();
   if (tabId === 'search_terms' && !stTermsData) loadCampaignSearchTerms();
   if (tabId === 'targeting'    && !tgtData)     loadCampaignTargeting();
   if (tabId === 'placements'   && !plcData)     loadCampaignPlacements();
@@ -608,8 +685,10 @@ document.querySelectorAll('#skusTable thead th').forEach(th => {
 async function loadAll() {
   // Reset every tab's cache so period/mp changes always refetch.
   detailData = skusData = dailyData = stTermsData = tgtData = plcData = null;
+  oppData = null;          // P3 — opportunities are window-specific
+  stTargetFilter = null;   // P2 — a target drill does not survive a window change
   document.getElementById('skusBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
+    '<tr><td colspan="13" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   document.getElementById('dailyBody').innerHTML =
     '<tr><td colspan="16" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   document.getElementById('stTermsBody').innerHTML =
@@ -653,25 +732,188 @@ async function loadDaily() {
 }
 
 // ── Search Terms tab — reuses /api/search-terms/ with campaign_id filter ────
+/* ── P3 — Opportunities tab (diagnosis only; lazy) ───────────────────────── */
+let oppData = null;
+
+async function loadCampaignOpportunities() {
+  document.getElementById('oppBody').innerHTML =
+    '<div style="color:var(--text3);font-size:12px">Loading…</div>';
+  try {
+    const p = new URLSearchParams({mp: currentMP, period: currentPeriod});
+    if (FROM_SKU) p.set('from_sku', FROM_SKU);
+    const r = await fetch(
+      `/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/opportunities/?${p}`);
+    oppData = await r.json();
+    renderCampaignOpportunities(oppData);
+  } catch (e) {
+    document.getElementById('oppBody').innerHTML =
+      `<div style="color:var(--red);font-size:12px">Failed to load: ${e.message}</div>`;
+  }
+}
+
+function oppCard(o) {
+  const ev = (o.evidence || []).map(e =>
+    `<span>${e.label ? e.label + '<b>' + e.value + '</b>' : '<b>' + e.value + '</b>'}</span>`
+  ).join('');
+  let drill = '';
+  if (o.drill && o.drill.target_id)
+    drill = `<a class="opp-drill" onclick="drillTargetTerms('${String(o.drill.target_id).replace(/'/g, "\\'")}', '${String(o.title).replace(/'/g, "\\'")}')">${o.drill.label} →</a>`;
+  else if (o.drill && o.drill.url)
+    drill = `<a class="opp-drill" href="${o.drill.url}">${o.drill.label} →</a>`;
+  const src = o.source === 'sti' ? 'Search Intelligence'
+            : o.source === 'ai'  ? 'AI recommendation' : '';
+  const stake = o.at_stake > 0
+    ? `<span class="opp-stake">${fmtCurrency(o.at_stake)} at stake</span>` : '';
+  return `<div class="opp-card ${o.kind}">
+    <div class="opp-head">
+      <span class="opp-kind" title="${o.meaning || ''}">${o.label}</span>
+      <span class="opp-ttl" title="${o.title}">${o.title}</span>${stake}
+    </div>
+    <div class="opp-ev">${ev}</div>
+    <div class="opp-reason">${o.reason || ''}</div>
+    <div class="opp-foot">
+      <span class="opp-conf ${o.confidence}" title="${o.confidence_note || ''}">${o.confidence}</span>
+      ${src ? `<span class="opp-src">${src}${o.status ? ' · ' + o.status : ''}</span>` : ''}
+      ${drill}
+    </div></div>`;
+}
+
+/* P4 — the actionable recommendation, if the evidence supports one.
+   Proposing only queues it for human review; nothing reaches Amazon here. */
+function actionBlock(a) {
+  if (!a) return '';
+  const cap = a.capability || {};
+  const ev = (a.evidence || []).map(e =>
+    `<span>${e.label}<b>${e.value}</b></span>`).join('');
+  return `<div class="opp-sec">Recommended action</div>
+    <div class="opp-card scale" style="border-left-color:#067D62">
+      <div class="opp-head">
+        <span class="opp-kind" style="background:var(--good-weak);color:#067D62">BUDGET</span>
+        <span class="opp-ttl">Increase daily budget</span>
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-size:13px;margin:6px 0">
+        <span style="color:var(--text2);text-decoration:line-through">$${a.current_value.toFixed(2)}/day</span>
+        &nbsp;→&nbsp;
+        <span style="font-weight:700">$${a.proposed_value.toFixed(2)}/day</span>
+        <span style="font-size:11px;color:var(--text2)">&nbsp;+${a.change_pct.toFixed(0)}%</span>
+      </div>
+      <div class="opp-ev">${ev}</div>
+      <div class="opp-reason">${a.reason}</div>
+      <div class="opp-foot">
+        <span class="opp-src">Current budget from ${a.current_source}${a.current_as_of ? ', as of ' + a.current_as_of : ''}</span>
+        <button class="btn btn-secondary btn-sm" style="margin-left:auto;padding:4px 12px;font-size:11px"
+          onclick='proposeAction(${JSON.stringify(a).replace(/'/g, "&#39;")})'>
+          Propose for review →</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px">${a.note}
+        ${cap.can_write ? '' : ' Execution is currently unavailable — the Amazon Ads integration is read-only.'}</div>
+      <div id="propMsg" style="font-size:11px;margin-top:6px"></div>
+    </div>`;
+}
+
+async function proposeAction(a) {
+  const m = document.getElementById('propMsg');
+  m.textContent = 'Proposing…';
+  try {
+    const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+    const r = await fetch('/dashboard/api/actions/propose/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+      body: JSON.stringify({
+        mp: currentMP, action_type: 'campaign_budget',
+        campaign_id: a.campaign_id, proposed_value: a.proposed_value,
+        from_sku: FROM_SKU || '', period: a.period,
+        opportunity: {key: 'budget:' + a.campaign_id, reason: a.reason,
+                      evidence: a.evidence, confidence: 'authoritative'},
+      }),
+    });
+    const d = await r.json();
+    m.innerHTML = r.ok
+      ? `<span style="color:var(--green)">${d.created ? 'Queued for review' : 'Already queued'} —
+         <a href="/dashboard/actions/?mp=${currentMP}" style="color:#067D62;font-weight:600">open the Action Queue →</a></span>`
+      : `<span style="color:var(--red)">${d.message}</span>`;
+  } catch (e) {
+    m.innerHTML = `<span style="color:var(--red)">${e.message}</span>`;
+  }
+}
+
+function renderCampaignOpportunities(d) {
+  const body = document.getElementById('oppBody');
+  const fn   = document.getElementById('oppFootnote');
+  const ops  = d.opportunities || [];
+  if (!ops.length) {
+    body.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:16px">
+      No opportunities detected for this campaign in the window —
+      no target or search term crossed the existing Search Terms rules,
+      and there are no open Search Intelligence or AI items for it.</div>`;
+  } else {
+    const bySec = {target: [], search_term: [], campaign: []};
+    ops.forEach(o => (bySec[o.level] || bySec.campaign).push(o));
+    const sec = (ttl, list) => list.length
+      ? `<div class="opp-sec">${ttl} · ${list.length}</div>
+         <div class="opp-grid">${list.map(oppCard).join('')}</div>` : '';
+    body.innerHTML = sec('Targets', bySec.target) +
+                     sec('Search terms', bySec.search_term) +
+                     sec('Campaign-level', bySec.campaign);
+  }
+  body.innerHTML = actionBlock(d.action) + body.innerHTML;
+  fn.innerHTML = `Scanned <strong>${d.counts.targets}</strong> target(s) and ` +
+    `<strong>${d.counts.search_terms}</strong> search term(s). ` +
+    (d.from_sku ? `Investigating SKU <strong>${d.from_sku}</strong>. ` : '') +
+    `<em>${d.note}</em>`;
+}
+
+// P2 — when set, the Search Terms tab is narrowed to one target
+// (AdsSearchTermDailySnapshot.target_id). Cleared by "show all".
+let stTargetFilter = null;   // {id, expression}
+
 async function loadCampaignSearchTerms() {
   document.getElementById('stTermsBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
+    '<tr><td colspan="13" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   try {
     const params = new URLSearchParams({
       mp: currentMP, period: currentPeriod,
       campaign_id: CAMPAIGN_ID, limit: '500', sort: 'spend', dir: 'desc',
     });
+    if (stTargetFilter) params.set('target_id', stTargetFilter.id);
     const r = await fetch(`/dashboard/api/search-terms/?${params}`);
     stTermsData = await r.json();
     renderCampaignSearchTerms(stTermsData);
   } catch (e) { console.error('search-terms fetch failed', e); }
 }
 
+/* P2 — Target → Search Term: stay inside the campaign, just narrow the tab. */
+function drillTargetTerms(targetId, expression) {
+  stTargetFilter = {id: targetId, expression: expression};
+  stTermsData = null;
+  switchTab('search_terms');
+  loadCampaignSearchTerms();
+}
+function clearTargetFilter() {
+  stTargetFilter = null;
+  stTermsData = null;
+  loadCampaignSearchTerms();
+}
+function renderTargetFilterBar() {
+  const el = document.getElementById('stTargetBar');
+  if (!el) return;
+  if (!stTargetFilter) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `<span style="font-size:11px;color:var(--text2)">Search terms matched by target</span>
+    <b style="font-size:11px">${stTargetFilter.expression}</b>
+    <button class="btn btn-secondary btn-sm" style="padding:2px 9px;font-size:10px"
+      onclick="clearTargetFilter()">Show all terms</button>`;
+}
+
 function renderCampaignSearchTerms(d) {
   const body = document.getElementById('stTermsBody');
   const fn   = document.getElementById('stTermsFootnote');
+  renderTargetFilterBar();
   if (!d.rows || d.rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--text3);padding:24px">No search terms recorded for this campaign in the window.</td></tr>';
+    body.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text3);padding:24px">' +
+      (stTargetFilter
+        ? 'No search terms recorded against this target in the window — the target may have had impressions without matched terms, or the report has not arrived yet.'
+        : 'No search terms recorded for this campaign in the window.') + '</td></tr>';
     fn.textContent = '';
     return;
   }
@@ -681,8 +923,11 @@ function renderCampaignSearchTerms(d) {
     const tags = (r.tags || []).map(t =>
       `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;margin-right:2px;background:var(--bg);color:var(--text2)">${t.replace(/_/g,' ')}</span>`
     ).join('');
+    const match = (r.match_types && r.match_types.length)
+      ? r.match_types.join(', ') : '—';
     return `<tr>
       <td class="text-left" title="${r.search_term}">${r.search_term || '—'}</td>
+      <td title="${r.target_count ? r.target_count + ' target(s) matched this term' : ''}">${match}</td>
       <td class="${profClass}">${fmtCurrency(r.estimated_profit)}</td>
       <td>${fmtCurrency(r.spend)}</td>
       <td>${fmtCurrency(r.sales)}</td>
@@ -697,13 +942,21 @@ function renderCampaignSearchTerms(d) {
     </tr>`;
   }).join('');
   const cmNote = d.cm_not_ready_warning ? ` <strong style="color:#5A4500">${d.cm_not_ready_warning}</strong>` : '';
-  fn.innerHTML = `<strong>${d.kpi.shown_terms}</strong> of <strong>${d.kpi.distinct_terms}</strong> terms shown. <em>${d.profit_proxy_note}</em>${cmNote}`;
+  // P2 — hand the whole investigation (mp, period, campaign, target, SKU) to
+  // the full Search Terms explorer; nothing has to be re-selected there.
+  const p = new URLSearchParams({mp: currentMP, period: currentPeriod,
+                                 campaign_id: CAMPAIGN_ID});
+  if (stTargetFilter) p.set('target_id', stTargetFilter.id);
+  if (FROM_SKU)       p.set('from_sku', FROM_SKU);
+  p.set('from_campaign', CAMPAIGN_NAME);
+  const deepLink = `<a href="/dashboard/search-terms/?${p}" style="color:#067D62;font-weight:600;text-decoration:none">Open in Search Terms explorer →</a>`;
+  fn.innerHTML = `<strong>${d.kpi.shown_terms}</strong> of <strong>${d.kpi.distinct_terms}</strong> terms shown. ${deepLink}<br><em>${d.profit_proxy_note}</em>${cmNote}`;
 }
 
 // ── Targeting tab — keywords + product/category targets + audiences ─────────
 async function loadCampaignTargeting() {
   document.getElementById('tgtBody').innerHTML =
-    '<tr><td colspan="14" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
+    '<tr><td colspan="15" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   try {
     const r = await fetch(`/dashboard/api/campaigns/${encodeURIComponent(CAMPAIGN_ID)}/targeting/?mp=${currentMP}&period=${currentPeriod}`);
     tgtData = await r.json();
@@ -715,7 +968,7 @@ function renderCampaignTargeting(d) {
   const body = document.getElementById('tgtBody');
   const fn   = document.getElementById('tgtFootnote');
   if (!d.rows || d.rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--text3);padding:24px">No targeting rows for this window.</td></tr>';
+    body.innerHTML = '<tr><td colspan="15" style="text-align:center;color:var(--text3);padding:24px">No targeting rows for this window.</td></tr>';
     fn.textContent = '';
     return;
   }
@@ -744,6 +997,11 @@ function renderCampaignTargeting(d) {
       <td>${r.cvr == null ? '—' : fmtPct(r.cvr)}</td>
       <td>${r.cpc == null ? '—' : '$'+fmtDec(r.cpc)}</td>
       <td>${fmtInt(r.impressions)}</td>
+      <td class="text-left">${r.target_id
+        ? `<a href="javascript:void(0)" style="font-size:11px;font-weight:600;color:#067D62;text-decoration:none;white-space:nowrap"
+             onclick="drillTargetTerms('${String(r.target_id).replace(/'/g, "\\'")}', '${String(expr).replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"
+             title="Show the search terms this target matched">Search terms →</a>`
+        : '<span style="color:#C0C5CA">—</span>'}</td>
     </tr>`;
   }).join('');
   fn.innerHTML = `<strong>${d.target_count}</strong> target(s) for this campaign in the window. <em>${d.profit_proxy_note}</em>`;
@@ -752,7 +1010,7 @@ function renderCampaignTargeting(d) {
 // ── Placements tab — reuses /api/placements/ with campaign_id filter ────────
 async function loadCampaignPlacements() {
   document.getElementById('plcBody').innerHTML =
-    '<tr><td colspan="12" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
+    '<tr><td colspan="13" style="text-align:center;color:var(--text3)">Loading…</td></tr>';
   document.getElementById('plcVizRows').innerHTML =
     '<div style="color:var(--text3);font-size:12px">Loading…</div>';
   try {

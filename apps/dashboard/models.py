@@ -2393,3 +2393,113 @@ class CampaignBudgetUsageDaily(models.Model):
     @property
     def out_of_budget(self) -> bool:
         return float(self.usage_pct) >= self.OUT_OF_BUDGET_PCT
+
+
+class AdActionRequest(models.Model):
+    """
+    P4 — a PROPOSED advertising change awaiting human review.
+
+    This is an approval queue, not an automation engine. A row is created by a
+    person acting on an opportunity, moves only through explicit human steps,
+    and executes only after an explicit approval. Nothing in Pulse creates,
+    approves or executes one of these on a schedule or from an AI agent.
+
+    Every column exists to answer one audit question: what was proposed, on
+    what evidence, from which value to which value, who approved it, what
+    Amazon actually held at execution time, and what Amazon replied.
+    """
+    ENTITY_TYPES = [('campaign', 'Campaign')]
+    # Only budget is offered: it is the sole entity whose CURRENT value Pulse
+    # actually stores (PPCCampaignSnapshot.daily_budget / the budget-usage
+    # stream). Target bids are deliberately absent — no bid value is stored
+    # anywhere, so a "current → proposed" claim could not be made honestly.
+    ACTION_TYPES = [('campaign_budget', 'Campaign daily budget')]
+    STATUS = [
+        ('proposed',    'Proposed — awaiting review'),
+        ('approved',    'Approved — cleared to execute'),
+        ('executing',   'Executing'),
+        ('executed',    'Executed'),
+        ('failed',      'Failed'),
+        ('rejected',    'Rejected'),
+        ('cancelled',   'Cancelled'),
+        ('stale',       'Stale — underlying value moved, re-review required'),
+        ('unavailable', 'Execution unavailable — integration is read-only'),
+    ]
+    OPEN_STATES = ('proposed', 'approved', 'executing')
+
+    # ── identity / idempotency ─────────────────────────────────────────────
+    action_id     = models.CharField(max_length=40, unique=True,
+                     help_text='Stable id — the idempotency key for execution.')
+    marketplace   = models.CharField(max_length=8)
+    entity_type   = models.CharField(max_length=16, choices=ENTITY_TYPES,
+                                     default='campaign')
+    entity_id     = models.CharField(max_length=64)
+    entity_name   = models.CharField(max_length=256, blank=True)
+    action_type   = models.CharField(max_length=24, choices=ACTION_TYPES)
+
+    # ── provenance: which opportunity + evidence produced this ─────────────
+    opportunity_key = models.CharField(max_length=128, blank=True)
+    reason          = models.TextField(blank=True)
+    evidence        = models.JSONField(default=list, blank=True,
+                       help_text='The numbers cited when this was proposed.')
+    confidence      = models.CharField(max_length=16, blank=True)
+    from_sku        = models.CharField(max_length=64, blank=True,
+                       help_text='The SKU investigation this came from, if any.')
+
+    # ── the change ─────────────────────────────────────────────────────────
+    current_value  = models.DecimalField(max_digits=12, decimal_places=2,
+                      help_text='Value observed when the action was proposed.')
+    proposed_value = models.DecimalField(max_digits=12, decimal_places=2)
+    value_before   = models.DecimalField(max_digits=12, decimal_places=2,
+                      null=True, blank=True,
+                      help_text='Value read back immediately before executing.')
+    value_after    = models.DecimalField(max_digits=12, decimal_places=2,
+                      null=True, blank=True)
+
+    # ── data-freshness provenance (staleness gate) ─────────────────────────
+    data_period_start = models.DateField(null=True, blank=True)
+    data_period_end   = models.DateField(null=True, blank=True)
+
+    # ── lifecycle ──────────────────────────────────────────────────────────
+    status         = models.CharField(max_length=12, choices=STATUS,
+                                      default='proposed', db_index=True)
+    proposed_at    = models.DateTimeField(auto_now_add=True)
+    proposed_by    = models.ForeignKey(settings.AUTH_USER_MODEL,
+                      on_delete=models.SET_NULL, null=True, blank=True,
+                      related_name='ad_actions_proposed')
+    approved_at    = models.DateTimeField(null=True, blank=True)
+    approved_by    = models.ForeignKey(settings.AUTH_USER_MODEL,
+                      on_delete=models.SET_NULL, null=True, blank=True,
+                      related_name='ad_actions_approved')
+    executed_at    = models.DateTimeField(null=True, blank=True)
+
+    # ── what Amazon said ───────────────────────────────────────────────────
+    amazon_status   = models.CharField(max_length=24, blank=True)
+    amazon_response = models.TextField(blank=True)
+    failure_reason  = models.TextField(blank=True)
+    dry_run         = models.BooleanField(default=False,
+                       help_text='True when validated through the pipeline '
+                                 'without contacting Amazon.')
+    note            = models.TextField(blank=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ix_ad_action_request'
+        ordering = ['-proposed_at']
+        indexes = [
+            models.Index(fields=['marketplace', 'status', '-proposed_at']),
+            models.Index(fields=['entity_type', 'entity_id', '-proposed_at']),
+        ]
+
+    def __str__(self):
+        return (f'{self.action_type} {self.entity_id}: '
+                f'{self.current_value} → {self.proposed_value} [{self.status}]')
+
+    @property
+    def change_pct(self):
+        cur = float(self.current_value or 0)
+        return ((float(self.proposed_value) - cur) / cur * 100) if cur else None
+
+    @property
+    def is_open(self):
+        return self.status in self.OPEN_STATES

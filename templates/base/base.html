@@ -616,9 +616,6 @@ tfoot td:first-child { text-align: left; }
   <a href="{% url 'dashboard:pnl_daily' %}" class="nav-item {% block nav_pnl %}{% endblock %}">
     <span class="nav-icon">💵</span> Daily P&L
   </a>
-  <a href="{% url 'dashboard:pnl_skus' %}" class="nav-item {% block nav_pnl_skus %}{% endblock %}">
-    <span class="nav-icon">📦</span> SKU Profitability
-  </a>
   <a href="{% url 'dashboard:pnl_breakdown' %}" class="nav-item {% block nav_pnl_breakdown %}{% endblock %}">
     <span class="nav-icon">🌐</span> P&L Breakdown
   </a>
@@ -642,6 +639,9 @@ tfoot td:first-child { text-align: left; }
   {% endif %}
 
   <div class="nav-section">Marketing</div>
+  <a href="{% url 'dashboard:pnl_skus' %}" class="nav-item {% block nav_pnl_skus %}{% endblock %}">
+    <span class="nav-icon">📦</span> SKU Intelligence
+  </a>
   <a href="{% url 'dashboard:search_intelligence' %}" class="nav-item {% block nav_sti %}{% endblock %}">
     <span class="nav-icon">🧠</span> Search Intelligence
   </a>
@@ -653,6 +653,9 @@ tfoot td:first-child { text-align: left; }
   </a>
   <a href="{% url 'dashboard:marketing_optimizer' %}" class="nav-item {% block nav_marketing_optimizer %}{% endblock %}">
     <span class="nav-icon">⚡</span> Optimizer &amp; Budget
+  </a>
+  <a href="{% url 'dashboard:action_queue' %}" class="nav-item {% block nav_actions %}{% endblock %}">
+    <span class="nav-icon">✅</span> Action Queue
   </a>
   <a href="{% url 'dashboard:placements' %}" class="nav-item {% block nav_placements %}{% endblock %}">
     <span class="nav-icon">📍</span> Placements

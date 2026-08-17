@@ -3763,6 +3763,9 @@ def campaign_detail(request, campaign_id: str):
         'campaign_type':        dim['campaign_type'],
         'campaign_brand':       dim['brand'],
         'campaign_state':       dim['state'],
+        # SKU Intelligence P0 — context handoff: when the user arrives from a
+        # SKU's campaign-drivers panel, show a breadcrumb back to that SKU.
+        'from_sku':             (request.GET.get('from_sku') or '')[:64],
         'period_options': [
             {'id': pid, 'label': v[0]} for pid, v in _CAMPAIGN_PERIODS.items()
         ],
@@ -4228,13 +4231,22 @@ def _tag_search_term(spend, sales, orders, clicks, impr, est_profit, acos) -> li
 @login_required
 @permission_required('can_view_dashboard')
 def search_terms(request):
-    """Page shell — JS calls /api/search-terms/ with filters."""
+    """Page shell — JS calls /api/search-terms/ with filters.
+
+    P2 — accepts an investigation context handed over from Campaign Detail
+    (campaign_id / target_id / from_sku / from_campaign / period) so the user
+    never re-selects what they already chose upstream.
+    """
     marketplace = request.GET.get('mp', 'usa')
     if not request.user.can_access_marketplace(marketplace):
         marketplace = _allowed_marketplaces(request.user)[0]
 
     ctx = {
         'marketplace':          marketplace,
+        'ctx_campaign_id':      (request.GET.get('campaign_id') or '')[:64],
+        'ctx_campaign_name':    (request.GET.get('from_campaign') or '')[:256],
+        'ctx_target_id':        (request.GET.get('target_id') or '')[:64],
+        'ctx_from_sku':         (request.GET.get('from_sku') or '')[:64],
         'allowed_marketplaces': _allowed_marketplaces(request.user),
         'period_options': [
             {'id': pid, 'label': v[0]} for pid, v in _CAMPAIGN_PERIODS.items()
@@ -4331,6 +4343,12 @@ def api_search_terms(request):
         st_qs = st_qs.filter(campaign_id=campaign_id)
     if ad_type != 'all':
         st_qs = st_qs.filter(source_ad_type=ad_type)
+    # P2 — Target → Search Term drill. AdsSearchTermDailySnapshot already
+    # records the target the term matched against, so narrowing to one target
+    # needs no new table and no new endpoint. Absent = unchanged behaviour.
+    target_id = (request.GET.get('target_id') or '').strip()
+    if target_id:
+        st_qs = st_qs.filter(target_id=target_id)
 
     # Bound the work: pull only the top N rows by spend at the SQL layer.
     # We still need to aggregate by search_term_hash across days/campaigns,
@@ -4339,6 +4357,7 @@ def api_search_terms(request):
     raw = st_qs.values(
         'campaign_id', 'date', 'search_term', 'search_term_hash',
         'spend', 'sales_7d', 'orders_7d', 'clicks', 'impressions',
+        'match_type', 'target_id',
     ).order_by('-spend')[:max(limit * 10, 5000)]
 
     # ── 3. Aggregate by search_term_hash ────────────────────────────────────
@@ -4352,12 +4371,18 @@ def api_search_terms(request):
         'impressions':       0,
         'est_profit':        0.0,
         'campaigns':         set(),
+        'match_types':       set(),
+        'target_ids':        set(),
     })
     for r in raw:
         h = r['search_term_hash']
         b = agg[h]
         b['search_term']      = r['search_term']
         b['search_term_hash'] = h
+        if r.get('match_type'):
+            b['match_types'].add(r['match_type'])
+        if r.get('target_id'):
+            b['target_ids'].add(r['target_id'])
         s = float(r['spend']    or 0)
         v = float(r['sales_7d'] or 0)
         o = int(r['orders_7d']  or 0)
@@ -4406,6 +4431,9 @@ def api_search_terms(request):
             'estimated_profit':    round(b['est_profit'], 2),
             'estimated_margin_pct': round(est_margin_pct, 2) if est_margin_pct is not None else None,
             'campaign_count':      len(b['campaigns']),
+            # P2 — how the term matched (may be several across days/targets)
+            'match_types':         sorted(b['match_types']),
+            'target_count':        len(b['target_ids']),
             'tags':                tags,
         })
 
@@ -4441,6 +4469,7 @@ def api_search_terms(request):
         'period': {'id': period_id, 'label': _CAMPAIGN_PERIODS[period_id][0],
                    'start': start.isoformat(), 'end': end.isoformat()},
         'campaign_id':  campaign_id or None,
+        'target_id':    target_id or None,
         'ad_type':      ad_type,
         'sort':         {'key': sort_key, 'dir': direction},
         'limit':        limit,
@@ -5693,6 +5722,71 @@ _SKU_LOW_MARGIN_PCT   = Decimal('5')
 _SKU_PROFITABLE_MIN   = Decimal('100')
 
 
+"""
+SKU Intelligence P1 — deterministic attention signals.
+
+ONE implementation drives the row chips, the attention-summary counts and the
+server-side signal filter (spec rule: never duplicate the business logic).
+No composite score — every signal is an explicit threshold on existing metrics,
+and the thresholds live in one dict so changing one changes it everywhere.
+All comparisons are window vs the immediately-previous window of equal length
+(_resolve_pnl_period already returns both).
+"""
+SKU_SIGNAL_THRESHOLDS = {
+    'min_spend':        25.0,   # $ — below this a SKU is noise, not a signal
+    'acos_up_rel':      0.20,   # ACOS worsened >20% relative vs prior window
+    'ppc_dependent':    0.70,   # PPC share of revenue above 70%
+    'organic_down_rel': 0.20,   # organic revenue down >20% while PPC flat/up
+    'scaling_acos':     35.0,   # ACOS below this AND revenue growing →
+    'scaling_rev_up':   0.15,   #   revenue up >15% = scaling candidate
+    'low_conf':         0.50,   # spend-weighted allocation confidence below
+    'capped_rate':      0.30,   # driver campaign budget-capped ≥30% of days
+    'capped_min_share': 0.25,   # …and that campaign carries ≥25% of SKU spend
+}
+
+SKU_SIGNALS = [   # (id, label) — display order for the attention bar
+    ('losing',        'Losing'),
+    ('acos_up',       'ACOS ↑'),
+    ('ppc_dependent', 'PPC-Dependent'),
+    ('organic_down',  'Organic ↓'),
+    ('scaling',       'Scaling'),
+    ('capped',        'Capped'),
+    ('low_conf',      'Low Confidence'),
+]
+
+
+def _sku_signals(*, profit, spend, revenue, prev_revenue, prev_spend,
+                 ppc_sales, organic, prev_organic, prev_ppc_sales,
+                 confidence, capped_driver) -> list[str]:
+    """Deterministic signals for one SKU. All floats; None = unknown."""
+    T = SKU_SIGNAL_THRESHOLDS
+    out = []
+    big = spend > T['min_spend']
+    if profit < 0 and big:
+        out.append('losing')
+    # ACOS↑ — relative worsening vs prior window (both windows need revenue)
+    if big and revenue > 0 and prev_revenue and prev_revenue > 0 and prev_spend:
+        acos_now, acos_prev = spend / revenue, prev_spend / prev_revenue
+        if acos_prev > 0 and (acos_now - acos_prev) / acos_prev > T['acos_up_rel']:
+            out.append('acos_up')
+    if revenue > 0 and ppc_sales is not None and ppc_sales / revenue > T['ppc_dependent']:
+        out.append('ppc_dependent')
+    if (organic is not None and prev_organic and prev_organic > 0
+            and ppc_sales is not None and prev_ppc_sales is not None):
+        org_drop = (prev_organic - organic) / prev_organic
+        if org_drop > T['organic_down_rel'] and ppc_sales >= prev_ppc_sales * 0.95:
+            out.append('organic_down')
+    if (revenue > 0 and spend > 0 and prev_revenue and prev_revenue > 0
+            and spend / revenue * 100 < T['scaling_acos']
+            and (revenue - prev_revenue) / prev_revenue > T['scaling_rev_up']):
+        out.append('scaling')
+    if capped_driver:
+        out.append('capped')
+    if big and confidence is not None and confidence < T['low_conf']:
+        out.append('low_conf')
+    return out
+
+
 @login_required
 @permission_required('can_view_dashboard')
 def pnl_skus(request):
@@ -5779,6 +5873,74 @@ def api_pnl_skus(request):
     for b in sku_agg.values():
         b.setdefault('ppc_spend', Decimal('0'))
 
+    # ── 2b. P1 signal inputs — all grouped queries over the two windows ─────
+    from .models import AdsAdvertisedProductDailySnapshot, CampaignBudgetUsageDaily
+    from django.db.models import F as _F
+
+    # Prior window: revenue + spend per SKU (Δ columns, ACOS↑, SCALING).
+    prev_rev = {r['sku']: (float(r['rev'] or 0), int(r['qty'] or 0))
+                for r in DailySkuSnapshot.objects.filter(
+                    marketplace=marketplace,
+                    date__gte=prev_start, date__lte=prev_end)
+                .values('sku').annotate(rev=Sum('revenue'), qty=Sum('qty'))}
+    prev_spend = {r['sku']: float(r['sp'] or 0)
+                  for r in SkuPpcAllocation.objects.filter(
+                      marketplace=marketplace,
+                      date__gte=prev_start, date__lte=prev_end)
+                  .values('sku').annotate(sp=Sum('sku_ppc_spend'))}
+
+    # Attributed PPC sales per SKU — SP/SD by advertised_sku (7d window);
+    # SB is ASIN-level (14d) and is folded in via each SKU's ASIN, flagged
+    # as an estimate. Same methodology as api_sku_campaigns; labelled, never
+    # presented as exact organic attribution.
+    def _ppc_sales_maps(s, e):
+        by_sku = {r['advertised_sku']: float(r['sa'] or 0)
+                  for r in AdsAdvertisedProductDailySnapshot.objects.filter(
+                      marketplace=marketplace, date__gte=s, date__lte=e)
+                  .exclude(source_ad_type='sb').exclude(advertised_sku='')
+                  .values('advertised_sku').annotate(sa=Sum('sales_7d'))}
+        by_asin = {r['asin']: float(r['sa'] or 0)
+                   for r in AdsAdvertisedProductDailySnapshot.objects.filter(
+                       marketplace=marketplace, source_ad_type='sb',
+                       date__gte=s, date__lte=e)
+                   .values('asin').annotate(sa=Sum('sales_7d'))}
+        return by_sku, by_asin
+    cur_ap_sku, cur_ap_asin = _ppc_sales_maps(start, end)
+    prv_ap_sku, prv_ap_asin = _ppc_sales_maps(prev_start, prev_end)
+
+    # Spend-weighted allocation confidence per SKU (LOW-CONF chip).
+    conf_by_sku = {}
+    for r in (SkuPpcAllocation.objects.filter(
+                  marketplace=marketplace, date__gte=start, date__lte=end)
+              .values('sku').annotate(sp=Sum('sku_ppc_spend'),
+                                      wc=Sum(_F('confidence_score')
+                                             * _F('sku_ppc_spend')))):
+        sp = float(r['sp'] or 0)
+        conf_by_sku[r['sku']] = (float(r['wc'] or 0) / sp) if sp > 0 else None
+
+    # CAPPED chip: campaigns budget-capped ≥30% of active days, joined to
+    # SKUs through their allocation spend (driver = ≥25% of the SKU's spend).
+    T = SKU_SIGNAL_THRESHOLDS
+    cap_agg = {}
+    for r in (CampaignBudgetUsageDaily.objects.filter(
+                  marketplace=marketplace, date__gte=start, date__lte=end)
+              .values('campaign_id', 'usage_pct')):
+        a = cap_agg.setdefault(str(r['campaign_id']), [0, 0])
+        a[0] += 1
+        if float(r['usage_pct'] or 0) >= CampaignBudgetUsageDaily.OUT_OF_BUDGET_PCT:
+            a[1] += 1
+    capped_campaigns = {cid for cid, (n, c) in cap_agg.items()
+                        if n > 0 and c / n >= T['capped_rate']}
+    capped_skus = set()
+    if capped_campaigns:
+        for r in (SkuPpcAllocation.objects.filter(
+                      marketplace=marketplace, date__gte=start, date__lte=end)
+                  .values('sku', 'campaign_id').annotate(sp=Sum('sku_ppc_spend'))):
+            if str(r['campaign_id']) in capped_campaigns:
+                tot = float(sku_agg.get(r['sku'], {}).get('ppc_spend', 0) or 0)
+                if tot > 0 and float(r['sp'] or 0) / tot >= T['capped_min_share']:
+                    capped_skus.add(r['sku'])
+
     # ── 3. Product meta lookup (brand + title) — with AMZN.GR.* fallback ────
     # Direct Product rows first, then resolve AMZN.GR.* variants to their parent
     # SKU's metadata so the Brand column shows the correct brand instead of '—'.
@@ -5824,6 +5986,34 @@ def api_pnl_skus(request):
         if revenue > 0 and ppc / revenue > Decimal('0.30'):
             tags.append('ad_dependent')   # >30% TACoS
 
+        # ── P1: PPC/organic estimate, deltas, deterministic signals ─────────
+        rev_f, ppc_f = float(revenue), float(ppc)
+        row_asin = (b['asin'] or '').upper()
+        ppc_sales = cur_ap_sku.get(s, 0.0) + cur_ap_asin.get(row_asin, 0.0)
+        # Organic = total − attributed ad sales. Attribution windows (7d/14d)
+        # can overshoot a short revenue window — clamp and flag, never hide.
+        organic, organic_flag = None, 'unavailable'
+        if rev_f > 0 or ppc_sales > 0:
+            raw = rev_f - ppc_sales
+            organic, organic_flag = max(raw, 0.0), ('overshoot' if raw < 0 else 'est')
+        p_rev = prev_rev.get(s, (0.0, 0))[0]
+        p_sp = prev_spend.get(s, 0.0)
+        p_ppc_sales = prv_ap_sku.get(s, 0.0) + prv_ap_asin.get(row_asin, 0.0)
+        p_organic = max(p_rev - p_ppc_sales, 0.0) if p_rev > 0 else None
+        rev_d = ((rev_f - p_rev) / p_rev * 100) if p_rev > 0 else None
+        sp_d = ((ppc_f - p_sp) / p_sp * 100) if p_sp > 0 else None
+        acos_d = None
+        if rev_f > 0 and p_rev > 0 and p_sp > 0:
+            a_now, a_prev = ppc_f / rev_f, p_sp / p_rev
+            acos_d = (a_now - a_prev) / a_prev * 100 if a_prev > 0 else None
+        confidence = conf_by_sku.get(s)
+        signals = _sku_signals(
+            profit=float(profit), spend=ppc_f, revenue=rev_f,
+            prev_revenue=p_rev, prev_spend=p_sp, ppc_sales=ppc_sales,
+            organic=organic, prev_organic=p_organic,
+            prev_ppc_sales=p_ppc_sales, confidence=confidence,
+            capped_driver=(s in capped_skus))
+
         meta = pmeta.get(s)
         rows.append({
             'sku':           s,
@@ -5842,6 +6032,16 @@ def api_pnl_skus(request):
             'roas':          round(float(roas),  2) if roas is not None else None,
             'tacos':         round(float(tacos), 2) if tacos is not None else None,
             'tags':          tags,
+            # P1 — PPC/organic split (estimate), deltas, signals, confidence
+            'ppc_sales':     round(ppc_sales, 2),
+            'organic':       round(organic, 2) if organic is not None else None,
+            'organic_flag':  organic_flag,
+            'ppc_share_pct': round(ppc_sales / rev_f * 100, 1) if rev_f > 0 else None,
+            'revenue_delta_pct': round(rev_d, 1) if rev_d is not None else None,
+            'spend_delta_pct':   round(sp_d, 1) if sp_d is not None else None,
+            'acos_delta_pct':    round(acos_d, 1) if acos_d is not None else None,
+            'confidence':    round(confidence, 2) if confidence is not None else None,
+            'signals':       signals,
         })
         if profit > 0:
             total_profit += profit
@@ -5850,6 +6050,25 @@ def api_pnl_skus(request):
     if tag_filter:
         wanted = set(tag_filter)
         rows = [r for r in rows if any(t in wanted for t in r['tags'])]
+
+    # P1 — attention counts are computed over the population BEFORE the signal
+    # filter is applied (so the bar always shows the full picture), and the
+    # same signal list drives the filter — one implementation.
+    signal_counts = {sid: sum(1 for r in rows if sid in r['signals'])
+                     for sid, _lbl in SKU_SIGNALS}
+
+    # Signal filter — AND-combined (Losing + High ACOS + PPC-dependent).
+    signal_filter = [x.strip() for x in
+                     (request.GET.get('signals') or '').split(',') if x.strip()]
+    if signal_filter:
+        rows = [r for r in rows
+                if all(sid in r['signals'] for sid in signal_filter)]
+
+    # Compound numeric conditions — same syntax + helpers as the Marketing
+    # Optimizer (metric:op:value;…), server-side.
+    from .views_marketing import _parse_conds, _num_ok
+    for metric, op, val in _parse_conds(request.GET.get('cond')):
+        rows = [r for r in rows if _num_ok(r.get(metric), op, val)]
 
     for r in rows:
         if total_profit > 0 and r['gross_profit'] > 0:
@@ -5876,6 +6095,7 @@ def api_pnl_skus(request):
             'profitable':              sum(1 for r in rows if 'profitable' in r['tags']),
             'ad_dependent':            sum(1 for r in rows if 'ad_dependent' in r['tags']),
         },
+        'signal_counts': signal_counts,
     }
 
     # ── Brand list (for the brand-filter dropdown) ──────────────────────────
@@ -5891,6 +6111,562 @@ def api_pnl_skus(request):
         'tag_filter':   tag_filter,
         'kpi':          kpi,
         'rows':         rows,
+    })
+
+
+# ─── SKU Intelligence P0 — SKU → Campaign drivers ───────────────────────────
+
+def _campaign_budget_action(marketplace, campaign_id, start, end):
+    """P4 — propose a budget increase ONLY where the evidence supports it.
+
+    Conditions (all reused, none invented):
+      • budget-capped on ≥30% of active days   — Budget & Pacing's cap rate
+      • ACOS below 35%                          — the P1 'scaling' efficiency bar
+      • a CURRENT budget is actually stored     — else no honest before/after
+
+    Returns None when any condition fails: the opportunity stays diagnostic and
+    no executable recommendation is offered.
+    """
+    from decimal import Decimal
+
+    from . import ad_actions as ACT
+    from .models import CampaignBudgetUsageDaily, CampaignProfitDaily
+
+    rows = list(CampaignBudgetUsageDaily.objects.filter(
+        marketplace=marketplace, campaign_id=str(campaign_id),
+        date__gte=start, date__lte=end).values('usage_pct'))
+    if not rows:
+        return None
+    capped = sum(1 for r in rows
+                 if float(r['usage_pct'] or 0)
+                 >= CampaignBudgetUsageDaily.OUT_OF_BUDGET_PCT)
+    cap_rate = capped / len(rows)
+    if cap_rate < SKU_SIGNAL_THRESHOLDS['capped_rate']:
+        return None
+
+    agg = CampaignProfitDaily.objects.filter(
+        marketplace=marketplace, campaign_id=str(campaign_id),
+        date__gte=start, date__lte=end).aggregate(sp=Sum('spend'),
+                                                  rv=Sum('ad_revenue'))
+    spend, rev = float(agg['sp'] or 0), float(agg['rv'] or 0)
+    acos = (spend / rev * 100) if rev > 0 else None
+    if acos is None or acos >= SKU_SIGNAL_THRESHOLDS['scaling_acos']:
+        return None      # constrained but not efficient — budget is not the fix
+
+    current, as_of, source = ACT.current_campaign_budget(marketplace, campaign_id)
+    if current is None or current <= 0:
+        return None      # no current value → no honest "current → proposed"
+
+    proposed = (current * Decimal('1.30')).quantize(Decimal('0.01'))
+    return {
+        'action_type': 'campaign_budget',
+        'campaign_id': str(campaign_id),
+        'current_value': float(current),
+        'proposed_value': float(proposed),
+        'change_pct': 30.0,
+        'current_source': source,
+        'current_as_of': as_of.isoformat() if as_of else None,
+        'reason': (f'Hit its daily budget on {capped} of {len(rows)} active days '
+                   f'({cap_rate * 100:.0f}%) while holding ACOS at {acos:.1f}% — '
+                   f'constrained and efficient, so the cap is limiting sales.'),
+        'evidence': [
+            {'label': 'Capped days',   'value': f'{capped}/{len(rows)} ({cap_rate * 100:.0f}%)'},
+            {'label': 'ACOS',          'value': f'{acos:.1f}%'},
+            {'label': 'Spend',         'value': f'${spend:,.0f}'},
+            {'label': 'Ad revenue',    'value': f'${rev:,.0f}'},
+            {'label': 'Current budget','value': f'${float(current):,.2f}/day'},
+        ],
+        'period': {'start': start.isoformat(), 'end': end.isoformat()},
+        'capability': ACT.write_capability(marketplace),
+        'note': ('Diagnosis with a proposed step. Nothing is sent to Amazon '
+                 'until a person reviews and approves it.'),
+    }
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def api_campaign_opportunities(request, campaign_id: str):
+    """
+    P3 — contextual opportunities for ONE campaign. Lazy: only runs when the
+    Opportunities tab is opened (P3.13).
+
+    Reuses, never rebuilds:
+      • AdsTargetingDailySnapshot  — target rows (same source as the Targeting tab)
+      • AdsSearchTermDailySnapshot — term rows  (same source as the Search Terms tab)
+      • _tag_search_term           — the EXISTING deterministic rules that already
+                                     drive the Search Terms page and the Optimizer
+      • StiOpportunity / AIRecommendation — surfaced, not regenerated
+
+    Diagnosis only — nothing here changes a bid, budget, target or anything on
+    Amazon.
+    """
+    from collections import defaultdict
+
+    from . import opportunities as OPP
+    from .models import (AdsSearchTermDailySnapshot, AdsTargetingDailySnapshot,
+                         AIRecommendation, StiOpportunity)
+
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    period_id = (request.GET.get('period') or '7d').lower()
+    if period_id == 'today' or period_id not in _CAMPAIGN_PERIODS:
+        period_id = '7d'
+    today = date.today()
+    start, end, _ = _resolve_campaign_period(period_id, today)
+    from_sku = (request.GET.get('from_sku') or '')[:64]
+
+    # ── Targets — one grouped query, same fact table as the Targeting tab ───
+    tgt = defaultdict(lambda: {'spend': 0.0, 'sales': 0.0, 'orders': 0,
+                               'clicks': 0, 'impressions': 0,
+                               'expression': '', 'target_id': ''})
+    for r in (AdsTargetingDailySnapshot.objects
+              .filter(marketplace=marketplace, campaign_id=campaign_id,
+                      date__gte=start, date__lte=end)
+              .values('target_id', 'expression')
+              .annotate(sp=Sum('spend'), sa=Sum('sales_7d'), o=Sum('orders_7d'),
+                        c=Sum('clicks'), i=Sum('impressions'))):
+        b = tgt[r['target_id']]
+        b['target_id'] = r['target_id']
+        b['expression'] = r['expression'] or r['target_id']
+        b['spend'] += float(r['sp'] or 0); b['sales'] += float(r['sa'] or 0)
+        b['orders'] += int(r['o'] or 0); b['clicks'] += int(r['c'] or 0)
+        b['impressions'] += int(r['i'] or 0)
+
+    # ── Search terms — one grouped query, same fact table as the ST tab ─────
+    st = defaultdict(lambda: {'spend': 0.0, 'sales': 0.0, 'orders': 0,
+                              'clicks': 0, 'impressions': 0, 'search_term': ''})
+    for r in (AdsSearchTermDailySnapshot.objects
+              .filter(marketplace=marketplace, campaign_id=campaign_id,
+                      date__gte=start, date__lte=end)
+              .values('search_term_hash', 'search_term')
+              .annotate(sp=Sum('spend'), sa=Sum('sales_7d'), o=Sum('orders_7d'),
+                        c=Sum('clicks'), i=Sum('impressions'))
+              .order_by('-sp')[:800]):
+        b = st[r['search_term_hash']]
+        b['search_term'] = r['search_term']
+        b['spend'] += float(r['sp'] or 0); b['sales'] += float(r['sa'] or 0)
+        b['orders'] += int(r['o'] or 0); b['clicks'] += int(r['c'] or 0)
+        b['impressions'] += int(r['i'] or 0)
+
+    def _derive(d):
+        d['ctr'] = (d['clicks'] / d['impressions'] * 100) if d['impressions'] else None
+        d['cvr'] = (d['orders'] / d['clicks'] * 100) if d['clicks'] else None
+        d['estimated_profit'] = 0.0     # profit proxy belongs to the ST tab
+        return d
+
+    cards = OPP.entity_opportunities(
+        rows=[_derive(v) for v in tgt.values()], level='target',
+        campaign_id=campaign_id, tagger=_tag_search_term,
+        drill_builder=lambda r: {'label': 'Search terms for this target',
+                                 'target_id': r['target_id']})
+    cards += OPP.entity_opportunities(
+        rows=[_derive(v) for v in st.values()], level='search_term',
+        campaign_id=campaign_id, tagger=_tag_search_term)
+
+    # ── Existing systems, surfaced (never regenerated) ──────────────────────
+    ai = list(AIRecommendation.objects.filter(
+        marketplace=marketplace, scope_type='campaign', scope_id=str(campaign_id),
+        status__in=['new', 'acknowledged']).order_by('-rank_score')[:3])
+    # STI opportunities whose subject is a term this campaign actually ran —
+    # that is the only defensible campaign linkage STI's schema supports.
+    terms_lc = {v['search_term'].lower() for v in st.values() if v['search_term']}
+    sti = []
+    if terms_lc:
+        sti = [o for o in StiOpportunity.objects.filter(
+                   marketplace=marketplace, status='open').order_by('-score')[:200]
+               if (o.subject or '').lower() in terms_lc][:4]
+    subjects = {c['subject'].lower() for c in cards if c.get('subject')}
+    cards += OPP.sti_cards(sti, level='campaign', dedupe_subjects=subjects)
+    cards += OPP.ai_cards(ai, level='campaign')
+    cards = OPP.dedupe(cards)
+
+    # ── P4 — the ONE actionable recommendation this data supports ───────────
+    # A budget increase is proposable only when the campaign is demonstrably
+    # constrained AND efficient, using the SAME thresholds the Budget & Pacing
+    # page already applies (cap ≥30% of active days; ACOS below target). Every
+    # other opportunity above stays diagnostic (P4.5): organic decline does not
+    # imply "spend more", and PPC dependency does not imply "spend less".
+    action = _campaign_budget_action(marketplace, campaign_id, start, end)
+
+    return JsonResponse({
+        'action': action,
+        'marketplace': marketplace, 'campaign_id': campaign_id,
+        'period': {'id': period_id, 'label': _CAMPAIGN_PERIODS[period_id][0],
+                   'start': start.isoformat(), 'end': end.isoformat()},
+        'from_sku': from_sku or None,
+        'counts': {'targets': len(tgt), 'search_terms': len(st),
+                   'opportunities': len(cards)},
+        'opportunities': cards,
+        'note': ('Diagnosis only — Pulse never changes bids, budgets or targets. '
+                 'Target and search-term rules are the same ones used by the '
+                 'Search Terms page.'),
+    })
+
+
+def _sku_opportunity_cards(*, marketplace, sku, asin, rows, context, start, end,
+                           prev_revenue, prev_spend, prev_ppc_sales, prev_organic):
+    """P3 — contextual opportunities for one SKU.
+
+    Deterministic cards come from numbers already computed in this request
+    (driver shares + P1 context); STI and AIRecommendation records are
+    SURFACED, never regenerated. Two small indexed queries are added — both
+    only run when a SKU row is expanded (P3.13).
+    """
+    from . import opportunities as OPP
+    from .models import AIRecommendation, Product, ProductGroup, StiOpportunity
+
+    # P1 signals, recomputed from the SAME engine (no second rule set).
+    signals = _sku_signals(
+        profit=0.0,   # profit-based signals belong to the table, not this panel
+        spend=float(context.get('spend') or 0),
+        revenue=float(context.get('revenue') or 0),
+        prev_revenue=prev_revenue, prev_spend=prev_spend,
+        ppc_sales=float(context.get('ppc_sales') or 0),
+        organic=context.get('organic'), prev_organic=prev_organic,
+        prev_ppc_sales=prev_ppc_sales, confidence=None, capped_driver=False)
+
+    def _campaign_url(cid):
+        return (f'/dashboard/campaigns/{cid}/?mp={marketplace}'
+                f'&from_sku={sku}')
+
+    cards = OPP.sku_opportunities(sku=sku, driver_rows=rows, context=context,
+                                  signals=signals, campaign_url=_campaign_url)
+
+    # ── Existing STI opportunities for the group this SKU belongs to ────────
+    # StiOpportunity is scoped to a ProductGroup; a SKU joins through its
+    # catalogue category. Open items only — status lives on the STI record.
+    sti = []
+    try:
+        cat = (Product.objects.filter(marketplace=marketplace, sku=sku)
+               .values_list('category', flat=True).first())
+        if cat:
+            gids = [g.pk for g in ProductGroup.objects.filter(active=True)
+                    if cat in (g.categories or [])]
+            if gids:
+                sti = list(StiOpportunity.objects
+                           .filter(product_group_id__in=gids,
+                                   marketplace=marketplace, status='open')
+                           .order_by('-score')[:3])
+    except Exception:
+        sti = []      # STI is optional context — never break the panel over it
+
+    # ── Existing AI recommendations scoped to this SKU ──────────────────────
+    ai = list(AIRecommendation.objects.filter(
+        marketplace=marketplace, scope_type='sku', scope_id=sku,
+        status__in=['new', 'acknowledged']).order_by('-rank_score')[:3])
+
+    # Pulse deterministic first, then STI, then AI (P3.6: measured data wins).
+    subjects = {c['subject'].lower() for c in cards if c.get('subject')}
+    cards += OPP.sti_cards(sti, level='sku', dedupe_subjects=subjects)
+    cards += OPP.ai_cards(ai, level='sku')
+    return OPP.dedupe(cards)
+
+
+@login_required
+@permission_required('can_view_dashboard')
+def api_sku_campaigns(request):
+    """
+    Campaign drivers for ONE SKU over the selected period — the reverse of
+    api_campaign_top_skus. Read-only exposure layer over the existing
+    attribution engine; changes no methodology.
+
+    Sources (each one grouped query — no N+1):
+      • SkuPpcAllocation   — authoritative per-SKU PPC spend per campaign,
+                             with attribution_source / confidence / settlement.
+      • AdsAdvertisedProductDailySnapshot — attributed sales/orders/units per
+                             campaign. SP+SD join by SKU; SB joins by ASIN
+                             (purchasedProduct has no SKU and uses a 14-day
+                             window) and is flagged, never silently merged.
+      • Campaign           — dim: name / type / state.
+
+    Query params: mp, period (same _PNL_PERIODS vocabulary as api_pnl_skus),
+                  sku (required), asin (optional; resolved from the latest
+                  DailySkuSnapshot row when absent — needed for the SB join).
+
+    Response rows sorted by spend desc ("where is the money going?"); the UI
+    renders spend-share vs sales-share as paired bars so the mismatch reads
+    at a glance.
+    """
+    from .models import (AdsAdvertisedProductDailySnapshot, Campaign,
+                         DailySkuSnapshot, SkuPpcAllocation)
+    from django.db.models import F, Q
+
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    sku = (request.GET.get('sku') or '').strip()
+    if not sku:
+        return JsonResponse({'error': 'sku is required'}, status=400)
+
+    period_id = (request.GET.get('period') or '7d').lower()
+    if period_id not in _PNL_PERIODS:
+        period_id = '7d'
+    today = date.today()
+    start, end, _ps, _pe = _resolve_pnl_period(period_id, today)
+
+    asin = (request.GET.get('asin') or '').strip()
+    if not asin:
+        snap = (DailySkuSnapshot.objects
+                .filter(marketplace=marketplace, sku=sku)
+                .exclude(asin='').order_by('-date')
+                .values_list('asin', flat=True).first())
+        asin = snap or ''
+
+    # ── 1. Authoritative spend, grouped at (campaign, source, state) ────────
+    # One grouped query; the per-campaign fold below runs over a handful of
+    # rows, not the fact table. wconf = spend-weighted confidence numerator.
+    alloc = (SkuPpcAllocation.objects
+             .filter(marketplace=marketplace, sku__iexact=sku,
+                     date__gte=start, date__lte=end)
+             .values('campaign_id', 'campaign_type',
+                     'attribution_source', 'settlement_state')
+             .annotate(spend=Sum('sku_ppc_spend'),
+                       wconf=Sum(F('confidence_score') * F('sku_ppc_spend'))))
+
+    _SETTLE_RANK = {'provisional': 0, 'settling': 1, 'locked': 2}
+    camp: dict[str, dict] = {}
+    for r in alloc:
+        cid = str(r['campaign_id'])
+        sp = float(r['spend'] or 0)
+        if sp <= 0 and cid in camp:
+            continue
+        c = camp.setdefault(cid, {
+            'campaign_id': cid, 'campaign_type': r['campaign_type'] or '',
+            'spend': 0.0, 'wconf': 0.0, 'sources': {},
+            'settlement': 'locked',
+        })
+        c['spend'] += sp
+        c['wconf'] += float(r['wconf'] or 0)
+        c['sources'][r['attribution_source']] = (
+            c['sources'].get(r['attribution_source'], 0.0) + sp)
+        # Worst (least settled) state present in the window wins the label.
+        if (_SETTLE_RANK.get(r['settlement_state'], 0)
+                < _SETTLE_RANK.get(c['settlement'], 2)):
+            c['settlement'] = r['settlement_state']
+
+    # ── 1b. Canonicalise campaign ids ───────────────────────────────────────
+    # Some SkuPpcAllocation rows (manual-hourly lineage — see
+    # relink_manual_hourly_campaign_ids) carry the campaign NAME in
+    # campaign_id, while the advertised-product table and Campaign dim use
+    # numeric ids. Left as-is those rows can never join to their sales.
+    # Resolve name-shaped ids through the dim and merge; read-only, no
+    # methodology change.
+    known = {str(d['campaign_id']) for d in
+             Campaign.objects.filter(marketplace=marketplace,
+                                     campaign_id__in=list(camp))
+             .values('campaign_id')}
+    unknown = [cid for cid in camp if cid not in known]
+    if unknown:
+        by_name = {d['campaign_name']: str(d['campaign_id']) for d in
+                   Campaign.objects.filter(marketplace=marketplace,
+                                           campaign_name__in=unknown)
+                   .values('campaign_id', 'campaign_name')}
+        for old in list(camp):
+            new = by_name.get(old)
+            if not new or new == old:
+                continue
+            src, dst = camp.pop(old), camp.setdefault(new, {
+                'campaign_id': new, 'campaign_type': '', 'spend': 0.0,
+                'wconf': 0.0, 'sources': {}, 'settlement': 'locked'})
+            dst['spend'] += src['spend']
+            dst['wconf'] += src['wconf']
+            dst['campaign_type'] = dst['campaign_type'] or src['campaign_type']
+            for k, v in src['sources'].items():
+                dst['sources'][k] = dst['sources'].get(k, 0.0) + v
+            if (_SETTLE_RANK.get(src['settlement'], 0)
+                    < _SETTLE_RANK.get(dst['settlement'], 2)):
+                dst['settlement'] = src['settlement']
+
+    # ── 2. Attributed sales/orders/units per campaign ───────────────────────
+    ap_filter = Q(advertised_sku__iexact=sku)
+    if asin:
+        ap_filter |= Q(asin__iexact=asin, source_ad_type='sb')
+    ap = (AdsAdvertisedProductDailySnapshot.objects
+          .filter(marketplace=marketplace, date__gte=start, date__lte=end)
+          .filter(ap_filter)
+          .values('campaign_id', 'source_ad_type')
+          .annotate(sales=Sum('sales_7d'), orders=Sum('orders_7d'),
+                    units=Sum('units_7d')))
+    sales_by_camp: dict[str, dict] = {}
+    for r in ap:
+        cid = str(r['campaign_id'])
+        s = sales_by_camp.setdefault(cid, {'sales': 0.0, 'orders': 0,
+                                           'units': 0, 'sb_asin_level': False})
+        s['sales'] += float(r['sales'] or 0)
+        s['orders'] += int(r['orders'] or 0)
+        s['units'] += int(r['units'] or 0)
+        if r['source_ad_type'] == 'sb':
+            s['sb_asin_level'] = True
+
+    # A campaign can have attributed sales without allocated spend in the
+    # window (spend reconciled elsewhere / zero-spend days) — still show it.
+    for cid in sales_by_camp:
+        camp.setdefault(cid, {
+            'campaign_id': cid, 'campaign_type': '', 'spend': 0.0,
+            'wconf': 0.0, 'sources': {}, 'settlement': 'locked'})
+
+    # ── 3. Campaign dim ─────────────────────────────────────────────────────
+    dim = {str(d['campaign_id']): d for d in
+           Campaign.objects.filter(marketplace=marketplace,
+                                   campaign_id__in=list(camp))
+           .values('campaign_id', 'campaign_name', 'campaign_type', 'state')}
+
+    total_spend = sum(c['spend'] for c in camp.values())
+    total_sales = sum(s['sales'] for s in sales_by_camp.values())
+
+    rows = []
+    for cid, c in camp.items():
+        d = dim.get(cid, {})
+        # A campaign id that resolves to neither the dim nor any advertised-
+        # product row cannot be joined to its sales (manual-hourly name
+        # variants, e.g. dayparting suffixes). Show sales as UNKNOWN — a
+        # misleading 0 would read as "wasted spend". Spend stays authoritative.
+        linked = bool(d) or cid in sales_by_camp
+        s = sales_by_camp.get(cid, {'sales': 0.0, 'orders': 0, 'units': 0,
+                                    'sb_asin_level': False})
+        spend, sales = c['spend'], s['sales']
+        # Dominant attribution source = the one carrying the most spend.
+        dominant = max(c['sources'], key=c['sources'].get) if c['sources'] else ''
+        conf = (c['wconf'] / spend) if spend > 0 else None
+        rows.append({
+            'campaign_id':    cid,
+            'campaign_name':  d.get('campaign_name') or cid,
+            'campaign_type':  d.get('campaign_type') or c['campaign_type'] or '',
+            'state':          d.get('state') or '',
+            'linked':         linked,
+            'spend':          round(spend, 2),
+            'spend_share':    round(spend / total_spend * 100, 1) if total_spend > 0 else 0.0,
+            'ppc_sales':      round(sales, 2) if linked else None,
+            'sales_share':    (round(sales / total_sales * 100, 1)
+                               if (linked and total_sales > 0) else (0.0 if linked else None)),
+            'orders':         s['orders'] if linked else None,
+            'units':          s['units'] if linked else None,
+            'acos':           round(spend / sales * 100, 1) if (linked and sales > 0) else None,
+            'roas':           (round(sales / spend, 2) if (linked and spend > 0) else None),
+            'attribution_source': dominant,
+            'source_mix':     {k: round(v / spend * 100)
+                               for k, v in c['sources'].items()} if spend > 0 else {},
+            'confidence':     round(conf, 2) if conf is not None else None,
+            'settlement':     c['settlement'],
+            'sb_asin_level':  s['sb_asin_level'],
+        })
+    rows.sort(key=lambda r: r['spend'], reverse=True)
+
+    # ── P1: SKU context + what-changed + daily trend ────────────────────────
+    # Same sources the table already trusts — no second calculation engine.
+    def _sku_window(s0, e0):
+        d0 = (DailySkuSnapshot.objects
+              .filter(marketplace=marketplace, sku=sku,
+                      date__gte=s0, date__lte=e0)
+              .aggregate(rev=Sum('revenue'), qty=Sum('qty')))
+        sp0 = (SkuPpcAllocation.objects
+               .filter(marketplace=marketplace, sku__iexact=sku,
+                       date__gte=s0, date__lte=e0)
+               .aggregate(s=Sum('sku_ppc_spend'))['s'])
+        ap0 = (AdsAdvertisedProductDailySnapshot.objects
+               .filter(marketplace=marketplace, date__gte=s0, date__lte=e0)
+               .filter(ap_filter)
+               .aggregate(s=Sum('sales_7d'))['s'])
+        return (float(d0['rev'] or 0), int(d0['qty'] or 0),
+                float(sp0 or 0), float(ap0 or 0))
+
+    rev_c, units_c, spend_c, psales_c = _sku_window(start, end)
+    rev_p, units_p, spend_p, psales_p = _sku_window(_ps, _pe)
+    raw_org = rev_c - psales_c
+    organic_c = max(raw_org, 0.0) if (rev_c > 0 or psales_c > 0) else None
+    organic_p = max(rev_p - psales_p, 0.0) if rev_p > 0 else None
+
+    def _pct(cur, prev):
+        return round((cur - prev) / prev * 100, 1) if prev and prev > 0 else None
+
+    context = {
+        'revenue': round(rev_c, 2), 'units': units_c,
+        'ppc_sales': round(psales_c, 2),
+        'organic': round(organic_c, 2) if organic_c is not None else None,
+        'organic_flag': ('overshoot' if raw_org < 0 else 'est')
+                        if organic_c is not None else 'unavailable',
+        'ppc_share_pct': round(psales_c / rev_c * 100, 1) if rev_c > 0 else None,
+        'spend': round(spend_c, 2),
+        'acos': round(spend_c / psales_c * 100, 1) if psales_c > 0 else None,
+        'tacos': round(spend_c / rev_c * 100, 1) if rev_c > 0 else None,
+        'roas': round(psales_c / spend_c, 2) if spend_c > 0 else None,
+        'deltas': {'revenue': _pct(rev_c, rev_p),
+                   'ppc_sales': _pct(psales_c, psales_p),
+                   'organic': _pct(organic_c or 0, organic_p),
+                   'spend': _pct(spend_c, spend_p)},
+    }
+
+    # Daily trend — the selected window, widened to ≥30 days so a 1-day view
+    # still shows a readable line. Organic/day derived client-side (rev−ppc).
+    t_start = min(start, end - timedelta(days=29))
+    t_rev = {r['date']: float(r['rev'] or 0)
+             for r in DailySkuSnapshot.objects
+             .filter(marketplace=marketplace, sku=sku,
+                     date__gte=t_start, date__lte=end)
+             .values('date').annotate(rev=Sum('revenue'))}
+    t_sp = {r['date']: float(r['s'] or 0)
+            for r in SkuPpcAllocation.objects
+            .filter(marketplace=marketplace, sku__iexact=sku,
+                    date__gte=t_start, date__lte=end)
+            .values('date').annotate(s=Sum('sku_ppc_spend'))}
+    t_ps = {r['date']: float(r['s'] or 0)
+            for r in AdsAdvertisedProductDailySnapshot.objects
+            .filter(marketplace=marketplace, date__gte=t_start, date__lte=end)
+            .filter(ap_filter)
+            .values('date').annotate(s=Sum('sales_7d'))}
+    trend = []
+    dcur = t_start
+    while dcur <= end:
+        trend.append({'date': dcur.isoformat(),
+                      'revenue': round(t_rev.get(dcur, 0.0), 2),
+                      'ppc_sales': round(t_ps.get(dcur, 0.0), 2),
+                      'spend': round(t_sp.get(dcur, 0.0), 2)})
+        dcur += timedelta(days=1)
+
+    # Group-fallback allocation can spread residual cents across hundreds of
+    # campaigns; those rows are noise, not drivers. Drop sub-cent rows, cap the
+    # list, and report how much of the spend the shown rows cover so nothing
+    # is hidden silently. Shares stay computed against the FULL totals.
+    total_campaigns = len(rows)
+    rows = [r for r in rows if r['spend'] >= 0.01 or (r['ppc_sales'] or 0) >= 0.01]
+    try:
+        limit = max(1, min(int(request.GET.get('limit') or 25), 200))
+    except ValueError:
+        limit = 25
+    truncated = len(rows) > limit
+    shown_spend = sum(r['spend'] for r in rows[:limit])
+    rows = rows[:limit]
+
+    return JsonResponse({
+        'marketplace': marketplace,
+        'sku': sku, 'asin': asin,
+        'period': {'id': period_id, 'label': _PNL_PERIODS[period_id][0],
+                   'start': start.isoformat(), 'end': end.isoformat()},
+        'totals': {'spend': round(total_spend, 2),
+                   'ppc_sales': round(total_sales, 2),
+                   'campaigns': total_campaigns,
+                   'shown': len(rows), 'truncated': truncated,
+                   'shown_spend_pct': round(shown_spend / total_spend * 100, 1)
+                                      if total_spend > 0 else None,
+                   'acos': round(total_spend / total_sales * 100, 1)
+                           if total_sales > 0 else None},
+        'context': context,
+        'trend': trend,
+        'opportunities': _sku_opportunity_cards(
+            marketplace=marketplace, sku=sku, asin=asin, rows=rows,
+            context=context, start=start, end=end,
+            prev_revenue=rev_p, prev_spend=spend_p,
+            prev_ppc_sales=psales_p, prev_organic=organic_p),
+        'rows': rows,
+        'notes': {
+            'spend_source': 'SkuPpcAllocation (reconciled per-SKU allocation)',
+            'sales_source': ('AdsAdvertisedProductDailySnapshot — SP/SD by SKU '
+                             '(7-day attribution); SB by ASIN (14-day window, '
+                             'may span sibling SKUs of the same ASIN)'),
+        },
     })
 
 

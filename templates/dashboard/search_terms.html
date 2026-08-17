@@ -114,6 +114,11 @@
 {% endblock %}
 
 {% block content %}
+<!-- P2 — investigation context carried from SKU Intelligence → Campaign Detail -->
+<div id="ctxBar" style="display:none;background:var(--bg2);border:1px solid var(--border);
+     border-left:3px solid var(--info-ink);border-radius:6px;padding:7px 12px;
+     margin-bottom:10px;gap:14px;align-items:center;flex-wrap:wrap;font-size:11px"></div>
+
 <div id="cmWarning" style="display:none;background:var(--warn-weak);border:1px solid #EAD499;
             color:#5A4500;padding:8px 12px;border-radius:6px;margin-bottom:10px;
             font-size:12px"></div>
@@ -193,11 +198,55 @@
 
 <script>
 let currentMP     = '{{ marketplace }}';
-let currentPeriod = '7d';
 let currentType   = 'all';
 let activeTags    = new Set();
 let currentSort   = {key:'profit', dir:'desc'};
 let lastData      = null;
+
+/* ── P2 — investigation context handed over from Campaign Detail ──────────
+   The user already chose marketplace, window, campaign and (optionally) a
+   target upstream; none of it should have to be re-selected here. */
+const CTX = {
+  campaign_id:   '{{ ctx_campaign_id|escapejs }}',
+  campaign_name: '{{ ctx_campaign_name|escapejs }}',
+  target_id:     '{{ ctx_target_id|escapejs }}',
+  from_sku:      '{{ ctx_from_sku|escapejs }}',
+};
+const _VALID_PERIODS = new Set(
+  [{% for p in period_options %}'{{ p.id }}',{% endfor %}]);
+let currentPeriod = (() => {
+  const p = new URLSearchParams(location.search).get('period');
+  return _VALID_PERIODS.has(p) ? p : '7d';
+})();
+// Context is a filter the user can drop without leaving the page.
+let ctxActive = !!(CTX.campaign_id || CTX.target_id);
+
+function clearContext() {
+  ctxActive = false;
+  renderContextBar();
+  loadData();
+}
+
+function renderContextBar() {
+  const el = document.getElementById('ctxBar');
+  if (!el) return;
+  if (!ctxActive) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const bits = [];
+  if (CTX.from_sku)
+    bits.push(`<span>SKU <b>${CTX.from_sku}</b></span>`);
+  if (CTX.campaign_id)
+    bits.push(`<span>Campaign <b>${CTX.campaign_name || '#' + CTX.campaign_id}</b></span>`);
+  if (CTX.target_id)
+    bits.push(`<span>Target <b>${CTX.target_id}</b></span>`);
+  el.style.display = 'flex';
+  el.innerHTML =
+    `<span style="font-size:11px;color:var(--text2)">Investigating:</span>${bits.join('')}` +
+    (CTX.campaign_id
+      ? `<a href="/dashboard/campaigns/${encodeURIComponent(CTX.campaign_id)}/?mp=${currentMP}&period=${currentPeriod}${CTX.from_sku ? '&from_sku=' + encodeURIComponent(CTX.from_sku) : ''}"
+           style="font-size:11px;font-weight:600;color:#067D62;text-decoration:none">← Back to campaign</a>` : '') +
+    `<button class="btn btn-secondary btn-sm" style="padding:2px 9px;font-size:10px"
+        onclick="clearContext()">Clear context — show all terms</button>`;
+}
 
 function setMP(mp, btn) {
   currentMP = mp;
@@ -335,6 +384,11 @@ async function loadData() {
     dir:      currentSort.dir,
   });
   if (activeTags.size > 0) params.set('tags', [...activeTags].join(','));
+  if (ctxActive) {                       // P2 — carried-over investigation
+    if (CTX.campaign_id) params.set('campaign_id', CTX.campaign_id);
+    if (CTX.target_id)   params.set('target_id',   CTX.target_id);
+  }
+  renderContextBar();
 
   try {
     const r = await fetch(`/dashboard/api/search-terms/?${params}`);
@@ -399,6 +453,10 @@ function closeDrill(ev) {
   document.getElementById('drillModal').style.display = 'none';
 }
 
+// P2 — reflect a handed-over period on the date buttons before first load.
+document.querySelectorAll('.date-btn').forEach(b => {
+  b.classList.toggle('active', b.dataset.period === currentPeriod);
+});
 loadData();
 </script>
 {% endblock %}

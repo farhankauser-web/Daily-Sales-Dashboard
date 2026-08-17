@@ -1,0 +1,199 @@
+{% extends "base/base.html" %}
+{% block title %}Action Queue{% endblock %}
+{% block nav_actions %}active{% endblock %}
+{% block page_title %}Action Queue{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .aq-banner { border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:12px;
+                border:1px solid #EAD499; background:var(--warn-weak); color:#5A4500; }
+  .aq-banner b { display:block; margin-bottom:2px; }
+  .aq-strip { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .aq-pill { background:var(--bg2); border:1px solid var(--border); border-radius:14px;
+              padding:4px 12px; font-size:11px; cursor:pointer; user-select:none; }
+  .aq-pill.active { background:#067D62; color:#fff; border-color:#067D62; }
+  .aq-pill .n { font-family:'DM Mono',monospace; margin-left:5px; }
+  .aq-card { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+              padding:12px 14px; margin-bottom:8px; }
+  .aq-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .aq-ttl { font-size:12px; font-weight:700; color:var(--text); }
+  .aq-sub { font-size:11px; color:var(--text2); }
+  .aq-st { font-size:9px; font-weight:700; padding:2px 8px; border-radius:3px;
+            text-transform:uppercase; letter-spacing:.4px; }
+  .aq-st.proposed { background:var(--info-weak); color:var(--info-ink); }
+  .aq-st.approved { background:var(--good-weak); color:var(--green); }
+  .aq-st.executed { background:#067D62; color:#fff; }
+  .aq-st.rejected, .aq-st.failed, .aq-st.cancelled { background:var(--crit-weak); color:var(--crit-ink); }
+  .aq-st.stale, .aq-st.unavailable { background:var(--warn-weak); color:var(--warn-ink); }
+  .aq-change { font-family:'DM Mono',monospace; font-size:13px; margin:8px 0;
+                display:flex; align-items:center; gap:10px; }
+  .aq-change .from { color:var(--text2); text-decoration:line-through; }
+  .aq-change .to   { color:var(--text); font-weight:700; }
+  .aq-change .pct  { font-size:11px; color:var(--text2); }
+  .aq-ev { display:flex; flex-wrap:wrap; gap:3px 14px; font-size:10px;
+            font-family:'DM Mono',monospace; margin:6px 0; }
+  .aq-ev span { color:var(--text3); } .aq-ev b { color:var(--text); margin-left:3px; }
+  .aq-reason { font-size:11px; color:var(--text); line-height:1.4; margin-bottom:6px; }
+  .aq-foot { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;
+              font-size:10px; color:var(--text3); }
+  .aq-btns { margin-left:auto; display:flex; gap:6px; }
+  .aq-btn { padding:4px 12px; font-size:11px; border-radius:4px; cursor:pointer;
+             border:1px solid var(--border); background:var(--bg); color:var(--text); }
+  .aq-btn.approve { background:#067D62; color:#fff; border-color:#067D62; }
+  .aq-btn.reject  { background:var(--bg); color:var(--red); }
+  .aq-btn:disabled { opacity:.45; cursor:not-allowed; }
+  .aq-msg { font-size:11px; margin-top:6px; padding:6px 10px; border-radius:4px;
+             background:var(--bg3); color:var(--text2); }
+  .aq-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+               padding:28px; text-align:center; color:var(--text2); font-size:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="aq-banner" id="capBanner">
+  <b>Human approval is required for every change.</b>
+  Pulse never changes a bid, budget or target on Amazon automatically — no schedule,
+  no agent. Each action below must be reviewed and explicitly approved by a person.
+</div>
+
+<div class="aq-strip" id="statusStrip"></div>
+<div id="queueBody"><div class="aq-empty">Loading…</div></div>
+
+<script>
+let currentMP = '{{ marketplace }}';
+let filterStatus = '';
+let lastData = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  load();
+}
+function setStatus(s, el) {
+  filterStatus = (filterStatus === s) ? '' : s;
+  load();
+}
+function money(v) { return v == null ? '—' : '$' + Number(v).toFixed(2); }
+
+function csrf() {
+  const m = document.cookie.match(/csrftoken=([^;]+)/);
+  return m ? m[1] : '';
+}
+async function post(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+    body: JSON.stringify(body || {}),
+  });
+  return {ok: r.ok, data: await r.json()};
+}
+
+function card(a) {
+  const canAct = a.status === 'proposed';
+  const canExec = a.status === 'approved';
+  const cap = lastData.capability || {};
+  const ev = (a.evidence || []).map(e =>
+    `<span>${e.label ? e.label + '<b>' + e.value + '</b>' : '<b>' + e.value + '</b>'}</span>`).join('');
+  const pct = a.change_pct == null ? '' :
+    `<span class="pct">${a.change_pct > 0 ? '+' : ''}${a.change_pct.toFixed(1)}%</span>`;
+  // P4.17 — never show a live Execute button the integration cannot honour.
+  const execBtn = canExec
+    ? (cap.can_write
+        ? `<button class="aq-btn approve" onclick="doExec(${a.id}, false)">Execute on Amazon</button>`
+        : `<button class="aq-btn" disabled title="${cap.reason || ''}">Execute — unavailable</button>`)
+      + `<button class="aq-btn" onclick="doExec(${a.id}, true)">Dry run</button>`
+    : '';
+  const msg = a.failure_reason ? `<div class="aq-msg">${a.failure_reason}</div>`
+            : (a.amazon_response ? `<div class="aq-msg">${a.amazon_response}</div>` : '');
+  return `<div class="aq-card" id="act-${a.id}">
+    <div class="aq-head">
+      <span class="aq-st ${a.status}">${a.status}</span>
+      <span class="aq-ttl">Campaign daily budget</span>
+      <span class="aq-sub">${a.entity_name || a.entity_id}</span>
+      ${a.from_sku ? `<span class="aq-sub">· from SKU ${a.from_sku}</span>` : ''}
+    </div>
+    <div class="aq-change">
+      <span class="from">${money(a.current_value)}/day</span> →
+      <span class="to">${money(a.proposed_value)}/day</span> ${pct}
+    </div>
+    ${a.reason ? `<div class="aq-reason">${a.reason}</div>` : ''}
+    <div class="aq-ev">${ev}</div>
+    ${msg}
+    <div class="aq-foot">
+      <span>Proposed ${(a.proposed_at || '').slice(0,16).replace('T',' ')}${a.proposed_by ? ' by ' + a.proposed_by : ''}</span>
+      ${a.approved_by ? `<span>· Approved ${(a.approved_at||'').slice(0,16).replace('T',' ')} by ${a.approved_by}</span>` : ''}
+      ${a.executed_at ? `<span>· Executed ${(a.executed_at||'').slice(0,16).replace('T',' ')}</span>` : ''}
+      ${a.value_after != null ? `<span>· After ${money(a.value_after)}</span>` : ''}
+      <span class="aq-btns">
+        ${canAct ? `<button class="aq-btn reject" onclick="doReject(${a.id})">Reject</button>
+                    <button class="aq-btn approve" onclick="doApprove(${a.id})">Approve</button>` : ''}
+        ${execBtn}
+      </span>
+    </div>
+  </div>`;
+}
+
+async function doApprove(id) {
+  const r = await post(`/dashboard/api/actions/${id}/approve/`, {});
+  if (!r.ok) alert(r.data.message || 'Could not approve.');
+  load();
+}
+async function doReject(id) {
+  const note = prompt('Reason for rejecting (optional):') || '';
+  const r = await post(`/dashboard/api/actions/${id}/reject/`, {note});
+  if (!r.ok) alert(r.data.message || 'Could not reject.');
+  load();
+}
+async function doExec(id, dry) {
+  if (!dry && !confirm('Execute this change on Amazon? This is a live change.')) return;
+  const r = await post(`/dashboard/api/actions/${id}/execute/`, {dry_run: !!dry});
+  alert(r.data.message || (r.ok ? 'Done.' : 'Blocked.'));
+  load();
+}
+
+function render(d) {
+  const cap = d.capability || {};
+  if (!cap.can_write) {
+    document.getElementById('capBanner').innerHTML =
+      `<b>Execution unavailable — the Amazon Ads integration is read-only.</b>
+       ${cap.reason || ''} Recommendations can be proposed, reviewed and approved,
+       and every gate can be validated with <em>Dry run</em>, but Pulse cannot
+       currently write the change to Amazon.`;
+  }
+  const order = ['proposed','approved','stale','unavailable','executed','failed','rejected','cancelled'];
+  document.getElementById('statusStrip').innerHTML = order
+    .filter(s => (d.counts[s] || 0) > 0)
+    .map(s => `<span class="aq-pill ${filterStatus===s?'active':''}"
+        onclick="setStatus('${s}', this)">${s}<span class="n">${d.counts[s]}</span></span>`).join('')
+    || '<span style="font-size:11px;color:var(--text3)">No actions yet.</span>';
+  const body = document.getElementById('queueBody');
+  body.innerHTML = d.rows.length
+    ? d.rows.map(card).join('')
+    : `<div class="aq-empty">No actions${filterStatus ? ' with status ' + filterStatus : ''}.
+        Propose one from a campaign's Opportunities tab.</div>`;
+}
+
+async function load() {
+  const p = new URLSearchParams({mp: currentMP});
+  if (filterStatus) p.set('status', filterStatus);
+  const r = await fetch(`/dashboard/api/actions/?${p}`);
+  lastData = await r.json();
+  render(lastData);
+}
+load();
+</script>
+{% endblock %}
