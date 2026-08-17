@@ -125,67 +125,97 @@ def api_prefix_mapping(request):
             b['campaigns'].append(c)
             b['spend'] += c['spend']
 
-    # Several prefixes legitimately point at the SAME product/pack — that is
-    # the regional naming convention, not duplication: US campaigns use 4BTH
-    # while UK/UAE/KSA use PK4 and LUX for the very same Bath Towels · 4-Pack.
-    # SKUs are a property of the GROUP, so the same SKU list appears under each
-    # alias. Report the alias set explicitly so it reads as one product with
-    # several campaign-naming conventions rather than a duplicated mapping.
+    # ── One row per PRODUCT · PACK, not per prefix ──────────────────────────
+    # A product legitimately has several campaign-naming prefixes: US campaigns
+    # are named 4BTH-…, the same product's UK campaigns PK4-… or LUX-…. Listing
+    # a row per prefix repeated each product's SKUs once per alias, which reads
+    # like duplicated configuration. Grouping by product shows every SKU set
+    # exactly once, with its prefixes as a set — while every prefix stays
+    # independently editable and deactivatable.
     all_maps = list(CampaignPrefixMap.objects.all())
-    aliases = defaultdict(list)
+    by_product = defaultdict(list)
     for m in all_maps:
-        aliases[(m.product_type, m.pack)].append(m.prefix)
-    for v in aliases.values():
-        v.sort()
+        by_product[(m.product_type, m.pack)].append(m)
+
+    def _prefix_of(name, candidates):
+        """Which of this product's prefixes does the campaign name start with?"""
+        n = (name or '').upper().replace(' ', '').lstrip('-')
+        for p in sorted(candidates, key=len, reverse=True):
+            if n.startswith(p.upper()):
+                return p
+        return ''
 
     rows = []
-    for m in all_maps:
-        g = (m.product_type, m.pack)
+    for g, maps in by_product.items():
         skus = catalog.get(g, [])
         cg = by_group.get(g, {'campaigns': [], 'spend': 0.0})
-        # Campaigns are matched to a GROUP, not to one prefix — several
-        # prefixes can share a group (e.g. 4BTH and PK4). Attribute a campaign
-        # to this row only when its own name actually starts with this prefix;
-        # otherwise report it as shared, so counts are never double-claimed.
-        mine = [c for c in cg['campaigns']
-                if (c['campaign_name'] or '').upper().replace(' ', '')
-                .lstrip('-').startswith(m.prefix.upper())]
+        names = [m.prefix for m in maps]
+        per_prefix = {m.prefix: {'n': 0, 'sp': 0.0} for m in maps}
+        camp_rows = []
+        for c in cg['campaigns']:
+            pfx = _prefix_of(c['campaign_name'], names)
+            if pfx:
+                per_prefix[pfx]['n'] += 1
+                per_prefix[pfx]['sp'] += c['spend']
+            camp_rows.append({
+                'campaign_id': c['campaign_id'],
+                'campaign_name': c['campaign_name'],
+                'marketplace': c['marketplace'],
+                'campaign_type': c['campaign_type'],
+                'spend': round(c['spend'], 2),
+                'matched_prefix': pfx,     # '' = matched by the name rules
+                'allocated': c['allocated'],
+            })
+        camp_rows.sort(key=lambda x: -x['spend'])
         rows.append({
-            'id': m.pk, 'prefix': m.prefix,
-            'product_type': m.product_type, 'pack': m.pack,
-            'marketplace': m.marketplace or '',
-            'active': m.active, 'note': m.note,
-            'updated_at': m.updated_at.isoformat() if m.updated_at else None,
-            # Other prefixes that mean the same product/pack (regional naming).
-            'aliases': [p for p in aliases.get(g, []) if p != m.prefix],
+            'product_type': g[0], 'pack': g[1],
+            'key': f'{g[0]}|{g[1]}',
+            'prefixes': sorted(
+                ({'id': m.pk, 'prefix': m.prefix, 'active': m.active,
+                  'note': m.note, 'marketplace': m.marketplace or '',
+                  'campaign_count': per_prefix[m.prefix]['n'],
+                  'spend': round(per_prefix[m.prefix]['sp'], 2),
+                  'used': per_prefix[m.prefix]['n'] > 0}
+                 for m in maps),
+                key=lambda x: (-x['campaign_count'], x['prefix'])),
+            'prefix_count': len(maps),
+            'active_prefix_count': sum(1 for m in maps if m.active),
             'sku_count': len(skus),
             'asin_count': len({s['asin'] for s in skus if s['asin']}),
-            'campaign_count': len(mine),
-            'group_campaign_count': len(cg['campaigns']),
-            'spend': round(sum(c['spend'] for c in mine), 2),
-            'group_spend': round(cg['spend'], 2),
+            'campaign_count': len(camp_rows),
+            'spend': round(cg['spend'], 2),
             'skus': sorted(
                 ({'sku': s['sku'], 'asin': s['asin'], 'title': s['title'],
                   'marketplace': s['marketplace'], 'status': s['status']}
                  for s in skus), key=lambda x: (x['sku'] or '')),
-            'campaigns': sorted(
-                ({'campaign_id': c['campaign_id'],
-                  'campaign_name': c['campaign_name'],
-                  'marketplace': c['marketplace'],
-                  'campaign_type': c['campaign_type'],
-                  'spend': round(c['spend'], 2),
-                  'allocated': c['allocated']} for c in mine),
-                key=lambda x: -x['spend']),
+            'campaigns': camp_rows,
         })
-    rows.sort(key=lambda r: (-r['spend'], r['prefix']))
+    rows.sort(key=lambda r: (-r['spend'], r['product_type'], r['pack']))
+
+    # Products that exist in the catalog but have NO prefix yet — the launch
+    # path for a new pack size. Their campaigns would be unallocated until a
+    # prefix is assigned, so they are surfaced rather than left to be noticed.
+    mapped_groups = {(m.product_type, m.pack) for m in all_maps}
+    unmapped_groups = sorted(
+        ({'product_type': g[0], 'pack': g[1],
+          'sku_count': len(v),
+          'asin_count': len({s['asin'] for s in v if s['asin']}),
+          'skus': sorted({s['sku'] for s in v if s['sku']})[:12]}
+         for g, v in catalog.items() if g not in mapped_groups),
+        key=lambda x: -x['sku_count'])
 
     unallocated = [c for c in camps if not c['allocated']]
     return JsonResponse({
+        'unmapped_groups': unmapped_groups,
         'marketplace': marketplace, 'days': days,
         'period': {'start': start.isoformat(), 'end': end.isoformat()},
         'kpi': {
-            'prefixes': len(rows),
-            'active_prefixes': sum(1 for r in rows if r['active']),
+            'products': len(rows),
+            'prefixes': len(all_maps),
+            'active_prefixes': sum(1 for m in all_maps if m.active),
+            'unused_prefixes': sum(
+                1 for r in rows for p in r['prefixes']
+                if p['active'] and not p['used']),
             'campaigns': len(camps),
             'allocated': len(camps) - len(unallocated),
             'unallocated': len(unallocated),
@@ -313,6 +343,65 @@ def api_prefix_unallocated(request):
 
 
 # ── Config edit (the only writes on this page) ──────────────────────────────
+@login_required
+@permission_required('can_manage_cogs')
+@require_POST
+def api_prefix_create(request):
+    """Assign a prefix to a product — the launch path for a new pack size.
+
+    The product/pack must match how the catalog writes it in Product.title
+    (split on ' - '), because that is what the allocator uses to find a group's
+    ASINs. The caller normally picks an existing catalog group, so this is
+    exact by construction; a free-typed group is accepted but reported back
+    with its SKU count so a mismatch is obvious immediately.
+    """
+    import json
+
+    from .models import CampaignPrefixMap
+
+    try:
+        d = json.loads(request.body or '{}')
+    except ValueError:
+        d = {}
+    prefix = (d.get('prefix') or '').strip().upper()
+    product_type = (d.get('product_type') or '').strip()
+    pack = (d.get('pack') or '').strip()
+
+    if not prefix:
+        return JsonResponse({'status': 'failed',
+                             'message': 'Prefix is required.'}, status=400)
+    if not product_type or not pack:
+        return JsonResponse({'status': 'failed',
+                             'message': 'Product and pack are both required.'},
+                            status=400)
+    if CampaignPrefixMap.objects.filter(prefix=prefix, marketplace='').exists():
+        return JsonResponse(
+            {'status': 'failed',
+             'message': f'{prefix} already exists — edit it instead of adding '
+                        f'a second mapping for the same prefix.'}, status=409)
+
+    m = CampaignPrefixMap.objects.create(
+        prefix=prefix, product_type=product_type, pack=pack,
+        marketplace='', active=True,
+        note=(d.get('note') or '')[:256])      # post_save clears the cache
+
+    # Report how many catalog SKUs this group actually resolves to. Zero is
+    # allowed — a product can be configured before it goes live — but the
+    # caller is told, because zero also means a typo'd product/pack.
+    skus = _catalog_by_group().get((product_type, pack), [])
+    return JsonResponse({
+        'status': 'ok', 'id': m.pk, 'prefix': m.prefix,
+        'product_type': m.product_type, 'pack': m.pack,
+        'sku_count': len(skus),
+        'skus': sorted({s['sku'] for s in skus if s['sku']})[:12],
+        'warning': ('No catalog products currently resolve to '
+                    f'"{product_type} · {pack}". That is fine if the product '
+                    'is not live yet — but check the spelling matches the '
+                    'product title format, or campaigns will classify to an '
+                    'empty group.') if not skus else '',
+    })
+
+
 @login_required
 @permission_required('can_manage_cogs')
 @require_POST

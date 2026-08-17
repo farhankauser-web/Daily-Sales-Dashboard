@@ -121,7 +121,7 @@
 
 {% block content %}
 <div class="pm-kpi">
-  <div class="pm-k"><div class="lbl">Prefixes</div>
+  <div class="pm-k"><div class="lbl">Products</div>
     <div class="val" id="k-pfx">—</div><div class="sub" id="k-pfx-sub"></div></div>
   <div class="pm-k"><div class="lbl">Campaigns</div>
     <div class="val" id="k-camp">—</div><div class="sub" id="k-camp-sub"></div></div>
@@ -140,6 +140,9 @@
 
 <!-- ── Tab A ─────────────────────────────────────────────────────────── -->
 <div class="pm-pane active" id="pane-map">
+  <!-- Products in the catalog with no prefix yet — the new-product launch path -->
+  <div id="unmappedBar" style="display:none"></div>
+
   <div class="pm-filters">
     <span class="lbl">Filter:</span>
     <input id="f-prefix" placeholder="Prefix" oninput="renderMap()" style="width:90px">
@@ -149,18 +152,19 @@
     <select id="f-active" onchange="renderMap()">
       <option value="">Any status</option><option value="1">Active</option><option value="0">Inactive</option>
     </select>
-    <span id="mapCount" style="margin-left:auto;color:var(--text3)"></span>
+    <button class="pm-btn go" style="margin-left:auto" onclick="openAdd()">+ Add prefix</button>
+    <span id="mapCount" style="color:var(--text3)"></span>
   </div>
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
               padding:8px;overflow:auto;max-height:calc(100vh - 400px)">
     <table class="pm-table" id="mapTable">
       <thead><tr>
         <th style="width:20px"></th>
-        <th class="l">Prefix</th><th class="l">Product</th><th class="l">Pack</th>
+        <th class="l">Product</th><th class="l">Pack</th>
+        <th class="l">Prefixes</th>
         <th>SKUs</th><th>ASINs</th><th>Campaigns</th><th>Spend</th>
-        <th class="l">Status</th><th class="l">Note</th>
       </tr></thead>
-      <tbody id="mapBody"><tr><td colspan="10" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr></tbody>
+      <tbody id="mapBody"><tr><td colspan="8" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr></tbody>
     </table>
   </div>
   <div style="margin-top:8px;font-size:11px;color:var(--text3)" id="mapNote"></div>
@@ -193,6 +197,50 @@
       </tr></thead>
       <tbody id="unBody"><tr><td colspan="8" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr></tbody>
     </table>
+  </div>
+</div>
+
+<div id="addModal" class="pm-modal-bg" style="display:none" onclick="closeAdd(event)">
+  <div class="pm-modal" onclick="event.stopPropagation()">
+    <h3>Assign a prefix to a product</h3>
+    <div class="body">
+      <p style="margin-top:0">Campaigns whose name starts with this prefix will be
+        classified as the chosen product, and will draw on that product's SKUs.</p>
+      <div style="display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center;margin:12px 0">
+        <label style="font-size:11px;color:var(--text3)">Product</label>
+        <select id="addGroup" onchange="addGroupChanged()"
+                style="padding:5px 8px;font-size:12px;border:1px solid var(--border);
+                       border-radius:4px;background:var(--bg);color:var(--text)"></select>
+        <label style="font-size:11px;color:var(--text3)">Prefix</label>
+        <input id="addPrefix" placeholder="e.g. 24WCPK"
+               style="padding:5px 8px;font-size:12px;border:1px solid var(--border);
+                      border-radius:4px;background:var(--bg);color:var(--text);
+                      font-family:'DM Mono',monospace;text-transform:uppercase">
+      </div>
+      <div id="addCustom" style="display:none;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center">
+          <label style="font-size:11px;color:var(--text3)">Product name</label>
+          <input id="addProduct" placeholder="Wash Cloth"
+                 style="padding:5px 8px;font-size:12px;border:1px solid var(--border);
+                        border-radius:4px;background:var(--bg);color:var(--text)">
+          <label style="font-size:11px;color:var(--text3)">Pack</label>
+          <input id="addPack" placeholder="24-Pack"
+                 style="padding:5px 8px;font-size:12px;border:1px solid var(--border);
+                        border-radius:4px;background:var(--bg);color:var(--text)">
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:5px">
+          These must match the product title format exactly — Pulse reads a
+          product's group from its title split on " - ", so
+          <b>Wash Cloth - 24-Pack - Grey</b> gives <b>Wash Cloth</b> / <b>24-Pack</b>.
+        </div>
+      </div>
+      <div id="addInfo" style="font-size:11px;color:var(--text2)"></div>
+      <div id="addMsg" style="font-size:11px;margin-top:6px"></div>
+    </div>
+    <div class="foot">
+      <button onclick="closeAdd()">Cancel</button>
+      <button class="primary" onclick="submitAdd()">Add prefix</button>
+    </div>
   </div>
 </div>
 
@@ -268,10 +316,10 @@ function filteredMap() {
   const sku = document.getElementById('f-sku').value.trim().toUpperCase();
   const act = document.getElementById('f-active').value;
   return mapData.rows.filter(r => {
-    if (p && !r.prefix.includes(p)) return false;
+    if (p && !r.prefixes.some(x => x.prefix.includes(p))) return false;
     if (prod && r.product_type !== prod) return false;
     if (pack && r.pack !== pack) return false;
-    if (act !== '' && String(r.active ? 1 : 0) !== act) return false;
+    if (act !== '' && !r.prefixes.some(x => String(x.active ? 1 : 0) === act)) return false;
     if (sku && !r.skus.some(s => (s.sku || '').toUpperCase().includes(sku) ||
                                  (s.asin || '').toUpperCase().includes(sku))) return false;
     return true;
@@ -281,35 +329,63 @@ function filteredMap() {
 function renderMap() {
   const rows = filteredMap();
   document.getElementById('mapCount').textContent =
-    `${rows.length} of ${mapData ? mapData.rows.length : 0} prefixes`;
+    `${rows.length} of ${mapData ? mapData.rows.length : 0} products`;
   const body = document.getElementById('mapBody');
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:22px">No prefixes match.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:22px">No products match.</td></tr>';
     return;
   }
   body.innerHTML = rows.map(r => `
-    <tr class="pm-row ${r.active ? '' : 'pm-inactive'} ${openPrefix === r.prefix ? 'open' : ''}"
-        onclick="toggleRow('${r.prefix}')">
-      <td>${openPrefix === r.prefix ? '▾' : '▸'}</td>
-      <td class="l"><span class="pm-pfx">${esc(r.prefix)}</span>${
-        (r.aliases || []).length
-          ? `<span class="pm-alias" title="Same product/pack, different regional campaign naming: ${esc(r.aliases.join(', '))}">= ${esc(r.aliases.join(' = '))}</span>`
-          : ''}</td>
-      <td class="l">${esc(r.product_type)}</td>
+    <tr class="pm-row ${openPrefix === r.key ? 'open' : ''}"
+        onclick="toggleRow('${esc(r.key).replace(/'/g, "\\'")}')">
+      <td>${openPrefix === r.key ? '▾' : '▸'}</td>
+      <td class="l"><b>${esc(r.product_type)}</b></td>
       <td class="l">${esc(r.pack)}</td>
+      <td class="l">${r.prefixes.map(p =>
+          `<span class="pm-pfx ${p.active ? '' : 'pm-inactive'}"
+             title="${p.active ? (p.used ? p.campaign_count + ' campaigns' : 'active but unused') : 'inactive'}"
+             style="margin-right:6px">${esc(p.prefix)}${
+               p.active ? (p.used ? '' : '<span class="pm-alias">unused</span>')
+                        : '<span class="pm-alias">off</span>'}</span>`).join('')}</td>
       <td>${num(r.sku_count)}</td>
       <td>${num(r.asin_count)}</td>
       <td>${num(r.campaign_count)}</td>
       <td>${money(r.spend)}</td>
-      <td class="l"><span class="pm-badge ${r.active ? 'on' : 'off'}">${r.active ? 'Active' : 'Inactive'}</span></td>
-      <td class="l" style="color:var(--text3);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.note)}</td>
     </tr>
-    ${openPrefix === r.prefix ? detailRow(r) : ''}
+    ${openPrefix === r.key ? detailRow(r) : ''}
   `).join('');
   document.getElementById('mapNote').textContent = mapData.note;
 }
 
 function detailRow(r) {
+  // Prefix editor — one block per naming convention for this product.
+  const prefixes = `<table class="pm-sub"><thead><tr>
+      <th class="l">Prefix</th><th>Campaigns</th><th>Spend</th>
+      <th class="l">Status</th><th class="l">Note</th><th class="l"></th>
+    </tr></thead><tbody>
+    ${r.prefixes.map(p => `<tr>
+      <td class="l"><input id="ed-${p.id}" value="${esc(p.prefix)}"
+            onclick="event.stopPropagation()" style="width:110px"></td>
+      <td>${num(p.campaign_count)}</td>
+      <td>${money(p.spend)}</td>
+      <td class="l">${p.active
+          ? (p.used ? '<span class="pm-badge on">Active · in use</span>'
+                    : '<span class="pm-badge off">Active · unused</span>')
+          : '<span class="pm-badge off">Inactive</span>'}</td>
+      <td class="l" style="color:var(--text3);max-width:200px;overflow:hidden;
+          text-overflow:ellipsis;white-space:nowrap">${esc(p.note)}</td>
+      <td class="l">
+        <button class="pm-btn go" onclick="event.stopPropagation();savePrefix(${p.id})">Save</button>
+        <button class="pm-btn" onclick="event.stopPropagation();toggleActive(${p.id}, ${p.active ? 'false' : 'true'})">
+          ${p.active ? 'Deactivate' : 'Activate'}</button>
+        <span class="pm-msg" id="msg-${p.id}"></span>
+      </td></tr>`).join('')}
+    </tbody></table>
+    ${r.prefix_count > 1 ? `<div class="pm-shared" style="margin-top:6px">
+      This product has ${r.prefix_count} campaign-naming conventions — typically
+      one for US campaigns and another for UK/UAE/KSA. They all resolve to the
+      same product, so the SKUs below are listed once and apply to all of them.
+    </div>` : ''}`;
   const skus = r.skus.length ? `
     <table class="pm-sub"><thead><tr>
       <th class="l">SKU</th><th class="l">ASIN</th><th class="l">Product title</th>
@@ -322,52 +398,30 @@ function detailRow(r) {
       <td class="l">${esc(s.status)}</td></tr>`).join('')}
     </tbody></table>` :
     `<div class="pm-none" style="font-size:11px">No catalog products resolve to
-      ${esc(r.product_type)} · ${esc(r.pack)} — a campaign with this prefix would
-      classify but find no SKUs.</div>`;
+      ${esc(r.product_type)} · ${esc(r.pack)} — campaigns with these prefixes
+      classify but find no SKUs. Usually a product-title format issue.</div>`;
   const camps = r.campaigns.length ? `
     <table class="pm-sub"><thead><tr>
       <th class="l">Campaign</th><th class="l">Region</th><th class="l">Type</th>
-      <th>Spend</th><th class="l">Status</th>
+      <th class="l">Matched by</th><th>Spend</th><th class="l">Status</th>
     </tr></thead><tbody>
     ${r.campaigns.map(c => `<tr>
       <td class="l">${esc(c.campaign_name)}</td>
       <td class="l">${esc(c.marketplace).toUpperCase()}</td>
       <td class="l"><span class="pm-badge ${c.campaign_type}">${(c.campaign_type||'').toUpperCase()}</span></td>
+      <td class="l">${c.matched_prefix
+          ? `<span class="pm-pfx">${esc(c.matched_prefix)}</span>`
+          : '<span style="color:var(--text3);font-size:10px">name rules</span>'}</td>
       <td>${money(c.spend)}</td>
       <td class="l"><span class="pm-badge on">Allocated</span></td></tr>`).join('')}
     </tbody></table>` :
-    `<div class="pm-none" style="font-size:11px">No campaigns started with
-      <b>${esc(r.prefix)}-</b> in this window${currentMP ? ' for ' + currentMP.toUpperCase() : ''}.
-      ${(r.aliases || []).length
-        ? `This product's campaigns may be named with ${esc(r.aliases.join(' or '))} instead` +
-          (currentMP ? ', or run in another marketplace — switch the region selector to check.' : '.')
-        : ''}</div>`;
-  const shared = r.group_campaign_count > r.campaign_count
-    ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">
-        ${r.group_campaign_count} campaigns classify to ${esc(r.product_type)} ·
-        ${esc(r.pack)} in total (${money(r.group_spend)}); the rest matched via
-        another prefix or the name rules.</div>` : '';
-  return `<tr class="pm-detail"><td colspan="10"><div class="pm-panel">
-    <div class="pm-edit">
-      <span style="font-size:11px;color:var(--text3)">Prefix</span>
-      <input id="ed-${r.id}" value="${esc(r.prefix)}">
-      <button class="pm-btn go" onclick="event.stopPropagation();savePrefix(${r.id})">Save</button>
-      <button class="pm-btn" onclick="event.stopPropagation();toggleActive(${r.id}, ${r.active ? 'false' : 'true'})">
-        ${r.active ? 'Deactivate' : 'Activate'}</button>
-      <span class="pm-msg" id="msg-${r.id}"></span>
-      <span style="margin-left:auto;font-size:10px;color:var(--text3)">
-        ${esc(r.product_type)} · ${esc(r.pack)} — classification comes from the catalog and is not edited here</span>
-    </div>
-    ${(r.aliases || []).length ? `<div class="pm-shared">
-      <b>${esc(r.prefix)}</b> is one of ${r.aliases.length + 1} campaign-naming
-      conventions for <b>${esc(r.product_type)} · ${esc(r.pack)}</b>
-      (also ${esc(r.aliases.join(', '))}) — typically US vs UK/UAE/KSA naming.
-      The SKUs below belong to the product, so they are the same under each of
-      those prefixes. That is the existing configuration, not duplicated data.
-    </div>` : ''}
-    <div class="pm-sec">SKUs / ASINs · ${r.sku_count}
-      ${(r.aliases || []).length ? `<span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3)">— shared with ${esc(r.aliases.join(', '))}</span>` : ''}</div>${skus}
-    <div class="pm-sec">Campaigns using this prefix · ${r.campaign_count}</div>${camps}${shared}
+    `<div class="pm-none" style="font-size:11px">No campaigns classified to this
+      product in the window${currentMP ? ' for ' + currentMP.toUpperCase() : ''}.
+      ${currentMP ? ' Try the All-regions view — this product may be advertised in another marketplace.' : ''}</div>`;
+  return `<tr class="pm-detail"><td colspan="8"><div class="pm-panel">
+    <div class="pm-sec">Campaign prefixes · ${r.prefix_count}</div>${prefixes}
+    <div class="pm-sec">SKUs / ASINs · ${r.sku_count}</div>${skus}
+    <div class="pm-sec">Campaigns · ${r.campaign_count}</div>${camps}
   </div></td></tr>`;
 }
 
@@ -380,8 +434,9 @@ async function savePrefix(id) {
   const input = document.getElementById('ed-' + id);
   const val = input.value.trim().toUpperCase();
   const msg = document.getElementById('msg-' + id);
-  const row = (mapData.rows || []).find(r => r.id === id) || {};
+  const [prod, row] = findPrefix(id);
   if (val === (row.prefix || '')) { msg.textContent = 'No change.'; return; }
+  row.product_type = prod.product_type; row.pack = prod.pack;
   // This is live PPC configuration — an accidental edit changes how campaigns
   // are classified from the next classification onward. Confirm explicitly.
   const ok = await pmConfirm({
@@ -401,13 +456,95 @@ async function savePrefix(id) {
     body: JSON.stringify({prefix: val}),
   });
   const d = await r.json();
-  if (r.ok) { msg.innerHTML = '<span style="color:var(--green)">Saved</span>'; openPrefix = val; loadAll(); }
+  if (r.ok) { msg.innerHTML = '<span style="color:var(--green)">Saved</span>'; loadAll(); }
   else      { msg.innerHTML = `<span style="color:var(--red)">${esc(d.message)}</span>`; }
+}
+
+/* ── Add a prefix (new product launch path) ──────────────────────────────── */
+function openAdd(product, pack) {
+  const sel = document.getElementById('addGroup');
+  const un = (mapData && mapData.unmapped_groups) || [];
+  const mapped = (mapData && mapData.rows) || [];
+  sel.innerHTML =
+    (un.length ? `<optgroup label="In your catalog — no prefix yet">` +
+        un.map(g => `<option value="${esc(g.product_type)}|${esc(g.pack)}">${esc(g.product_type)} · ${esc(g.pack)} — ${g.sku_count} SKUs</option>`).join('') +
+      `</optgroup>` : '') +
+    `<optgroup label="Already has a prefix (adds another naming convention)">` +
+      mapped.map(r => `<option value="${esc(r.product_type)}|${esc(r.pack)}">${esc(r.product_type)} · ${esc(r.pack)} — ${r.sku_count} SKUs</option>`).join('') +
+    `</optgroup>` +
+    `<option value="__custom__">＋ A product not listed above…</option>`;
+  if (product) sel.value = `${product}|${pack}`;
+  document.getElementById('addPrefix').value = '';
+  document.getElementById('addMsg').textContent = '';
+  addGroupChanged();
+  document.getElementById('addModal').style.display = 'flex';
+}
+function closeAdd(ev) {
+  if (ev && ev.target !== ev.currentTarget) return;
+  document.getElementById('addModal').style.display = 'none';
+}
+function addGroupChanged() {
+  const v = document.getElementById('addGroup').value;
+  const custom = v === '__custom__';
+  document.getElementById('addCustom').style.display = custom ? '' : 'none';
+  const info = document.getElementById('addInfo');
+  if (custom) { info.textContent = ''; return; }
+  const [p, k] = v.split('|');
+  const un = ((mapData && mapData.unmapped_groups) || []).find(g => g.product_type === p && g.pack === k);
+  const row = ((mapData && mapData.rows) || []).find(r => r.product_type === p && r.pack === k);
+  if (un) info.innerHTML = `<b>${un.sku_count}</b> SKUs ready in the catalog — e.g. ${esc(un.skus.slice(0,4).join(', '))}. No prefix yet, so its campaigns would be unallocated.`;
+  else if (row) info.innerHTML = `<b>${row.sku_count}</b> SKUs. Already has: ${row.prefixes.map(x => esc(x.prefix)).join(', ')} — this adds another naming convention.`;
+  else info.textContent = '';
+}
+async function submitAdd() {
+  const v = document.getElementById('addGroup').value;
+  const custom = v === '__custom__';
+  const product_type = custom ? document.getElementById('addProduct').value.trim() : v.split('|')[0];
+  const pack = custom ? document.getElementById('addPack').value.trim() : v.split('|')[1];
+  const prefix = document.getElementById('addPrefix').value.trim().toUpperCase();
+  const msg = document.getElementById('addMsg');
+  if (!prefix)  { msg.innerHTML = '<span style="color:var(--red)">Enter a prefix.</span>'; return; }
+  if (!product_type || !pack) { msg.innerHTML = '<span style="color:var(--red)">Enter a product and pack.</span>'; return; }
+  msg.textContent = 'Saving…';
+  const r = await fetch('/dashboard/api/prefix-mapping/create/', {
+    method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+    body: JSON.stringify({prefix, product_type, pack}),
+  });
+  const d = await r.json();
+  if (!r.ok) { msg.innerHTML = `<span style="color:var(--red)">${esc(d.message)}</span>`; return; }
+  msg.innerHTML = `<span style="color:var(--green)">Added ${esc(d.prefix)} → ${esc(d.product_type)} · ${esc(d.pack)} (${d.sku_count} SKUs)</span>` +
+    (d.warning ? `<div style="color:var(--warn-ink);margin-top:4px">${esc(d.warning)}</div>` : '');
+  setTimeout(() => { closeAdd(); loadAll(); }, d.warning ? 2600 : 900);
+}
+
+function renderUnmapped() {
+  const el = document.getElementById('unmappedBar');
+  const un = (mapData && mapData.unmapped_groups) || [];
+  if (!un.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `<div class="pm-shared" style="margin-bottom:10px">
+    <b>${un.length} product${un.length > 1 ? 's' : ''} in your catalog ${un.length > 1 ? 'have' : 'has'} no prefix.</b>
+    Campaigns for ${un.length > 1 ? 'these' : 'this'} would go to Unallocated until one is assigned.
+    <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+      ${un.map(g => `<button class="pm-btn" onclick="openAdd('${esc(g.product_type).replace(/'/g, "\\'")}','${esc(g.pack).replace(/'/g, "\\'")}')">
+        ${esc(g.product_type)} · ${esc(g.pack)} <span style="color:var(--text3)">(${g.sku_count} SKUs)</span> — assign prefix</button>`).join('')}
+    </div></div>`;
+}
+
+/* find a prefix entry (and its product row) by prefix-record id */
+function findPrefix(id) {
+  for (const prod of (mapData.rows || []))
+    for (const p of prod.prefixes)
+      if (p.id === id) return [prod, p];
+  return [{}, {}];
 }
 
 async function toggleActive(id, makeActive) {
   const msg = document.getElementById('msg-' + id);
-  const row = (mapData.rows || []).find(r => r.id === id) || {};
+  const [prod, pfx] = findPrefix(id);
+  const row = {...pfx, product_type: prod.product_type, pack: prod.pack,
+               aliases: (prod.prefixes || []).filter(x => x.id !== id && x.active)
+                          .map(x => x.prefix)};
   if (!makeActive) {
     const ok = await pmConfirm({
       title: 'Deactivate prefix?', okLabel: 'Deactivate', danger: true,
@@ -481,7 +618,9 @@ function copyName(btn, name) {
 /* ── Load ──────────────────────────────────────────────────────────────── */
 function renderKPI(k) {
   const set = (id, v) => { document.getElementById(id).textContent = v; };
-  set('k-pfx', num(k.prefixes)); set('k-pfx-sub', `${k.active_prefixes} active`);
+  set('k-pfx', num(k.products));
+  set('k-pfx-sub', `${k.prefixes} prefixes · ${k.active_prefixes} active` +
+      (k.unused_prefixes ? ` · ${k.unused_prefixes} unused` : ''));
   set('k-camp', num(k.campaigns)); set('k-camp-sub', `${mapData.period.start} → ${mapData.period.end}`);
   set('k-alloc', num(k.allocated));
   set('k-alloc-sub', k.campaigns ? `${(k.allocated / k.campaigns * 100).toFixed(0)}% of campaigns` : '');
@@ -502,6 +641,7 @@ async function loadMap() {
     pack.innerHTML = '<option value="">All packs</option>' +
       mapData.packs.map(x => `<option>${esc(x)}</option>`).join('');
   renderKPI(mapData.kpi);
+  renderUnmapped();
   renderMap();
 }
 

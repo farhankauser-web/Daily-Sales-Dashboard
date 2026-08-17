@@ -81,6 +81,7 @@ urlpatterns = [
     path('api/prefix-mapping/',        views_prefix.api_prefix_mapping,    name='api_prefix_mapping'),
     path('api/prefix-mapping/unallocated/',
                                        views_prefix.api_prefix_unallocated, name='api_prefix_unallocated'),
+    path('api/prefix-mapping/create/', views_prefix.api_prefix_create,     name='api_prefix_create'),
     path('api/prefix-mapping/<int:pk>/save/',
                                        views_prefix.api_prefix_save,       name='api_prefix_save'),
 
