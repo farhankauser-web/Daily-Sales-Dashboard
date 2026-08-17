@@ -1,0 +1,441 @@
+{% extends "base/base.html" %}
+{% block title %}Prefix Mapping{% endblock %}
+{% block nav_prefix_mapping %}active{% endblock %}
+{% block page_title %}Prefix Mapping{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  <button class="mp-btn {% if not marketplace %}active{% endif %}"
+          data-mp="" onclick="setMP('', this)">🌐 All</button>
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<select id="daysSel" class="form-control"
+        style="margin-left:8px;padding:5px 10px;font-size:11px;width:auto"
+        onchange="setDays(this.value)">
+  <option value="7">Last 7D</option>
+  <option value="30" selected>Last 30D</option>
+  <option value="60">Last 60D</option>
+  <option value="90">Last 90D</option>
+</select>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pm-kpi { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:12px; }
+  .pm-k { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
+  .pm-k .lbl { font-size:11px; color:var(--text3); }
+  .pm-k .val { font-size:20px; font-weight:700; font-family:'DM Mono',monospace; color:var(--text); }
+  .pm-k .sub { font-size:11px; color:var(--text2); margin-top:2px; }
+  .pm-k.warn { border-left:4px solid #C7522A; }
+
+  .pm-tabs { display:flex; gap:2px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+  .pm-tab { padding:7px 16px; font-size:12px; font-weight:600; cursor:pointer;
+             color:var(--text2); border-bottom:2px solid transparent; }
+  .pm-tab.active { color:var(--text); border-bottom-color:#067D62; }
+  .pm-pane { display:none; } .pm-pane.active { display:block; }
+
+  .pm-filters { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+                 padding:8px 12px; margin-bottom:10px; display:flex; gap:8px;
+                 flex-wrap:wrap; align-items:center; font-size:11px; }
+  .pm-filters input, .pm-filters select {
+      padding:4px 8px; font-size:11px; border:1px solid var(--border);
+      border-radius:4px; background:var(--bg); color:var(--text); }
+  .pm-filters .lbl { color:var(--text3); }
+
+  .pm-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .pm-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+                        font-weight:600; color:var(--text2); position:sticky; top:0; z-index:1; }
+  .pm-table thead th.l { text-align:left; }
+  .pm-table tbody td { padding:6px 8px; text-align:right; border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; }
+  .pm-table tbody td.l { text-align:left; font-family:inherit; }
+  .pm-table tbody tr.pm-row { cursor:pointer; }
+  .pm-table tbody tr.pm-row:hover { background:var(--bg4); }
+  .pm-table tbody tr.open { background:var(--bg4); }
+  .pm-pfx { font-weight:700; font-family:'DM Mono',monospace; }
+  .pm-inactive { opacity:.5; }
+  .pm-badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700; }
+  .pm-badge.on { background:var(--good-weak); color:var(--green); }
+  .pm-badge.off { background:var(--bg3); color:var(--text2); }
+  .pm-badge.sp { background:#E0F2EC; color:#067D62; }
+  .pm-badge.sb { background:#FDEBD0; color:#9C5700; }
+  .pm-badge.sd { background:#E4E9F7; color:#3B4FA0; }
+
+  .pm-detail > td { background:var(--bg); padding:0; border-bottom:2px solid var(--border); }
+  .pm-panel { padding:12px 16px 14px 34px; }
+  .pm-sec { font-size:11px; font-weight:700; color:var(--text2); text-transform:uppercase;
+             letter-spacing:.4px; margin:10px 0 6px; }
+  .pm-sub { width:100%; border-collapse:collapse; font-size:11px; }
+  .pm-sub th { text-align:right; padding:4px 8px; color:var(--text3); font-weight:600;
+                border-bottom:1px solid var(--border); }
+  .pm-sub th.l, .pm-sub td.l { text-align:left; }
+  .pm-sub td { text-align:right; padding:5px 8px; border-bottom:1px solid #EAEDED;
+                font-family:'DM Mono',monospace; }
+  .pm-sub td.l { font-family:inherit; }
+  .pm-edit { display:flex; gap:6px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
+  .pm-edit input { padding:4px 8px; font-size:11px; border:1px solid var(--border);
+                    border-radius:4px; background:var(--bg2); color:var(--text);
+                    font-family:'DM Mono',monospace; width:110px; }
+  .pm-btn { padding:4px 12px; font-size:11px; border-radius:4px; cursor:pointer;
+             border:1px solid var(--border); background:var(--bg2); color:var(--text); }
+  .pm-btn.go { background:#067D62; color:#fff; border-color:#067D62; }
+  .pm-msg { font-size:11px; margin-left:6px; }
+
+  .pm-sugg { font-family:'DM Mono',monospace; font-weight:700; color:#067D62; }
+  .pm-none { color:var(--text3); }
+  .pm-note { background:var(--bg2); border:1px solid var(--border); border-left:3px solid #3B4FA0;
+              border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:11px; color:var(--text2); }
+  .pm-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+               padding:28px; text-align:center; color:var(--text2); font-size:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pm-kpi">
+  <div class="pm-k"><div class="lbl">Prefixes</div>
+    <div class="val" id="k-pfx">—</div><div class="sub" id="k-pfx-sub"></div></div>
+  <div class="pm-k"><div class="lbl">Campaigns</div>
+    <div class="val" id="k-camp">—</div><div class="sub" id="k-camp-sub"></div></div>
+  <div class="pm-k"><div class="lbl">Allocated</div>
+    <div class="val" id="k-alloc">—</div><div class="sub" id="k-alloc-sub"></div></div>
+  <div class="pm-k warn"><div class="lbl">Unallocated</div>
+    <div class="val" id="k-un">—</div><div class="sub" id="k-un-sub"></div></div>
+  <div class="pm-k"><div class="lbl">Unallocated Spend</div>
+    <div class="val" id="k-unsp">—</div><div class="sub">needs a naming fix</div></div>
+</div>
+
+<div class="pm-tabs">
+  <div class="pm-tab active" data-tab="map" onclick="switchTab('map')">Prefix Mapping</div>
+  <div class="pm-tab" data-tab="un" onclick="switchTab('un')">Unallocated Campaigns</div>
+</div>
+
+<!-- ── Tab A ─────────────────────────────────────────────────────────── -->
+<div class="pm-pane active" id="pane-map">
+  <div class="pm-filters">
+    <span class="lbl">Filter:</span>
+    <input id="f-prefix" placeholder="Prefix" oninput="renderMap()" style="width:90px">
+    <select id="f-product" onchange="renderMap()"><option value="">All products</option></select>
+    <select id="f-pack" onchange="renderMap()"><option value="">All packs</option></select>
+    <input id="f-sku" placeholder="SKU or ASIN" oninput="renderMap()" style="width:140px">
+    <select id="f-active" onchange="renderMap()">
+      <option value="">Any status</option><option value="1">Active</option><option value="0">Inactive</option>
+    </select>
+    <span id="mapCount" style="margin-left:auto;color:var(--text3)"></span>
+  </div>
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+              padding:8px;overflow:auto;max-height:calc(100vh - 400px)">
+    <table class="pm-table" id="mapTable">
+      <thead><tr>
+        <th style="width:20px"></th>
+        <th class="l">Prefix</th><th class="l">Product</th><th class="l">Pack</th>
+        <th>SKUs</th><th>ASINs</th><th>Campaigns</th><th>Spend</th>
+        <th class="l">Status</th><th class="l">Note</th>
+      </tr></thead>
+      <tbody id="mapBody"><tr><td colspan="10" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div style="margin-top:8px;font-size:11px;color:var(--text3)" id="mapNote"></div>
+</div>
+
+<!-- ── Tab B ─────────────────────────────────────────────────────────── -->
+<div class="pm-pane" id="pane-un">
+  <div class="pm-note" id="renameNote"></div>
+  <div class="pm-filters">
+    <span class="lbl">Filter:</span>
+    <input id="u-name" placeholder="Campaign name" oninput="renderUn()" style="width:200px">
+    <select id="u-type" onchange="renderUn()">
+      <option value="">All types</option><option value="sp">SP</option>
+      <option value="sb">SB</option><option value="sd">SD</option>
+    </select>
+    <select id="u-sugg" onchange="renderUn()">
+      <option value="">Any suggestion</option>
+      <option value="1">Has suggestion</option><option value="0">No suggestion</option>
+    </select>
+    <input id="u-minspend" type="number" placeholder="Min spend" oninput="renderUn()" style="width:100px">
+    <span id="unCount" style="margin-left:auto;color:var(--text3)"></span>
+  </div>
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+              padding:8px;overflow:auto;max-height:calc(100vh - 400px)">
+    <table class="pm-table" id="unTable">
+      <thead><tr>
+        <th class="l">Campaign</th><th class="l">Region</th><th class="l">Type</th>
+        <th>Spend</th><th class="l">Last seen</th>
+        <th class="l">Suggested prefix</th><th class="l">Suggested name</th><th class="l"></th>
+      </tr></thead>
+      <tbody id="unBody"><tr><td colspan="8" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let currentMP = '{{ marketplace }}';
+let currentDays = 30;
+let mapData = null, unData = null, openPrefix = null;
+
+function setMP(mp, btn) {
+  currentMP = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadAll();
+}
+function setDays(d) { currentDays = parseInt(d, 10) || 30; loadAll(); }
+function switchTab(t) {
+  document.querySelectorAll('.pm-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
+  document.querySelectorAll('.pm-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + t));
+  if (t === 'un' && !unData) loadUn();
+}
+function money(v) {
+  if (v == null) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e3) return '$' + (a/1e3).toFixed(1) + 'k';
+  return '$' + a.toFixed(0);
+}
+function num(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+function esc(s) { return String(s || '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function csrf() { const m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ''; }
+
+/* ── Tab A ─────────────────────────────────────────────────────────────── */
+function filteredMap() {
+  if (!mapData) return [];
+  const p = document.getElementById('f-prefix').value.trim().toUpperCase();
+  const prod = document.getElementById('f-product').value;
+  const pack = document.getElementById('f-pack').value;
+  const sku = document.getElementById('f-sku').value.trim().toUpperCase();
+  const act = document.getElementById('f-active').value;
+  return mapData.rows.filter(r => {
+    if (p && !r.prefix.includes(p)) return false;
+    if (prod && r.product_type !== prod) return false;
+    if (pack && r.pack !== pack) return false;
+    if (act !== '' && String(r.active ? 1 : 0) !== act) return false;
+    if (sku && !r.skus.some(s => (s.sku || '').toUpperCase().includes(sku) ||
+                                 (s.asin || '').toUpperCase().includes(sku))) return false;
+    return true;
+  });
+}
+
+function renderMap() {
+  const rows = filteredMap();
+  document.getElementById('mapCount').textContent =
+    `${rows.length} of ${mapData ? mapData.rows.length : 0} prefixes`;
+  const body = document.getElementById('mapBody');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:22px">No prefixes match.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(r => `
+    <tr class="pm-row ${r.active ? '' : 'pm-inactive'} ${openPrefix === r.prefix ? 'open' : ''}"
+        onclick="toggleRow('${r.prefix}')">
+      <td>${openPrefix === r.prefix ? '▾' : '▸'}</td>
+      <td class="l"><span class="pm-pfx">${esc(r.prefix)}</span></td>
+      <td class="l">${esc(r.product_type)}</td>
+      <td class="l">${esc(r.pack)}</td>
+      <td>${num(r.sku_count)}</td>
+      <td>${num(r.asin_count)}</td>
+      <td>${num(r.campaign_count)}</td>
+      <td>${money(r.spend)}</td>
+      <td class="l"><span class="pm-badge ${r.active ? 'on' : 'off'}">${r.active ? 'Active' : 'Inactive'}</span></td>
+      <td class="l" style="color:var(--text3);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.note)}</td>
+    </tr>
+    ${openPrefix === r.prefix ? detailRow(r) : ''}
+  `).join('');
+  document.getElementById('mapNote').textContent = mapData.note;
+}
+
+function detailRow(r) {
+  const skus = r.skus.length ? `
+    <table class="pm-sub"><thead><tr>
+      <th class="l">SKU</th><th class="l">ASIN</th><th class="l">Product title</th>
+      <th class="l">Region</th><th class="l">Status</th>
+    </tr></thead><tbody>
+    ${r.skus.map(s => `<tr>
+      <td class="l"><b>${esc(s.sku) || '—'}</b></td><td class="l">${esc(s.asin) || '—'}</td>
+      <td class="l" style="color:var(--text2)">${esc(s.title).slice(0,70)}</td>
+      <td class="l">${esc(s.marketplace).toUpperCase()}</td>
+      <td class="l">${esc(s.status)}</td></tr>`).join('')}
+    </tbody></table>` :
+    `<div class="pm-none" style="font-size:11px">No catalog products resolve to
+      ${esc(r.product_type)} · ${esc(r.pack)} — a campaign with this prefix would
+      classify but find no SKUs.</div>`;
+  const camps = r.campaigns.length ? `
+    <table class="pm-sub"><thead><tr>
+      <th class="l">Campaign</th><th class="l">Region</th><th class="l">Type</th>
+      <th>Spend</th><th class="l">Status</th>
+    </tr></thead><tbody>
+    ${r.campaigns.map(c => `<tr>
+      <td class="l">${esc(c.campaign_name)}</td>
+      <td class="l">${esc(c.marketplace).toUpperCase()}</td>
+      <td class="l"><span class="pm-badge ${c.campaign_type}">${(c.campaign_type||'').toUpperCase()}</span></td>
+      <td>${money(c.spend)}</td>
+      <td class="l"><span class="pm-badge on">Allocated</span></td></tr>`).join('')}
+    </tbody></table>` :
+    `<div class="pm-none" style="font-size:11px">No campaigns started with this
+      prefix in the window.</div>`;
+  const shared = r.group_campaign_count > r.campaign_count
+    ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">
+        ${r.group_campaign_count} campaigns classify to ${esc(r.product_type)} ·
+        ${esc(r.pack)} in total (${money(r.group_spend)}); the rest matched via
+        another prefix or the name rules.</div>` : '';
+  return `<tr class="pm-detail"><td colspan="10"><div class="pm-panel">
+    <div class="pm-edit">
+      <span style="font-size:11px;color:var(--text3)">Prefix</span>
+      <input id="ed-${r.id}" value="${esc(r.prefix)}">
+      <button class="pm-btn go" onclick="event.stopPropagation();savePrefix(${r.id})">Save</button>
+      <button class="pm-btn" onclick="event.stopPropagation();toggleActive(${r.id}, ${r.active ? 'false' : 'true'})">
+        ${r.active ? 'Deactivate' : 'Activate'}</button>
+      <span class="pm-msg" id="msg-${r.id}"></span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text3)">
+        ${esc(r.product_type)} · ${esc(r.pack)} — classification comes from the catalog and is not edited here</span>
+    </div>
+    <div class="pm-sec">SKUs / ASINs · ${r.sku_count}</div>${skus}
+    <div class="pm-sec">Campaigns using this prefix · ${r.campaign_count}</div>${camps}${shared}
+  </div></td></tr>`;
+}
+
+function toggleRow(prefix) {
+  openPrefix = (openPrefix === prefix) ? null : prefix;
+  renderMap();
+}
+
+async function savePrefix(id) {
+  const input = document.getElementById('ed-' + id);
+  const val = input.value.trim().toUpperCase();
+  const msg = document.getElementById('msg-' + id);
+  const row = (mapData.rows || []).find(r => r.id === id) || {};
+  if (val === (row.prefix || '')) { msg.textContent = 'No change.'; return; }
+  // This is live PPC configuration — an accidental edit changes how campaigns
+  // are classified from the next classification onward. Confirm explicitly.
+  if (!confirm(
+      `Change prefix "${row.prefix}" to "${val}"?\n\n` +
+      `This is live PPC configuration. Campaigns named "${row.prefix}-…" will ` +
+      `no longer be classified as ${row.product_type} · ${row.pack}, and ` +
+      `campaigns named "${val}-…" will be.\n\n` +
+      `Historical data is not changed — this affects classification going forward.`)) {
+    input.value = row.prefix;
+    return;
+  }
+  msg.textContent = 'Saving…';
+  const r = await fetch(`/dashboard/api/prefix-mapping/${id}/save/`, {
+    method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+    body: JSON.stringify({prefix: val}),
+  });
+  const d = await r.json();
+  if (r.ok) { msg.innerHTML = '<span style="color:var(--green)">Saved</span>'; openPrefix = val; loadAll(); }
+  else      { msg.innerHTML = `<span style="color:var(--red)">${esc(d.message)}</span>`; }
+}
+
+async function toggleActive(id, makeActive) {
+  const msg = document.getElementById('msg-' + id);
+  const row = (mapData.rows || []).find(r => r.id === id) || {};
+  if (!makeActive && !confirm(
+      `Deactivate prefix "${row.prefix}"?\n\n` +
+      `Campaigns named "${row.prefix}-…" will stop being classified as ` +
+      `${row.product_type} · ${row.pack} and may become unallocated.\n\n` +
+      `Nothing is deleted — no campaign, SKU, historical PPC or Amazon setting ` +
+      `is touched. The prefix simply stops being used going forward, and can be ` +
+      `reactivated here at any time.`)) return;
+  msg.textContent = 'Saving…';
+  const r = await fetch(`/dashboard/api/prefix-mapping/${id}/save/`, {
+    method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+    body: JSON.stringify({active: makeActive}),
+  });
+  if (r.ok) loadAll(); else msg.innerHTML = '<span style="color:var(--red)">Failed</span>';
+}
+
+/* ── Tab B ─────────────────────────────────────────────────────────────── */
+function renderUn() {
+  if (!unData) return;
+  const n = document.getElementById('u-name').value.trim().toLowerCase();
+  const t = document.getElementById('u-type').value;
+  const s = document.getElementById('u-sugg').value;
+  const min = parseFloat(document.getElementById('u-minspend').value);
+  const rows = unData.rows.filter(r => {
+    if (n && !(r.campaign_name || '').toLowerCase().includes(n)) return false;
+    if (t && r.campaign_type !== t) return false;
+    if (s !== '' && String(r.suggested_prefix ? 1 : 0) !== s) return false;
+    if (!isNaN(min) && r.spend < min) return false;
+    return true;
+  });
+  document.getElementById('unCount').textContent =
+    `${rows.length} of ${unData.rows.length} unallocated · ${unData.kpi.with_suggestion} with a suggestion`;
+  const body = document.getElementById('unBody');
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="8"><div class="pm-empty">
+      ${unData.rows.length ? 'No campaigns match the filters.'
+        : 'Every campaign in this window is classified — nothing to fix.'}</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r => `<tr>
+    <td class="l"><b>${esc(r.campaign_name)}</b>
+      <div style="font-size:10px;color:var(--text3)">${esc(r.reason)}</div></td>
+    <td class="l">${esc(r.marketplace).toUpperCase()}</td>
+    <td class="l"><span class="pm-badge ${r.campaign_type}">${(r.campaign_type||'').toUpperCase()}</span></td>
+    <td>${money(r.spend)}</td>
+    <td class="l">${esc(r.last_seen) || '—'}</td>
+    <td class="l">${r.suggested_prefix
+      ? `<span class="pm-sugg">${esc(r.suggested_prefix)}</span>
+         <div style="font-size:10px;color:var(--text3)">from ${esc((r.evidence_asins||[]).join(', '))} · ${esc(r.suggestion_confidence)}</div>`
+      : '<span class="pm-none">—</span>'}</td>
+    <td class="l" style="font-family:'DM Mono',monospace">${esc(r.suggested_name) || '<span class="pm-none">—</span>'}</td>
+    <td class="l">${r.suggested_name
+      ? `<button class="pm-btn" onclick="copyName(this,'${esc(r.suggested_name).replace(/'/g, "\\'")}')">Copy</button>` : ''}</td>
+  </tr>`).join('');
+}
+
+function copyName(btn, name) {
+  navigator.clipboard.writeText(name).then(() => {
+    const old = btn.textContent; btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = old; }, 1400);
+  });
+}
+
+/* ── Load ──────────────────────────────────────────────────────────────── */
+function renderKPI(k) {
+  const set = (id, v) => { document.getElementById(id).textContent = v; };
+  set('k-pfx', num(k.prefixes)); set('k-pfx-sub', `${k.active_prefixes} active`);
+  set('k-camp', num(k.campaigns)); set('k-camp-sub', `${mapData.period.start} → ${mapData.period.end}`);
+  set('k-alloc', num(k.allocated));
+  set('k-alloc-sub', k.campaigns ? `${(k.allocated / k.campaigns * 100).toFixed(0)}% of campaigns` : '');
+  set('k-un', num(k.unallocated)); set('k-un-sub', k.unallocated ? 'fix the campaign names' : 'all classified');
+  set('k-unsp', money(k.unallocated_spend));
+}
+
+async function loadMap() {
+  const p = new URLSearchParams({days: currentDays});
+  if (currentMP) p.set('mp', currentMP);
+  const r = await fetch(`/dashboard/api/prefix-mapping/?${p}`);
+  mapData = await r.json();
+  const prod = document.getElementById('f-product'), pack = document.getElementById('f-pack');
+  if (prod.options.length <= 1)
+    prod.innerHTML = '<option value="">All products</option>' +
+      mapData.products.map(x => `<option>${esc(x)}</option>`).join('');
+  if (pack.options.length <= 1)
+    pack.innerHTML = '<option value="">All packs</option>' +
+      mapData.packs.map(x => `<option>${esc(x)}</option>`).join('');
+  renderKPI(mapData.kpi);
+  renderMap();
+}
+
+async function loadUn() {
+  const p = new URLSearchParams({days: currentDays});
+  if (currentMP) p.set('mp', currentMP);
+  const r = await fetch(`/dashboard/api/prefix-mapping/unallocated/?${p}`);
+  unData = await r.json();
+  document.getElementById('renameNote').textContent = unData.rename_note;
+  renderUn();
+}
+
+function loadAll() {
+  mapData = null; unData = null;
+  loadMap();
+  if (document.querySelector('.pm-tab[data-tab="un"]').classList.contains('active')) loadUn();
+}
+loadAll();
+</script>
+{% endblock %}

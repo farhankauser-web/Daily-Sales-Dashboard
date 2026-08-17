@@ -4,6 +4,7 @@ from . import views_inventory as vi
 from . import views_sti
 from . import views_marketing
 from . import views_actions
+from . import views_prefix
 
 app_name = 'dashboard'
 
@@ -74,6 +75,14 @@ urlpatterns = [
     path('api/mkt-search-terms/',          views_marketing.api_mkt_search_terms, name='api_mkt_search_terms'),
     path('api/budget-pacing/',             views_marketing.api_budget_pacing,   name='api_budget_pacing'),
     path('api/mkt-export/',                views_marketing.mkt_export,          name='mkt_export'),
+
+    # Prefix Mapping — campaign-prefix config + unallocated-campaign diagnostics
+    path('prefix-mapping/',            views_prefix.prefix_mapping,        name='prefix_mapping'),
+    path('api/prefix-mapping/',        views_prefix.api_prefix_mapping,    name='api_prefix_mapping'),
+    path('api/prefix-mapping/unallocated/',
+                                       views_prefix.api_prefix_unallocated, name='api_prefix_unallocated'),
+    path('api/prefix-mapping/<int:pk>/save/',
+                                       views_prefix.api_prefix_save,       name='api_prefix_save'),
 
     # P4 — Action Queue (propose → review → approve → execute; human-only)
     path('actions/',                       views_actions.action_queue,       name='action_queue'),

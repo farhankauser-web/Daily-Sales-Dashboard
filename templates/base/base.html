@@ -657,6 +657,9 @@ tfoot td:first-child { text-align: left; }
   <a href="{% url 'dashboard:action_queue' %}" class="nav-item {% block nav_actions %}{% endblock %}">
     <span class="nav-icon">✅</span> Action Queue
   </a>
+  <a href="{% url 'dashboard:prefix_mapping' %}" class="nav-item {% block nav_prefix_mapping %}{% endblock %}">
+    <span class="nav-icon">🏷️</span> Prefix Mapping
+  </a>
   <a href="{% url 'dashboard:placements' %}" class="nav-item {% block nav_placements %}{% endblock %}">
     <span class="nav-icon">📍</span> Placements
   </a>

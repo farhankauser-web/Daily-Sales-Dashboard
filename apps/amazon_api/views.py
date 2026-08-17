@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 import calendar
+from collections.abc import Mapping
 from zoneinfo import ZoneInfo
 import random
 
@@ -233,7 +234,43 @@ def ai_provider_config(request, provider):
 # The matcher (_match_campaign_to_group) tries several normalisations of the
 # campaign name against this map, so you don't have to add every variant —
 # `2 BATH SHEET`, `2BS`, `2-BTH-SHT` all resolve to the same canonical `2BS`.
-_CAMP_PREFIX_GROUP = {
+#
+# ── NOW DATABASE-BACKED ──────────────────────────────────────────────────────
+# The values below moved to the `CampaignPrefixMap` table (migration 0039,
+# seeded verbatim from this dict) and are edited on the Prefix Mapping page.
+# `_CAMP_PREFIX_GROUP` is a read-through mapping over that table, so every
+# existing consumer — this matcher, ppc_allocator, hourly_aggregator, the
+# unmapped_ppc_campaigns command — keeps working unchanged.
+#
+# The literal below is retained ONLY as the fallback used when the table cannot
+# be read (e.g. before migration 0039 has run). It is not the source of truth.
+class _PrefixGroupMapping(Mapping):
+    """Read-through view of CampaignPrefixMap that behaves like a dict."""
+
+    def __init__(self, fallback: dict):
+        self._fallback = fallback
+
+    def _live(self) -> dict:
+        try:
+            from apps.dashboard.prefix_map import get_prefix_map
+            return get_prefix_map() or self._fallback
+        except Exception:
+            return self._fallback
+
+    def __getitem__(self, key):
+        return self._live()[key]
+
+    def __iter__(self):
+        return iter(self._live())
+
+    def __len__(self):
+        return len(self._live())
+
+    def __contains__(self, key):
+        return key in self._live()
+
+
+_CAMP_PREFIX_GROUP_SEED = {
     '8BTH':    ('Bath Towels',   '8-Pack'),
     '4BTH':    ('Bath Towels',   '4-Pack'),
     '2BTH':    ('Bath Towels',   '2-Pack'),
@@ -267,6 +304,10 @@ _CAMP_PREFIX_GROUP = {
     'FTDSKG':  ('Mattress Protector', 'Super King'),
     'MP':      ('Mattress Protector', 'Double'),   # default size (MP- omits it)
 }
+
+# The name every existing consumer imports. Same behaviour, now sourced from
+# CampaignPrefixMap via apps.dashboard.prefix_map.
+_CAMP_PREFIX_GROUP = _PrefixGroupMapping(_CAMP_PREFIX_GROUP_SEED)
 
 
 # Whole-name product scan — for campaigns that put the product LATER in the name

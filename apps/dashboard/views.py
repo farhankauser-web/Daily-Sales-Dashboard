@@ -721,18 +721,13 @@ def product_line_analysis(request):
         sku_ppc  = defaultdict(float, {k: v * ppc_scale for k, v in sku_ppc.items()})
 
     # ── Allocate SB/SD spend at product-group level ───────────────────────────
-    _CAMP_PREFIX_GROUP = {
-        '8BTH':    ('Bath Towels', '8-Pack'),
-        '4BTH':    ('Bath Towels', '4-Pack'),
-        '2BTH':    ('Bath Towels', '2-Pack'),
-        '2BS':     ('Bath Sheet',  '2-Pack'),
-        '1BS':     ('Bath Sheet',  '1-Pack'),
-        '2BM':     ('Bath Mat',    '2-Pack'),
-        '6HNDTWL': ('Hand Towel',  '6-Pack'),
-        '6KTH':    ('Kitchen Towel', '6-Pack'),
-        '12WCPK':  ('Wash Cloth',  '12-Pack'),
-        '4WCPK':   ('Wash Cloth',  '4-Pack'),
-    }
+    # Was a hard-coded 10-entry copy of the canonical prefix map, which had
+    # drifted: it was missing 19 prefixes (every UK/UAE/KSA/DE one, plus 12KTH,
+    # 3KTH, 4DT), so SB/SD spend on those campaigns was silently dropped from
+    # this page. Now reads the single CampaignPrefixMap config. The grouping
+    # and every calculation below are unchanged — only the lookup source moved.
+    from .prefix_map import get_prefix_map
+    _CAMP_PREFIX_GROUP = get_prefix_map()
     sb_sd_rows = (
         PPCCampaignSnapshot.objects
         .filter(marketplace=marketplace, date__gte=s_d, date__lte=e_d,

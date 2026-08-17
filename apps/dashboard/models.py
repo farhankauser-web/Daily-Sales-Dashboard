@@ -2395,6 +2395,59 @@ class CampaignBudgetUsageDaily(models.Model):
         return float(self.usage_pct) >= self.OUT_OF_BUDGET_PCT
 
 
+class CampaignPrefixMap(models.Model):
+    """
+    The campaign-name prefix convention, as configuration instead of code.
+
+    A campaign called `4BTH-TWL-SP-EXT-bath-towels-WHT` is classified by its
+    prefix (`4BTH`) into a product and pack (`Bath Towels`, `4-Pack`). That
+    classification is what the PPC allocator uses to decide which ASINs — and
+    therefore which SKUs — a Sponsored Brands/Display campaign belongs to, and
+    what Product Line Analysis groups SB/SD spend by.
+
+    This table replaces two hard-coded dictionaries that had drifted apart
+    (`amazon_api.views._CAMP_PREFIX_GROUP`, 29 entries, and a 10-entry copy in
+    `dashboard.views.product_line_analysis` that silently dropped 19 prefixes).
+    It is a CONFIGURATION SOURCE only: the matching logic
+    (`_match_campaign_to_group`, `_NAME_PRODUCT_RULES`) and every downstream PPC
+    calculation are unchanged.
+
+    marketplace is intentionally BLANK for every migrated row: today the
+    convention is global — `4BTH` means the same thing in every region — and
+    the resolver treats blank as "applies everywhere". The column exists so a
+    per-region override can be added later without a migration; nothing reads
+    it as an override yet.
+    """
+    prefix       = models.CharField(max_length=32,
+                    help_text='Campaign-name prefix, upper-case, e.g. 4BTH.')
+    product_type = models.CharField(max_length=64,
+                    help_text="Product as it appears in Product.title's first "
+                              "segment, e.g. 'Bath Towels'.")
+    pack         = models.CharField(max_length=32,
+                    help_text="Pack/size as it appears in Product.title's "
+                              "second segment, e.g. '4-Pack'.")
+    marketplace  = models.CharField(max_length=8, blank=True, default='',
+                    help_text='Blank = applies to every marketplace (current '
+                              'behaviour). Reserved for future overrides.')
+    active       = models.BooleanField(default=True)
+    note         = models.CharField(max_length=256, blank=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ix_campaign_prefix_map'
+        unique_together = [['prefix', 'marketplace']]
+        ordering = ['product_type', 'pack', 'prefix']
+        indexes = [models.Index(fields=['active', 'prefix'])]
+
+    def __str__(self):
+        return f'{self.prefix} → {self.product_type} · {self.pack}'
+
+    @property
+    def group(self) -> tuple:
+        return (self.product_type, self.pack)
+
+
 class AdActionRequest(models.Model):
     """
     P4 — a PROPOSED advertising change awaiting human review.
@@ -2503,3 +2556,18 @@ class AdActionRequest(models.Model):
     @property
     def is_open(self):
         return self.status in self.OPEN_STATES
+
+
+# ── Prefix-map cache invalidation ───────────────────────────────────────────
+# The prefix table is read on every campaign classification and cached in
+# process; drop that cache the moment a row changes so an edit made on the
+# Prefix Mapping page takes effect on the next classification.
+from django.db.models.signals import post_delete, post_save   # noqa: E402
+from django.dispatch import receiver                          # noqa: E402
+
+
+@receiver(post_save, sender=CampaignPrefixMap)
+@receiver(post_delete, sender=CampaignPrefixMap)
+def _invalidate_prefix_map_cache(sender, **kwargs):
+    from .prefix_map import invalidate
+    invalidate()
