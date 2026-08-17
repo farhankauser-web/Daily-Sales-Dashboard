@@ -6415,72 +6415,18 @@ def api_sku_campaigns(request):
                 .values_list('asin', flat=True).first())
         asin = snap or ''
 
-    # ── 1. Authoritative spend, grouped at (campaign, source, state) ────────
-    # One grouped query; the per-campaign fold below runs over a handful of
-    # rows, not the fact table. wconf = spend-weighted confidence numerator.
-    alloc = (SkuPpcAllocation.objects
-             .filter(marketplace=marketplace, sku__iexact=sku,
-                     date__gte=start, date__lte=end)
-             .values('campaign_id', 'campaign_type',
-                     'attribution_source', 'settlement_state')
-             .annotate(spend=Sum('sku_ppc_spend'),
-                       wconf=Sum(F('confidence_score') * F('sku_ppc_spend'))))
-
-    _SETTLE_RANK = {'provisional': 0, 'settling': 1, 'locked': 2}
-    camp: dict[str, dict] = {}
-    for r in alloc:
-        cid = str(r['campaign_id'])
-        sp = float(r['spend'] or 0)
-        if sp <= 0 and cid in camp:
-            continue
-        c = camp.setdefault(cid, {
-            'campaign_id': cid, 'campaign_type': r['campaign_type'] or '',
-            'spend': 0.0, 'wconf': 0.0, 'sources': {},
-            'settlement': 'locked',
-        })
-        c['spend'] += sp
-        c['wconf'] += float(r['wconf'] or 0)
-        c['sources'][r['attribution_source']] = (
-            c['sources'].get(r['attribution_source'], 0.0) + sp)
-        # Worst (least settled) state present in the window wins the label.
-        if (_SETTLE_RANK.get(r['settlement_state'], 0)
-                < _SETTLE_RANK.get(c['settlement'], 2)):
-            c['settlement'] = r['settlement_state']
-
-    # ── 1b. Canonicalise campaign ids ───────────────────────────────────────
-    # Some SkuPpcAllocation rows (manual-hourly lineage — see
-    # relink_manual_hourly_campaign_ids) carry the campaign NAME in
-    # campaign_id, while the advertised-product table and Campaign dim use
-    # numeric ids. Left as-is those rows can never join to their sales.
-    # Resolve name-shaped ids through the dim and merge; read-only, no
-    # methodology change.
-    known = {str(d['campaign_id']) for d in
-             Campaign.objects.filter(marketplace=marketplace,
-                                     campaign_id__in=list(camp))
-             .values('campaign_id')}
-    unknown = [cid for cid in camp if cid not in known]
-    if unknown:
-        by_name = {d['campaign_name']: str(d['campaign_id']) for d in
-                   Campaign.objects.filter(marketplace=marketplace,
-                                           campaign_name__in=unknown)
-                   .values('campaign_id', 'campaign_name')}
-        for old in list(camp):
-            new = by_name.get(old)
-            if not new or new == old:
-                continue
-            src, dst = camp.pop(old), camp.setdefault(new, {
-                'campaign_id': new, 'campaign_type': '', 'spend': 0.0,
-                'wconf': 0.0, 'sources': {}, 'settlement': 'locked'})
-            dst['spend'] += src['spend']
-            dst['wconf'] += src['wconf']
-            dst['campaign_type'] = dst['campaign_type'] or src['campaign_type']
-            for k, v in src['sources'].items():
-                dst['sources'][k] = dst['sources'].get(k, 0.0) + v
-            if (_SETTLE_RANK.get(src['settlement'], 0)
-                    < _SETTLE_RANK.get(dst['settlement'], 2)):
-                dst['settlement'] = src['settlement']
-
-    # ── 2. Attributed sales/orders/units per campaign ───────────────────────
+    # ── 1. Per-campaign spend AND sales — BOTH from the advertised-product
+    #      report, so the two halves of every comparison share one source.
+    #
+    # Why not SkuPpcAllocation for the per-campaign split: the allocation
+    # engine splits each SP campaign's spend across ASINs using ACCOUNT-WIDE
+    # daily proportions (ppc_allocator._pass1_sp — its own comment notes that
+    # per-campaign/per-ASIN spend "isn't stored"). That spreads a SKU's spend
+    # across every SP campaign in the account, so campaigns that never
+    # advertised this SKU appear as spend-with-no-sales. Amazon's
+    # advertised-product report DOES carry per-campaign per-SKU spend, so the
+    # driver table uses it. SkuPpcAllocation remains authoritative for the
+    # SKU's TOTAL spend (below) and for SKU-level P&L, which is untouched.
     ap_filter = Q(advertised_sku__iexact=sku)
     if asin:
         ap_filter |= Q(asin__iexact=asin, source_ad_type='sb')
@@ -6488,25 +6434,52 @@ def api_sku_campaigns(request):
           .filter(marketplace=marketplace, date__gte=start, date__lte=end)
           .filter(ap_filter)
           .values('campaign_id', 'source_ad_type')
-          .annotate(sales=Sum('sales_7d'), orders=Sum('orders_7d'),
-                    units=Sum('units_7d')))
-    sales_by_camp: dict[str, dict] = {}
+          .annotate(spend=Sum('spend'), sales=Sum('sales_7d'),
+                    orders=Sum('orders_7d'), units=Sum('units_7d')))
+    camp: dict[str, dict] = {}
     for r in ap:
         cid = str(r['campaign_id'])
-        s = sales_by_camp.setdefault(cid, {'sales': 0.0, 'orders': 0,
-                                           'units': 0, 'sb_asin_level': False})
-        s['sales'] += float(r['sales'] or 0)
-        s['orders'] += int(r['orders'] or 0)
-        s['units'] += int(r['units'] or 0)
-        if r['source_ad_type'] == 'sb':
-            s['sb_asin_level'] = True
-
-    # A campaign can have attributed sales without allocated spend in the
-    # window (spend reconciled elsewhere / zero-spend days) — still show it.
-    for cid in sales_by_camp:
-        camp.setdefault(cid, {
+        c = camp.setdefault(cid, {
             'campaign_id': cid, 'campaign_type': '', 'spend': 0.0,
-            'wconf': 0.0, 'sources': {}, 'settlement': 'locked'})
+            'sales': 0.0, 'orders': 0, 'units': 0,
+            'sb_asin_level': False, 'wconf': 0.0, 'sources': {},
+            'settlement': 'locked'})
+        c['spend'] += float(r['spend'] or 0)
+        c['sales'] += float(r['sales'] or 0)
+        c['orders'] += int(r['orders'] or 0)
+        c['units'] += int(r['units'] or 0)
+        c['campaign_type'] = c['campaign_type'] or (r['source_ad_type'] or '')
+        if r['source_ad_type'] == 'sb':
+            c['sb_asin_level'] = True
+
+    # ── 2. Allocation: SKU total (reconciliation) + attribution quality ─────
+    # Still read, for two things only: the SKU's authoritative total spend
+    # (which reconciles to campaign totals) and the confidence / settlement
+    # badges. Never for the per-campaign split.
+    _SETTLE_RANK = {'provisional': 0, 'settling': 1, 'locked': 2}
+    alloc_total = 0.0
+    worst_settlement = 'locked'
+    for r in (SkuPpcAllocation.objects
+              .filter(marketplace=marketplace, sku__iexact=sku,
+                      date__gte=start, date__lte=end)
+              .values('campaign_id', 'attribution_source', 'settlement_state')
+              .annotate(spend=Sum('sku_ppc_spend'),
+                        wconf=Sum(F('confidence_score') * F('sku_ppc_spend')))):
+        sp = float(r['spend'] or 0)
+        alloc_total += sp
+        if (_SETTLE_RANK.get(r['settlement_state'], 0)
+                < _SETTLE_RANK.get(worst_settlement, 2)):
+            worst_settlement = r['settlement_state']
+        c = camp.get(str(r['campaign_id']))
+        if c is not None:
+            c['wconf'] += float(r['wconf'] or 0)
+            c['sources'][r['attribution_source']] = (
+                c['sources'].get(r['attribution_source'], 0.0) + sp)
+            if (_SETTLE_RANK.get(r['settlement_state'], 0)
+                    < _SETTLE_RANK.get(c['settlement'], 2)):
+                c['settlement'] = r['settlement_state']
+    for c in camp.values():
+        c['settlement'] = c['settlement'] if c['sources'] else worst_settlement
 
     # ── 3. Campaign dim ─────────────────────────────────────────────────────
     dim = {str(d['campaign_id']): d for d in
@@ -6515,19 +6488,19 @@ def api_sku_campaigns(request):
            .values('campaign_id', 'campaign_name', 'campaign_type', 'state')}
 
     total_spend = sum(c['spend'] for c in camp.values())
-    total_sales = sum(s['sales'] for s in sales_by_camp.values())
+    total_sales = sum(c['sales'] for c in camp.values())
+    # Spend the allocator assigned to this SKU that the advertised-product
+    # report does not tie to any specific campaign. Shown, never hidden.
+    residual = round(alloc_total - total_spend, 2)
 
     rows = []
     for cid, c in camp.items():
         d = dim.get(cid, {})
-        # A campaign id that resolves to neither the dim nor any advertised-
-        # product row cannot be joined to its sales (manual-hourly name
-        # variants, e.g. dayparting suffixes). Show sales as UNKNOWN — a
-        # misleading 0 would read as "wasted spend". Spend stays authoritative.
-        linked = bool(d) or cid in sales_by_camp
-        s = sales_by_camp.get(cid, {'sales': 0.0, 'orders': 0, 'units': 0,
-                                    'sb_asin_level': False})
-        spend, sales = c['spend'], s['sales']
+        # Every row now originates in Amazon's own per-campaign per-SKU report,
+        # so spend and sales are always from the same source and comparable.
+        linked = True
+        s = c
+        spend, sales = c['spend'], c['sales']
         # Dominant attribution source = the one carrying the most spend.
         dominant = max(c['sources'], key=c['sources'].get) if c['sources'] else ''
         conf = (c['wconf'] / spend) if spend > 0 else None
@@ -6652,7 +6625,12 @@ def api_sku_campaigns(request):
                    'shown_spend_pct': round(shown_spend / total_spend * 100, 1)
                                       if total_spend > 0 else None,
                    'acos': round(total_spend / total_sales * 100, 1)
-                           if total_sales > 0 else None},
+                           if total_sales > 0 else None,
+                   # Reconciliation, shown rather than hidden.
+                   'allocated_total': round(alloc_total, 2),
+                   'residual': residual,
+                   'residual_pct': round(residual / alloc_total * 100, 1)
+                                   if alloc_total > 0 else None},
         'context': context,
         'trend': trend,
         'opportunities': _sku_opportunity_cards(
@@ -6662,10 +6640,18 @@ def api_sku_campaigns(request):
             prev_ppc_sales=psales_p, prev_organic=organic_p),
         'rows': rows,
         'notes': {
-            'spend_source': 'SkuPpcAllocation (reconciled per-SKU allocation)',
-            'sales_source': ('AdsAdvertisedProductDailySnapshot — SP/SD by SKU '
-                             '(7-day attribution); SB by ASIN (14-day window, '
-                             'may span sibling SKUs of the same ASIN)'),
+            'spend_source': ("Amazon's advertised-product report — per-campaign, "
+                             "per-SKU spend"),
+            'sales_source': ('Same report — SP/SD by SKU (7-day attribution); '
+                             'SB by ASIN (14-day window, may span sibling SKUs '
+                             'of the same ASIN)'),
+            'residual': (
+                f'The allocation engine assigns ${alloc_total:,.2f} of ad spend '
+                f'to this SKU in total; ${total_spend:,.2f} of that is tied to a '
+                f'specific campaign by the advertised-product report. The '
+                f'${residual:,.2f} difference is spend the engine spread across '
+                f'campaigns using account-wide proportions and is not shown '
+                f'against individual campaigns here.') if residual > 0.01 else '',
         },
     })
 

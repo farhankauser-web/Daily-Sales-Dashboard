@@ -774,6 +774,7 @@ function renderDrivers(d, cell, rowData) {
     </tr></thead><tbody>${body}</tbody></table>
     <div class="skd-note">
       Spend: ${d.notes.spend_source}. Sales: ${d.notes.sales_source}.` +
+      (d.notes.residual ? ` <span title="${d.notes.residual}">Note: ${fmtCurrency(d.totals.residual)} of allocated spend (${d.totals.residual_pct}%) is not tied to a specific campaign by Amazon's report and is excluded from the shares above.</span>` : '') +
       (d.rows.some(r => r.sb_asin_level)
         ? ' * SB figures are ASIN-level and may include sibling SKUs.' : '') +
       (anyUnsettled
