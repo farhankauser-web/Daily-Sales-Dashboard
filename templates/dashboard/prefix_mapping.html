@@ -94,6 +94,28 @@
               border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:11px; color:var(--text2); }
   .pm-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
                padding:28px; text-align:center; color:var(--text2); font-size:12px; }
+
+  /* alias chips — prefixes that mean the same product/pack */
+  .pm-alias { display:inline-block; padding:1px 5px; border-radius:3px; margin-left:3px;
+               background:var(--bg3); color:var(--text2); font-size:9px;
+               font-family:'DM Mono',monospace; font-weight:700; }
+  .pm-shared { background:var(--info-weak); color:var(--info-ink); border-radius:4px;
+                padding:5px 9px; font-size:10px; margin-bottom:6px; }
+
+  /* themed confirm — matches the modal pattern used elsewhere in Pulse */
+  .pm-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.4);
+                  display:flex; align-items:center; justify-content:center; z-index:1000; }
+  .pm-modal { background:var(--bg2); border-radius:10px; padding:18px 20px;
+               max-width:520px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,.25); }
+  .pm-modal h3 { margin:0 0 10px; font-size:15px; color:var(--text); }
+  .pm-modal .body { font-size:12px; color:var(--text2); line-height:1.55; }
+  .pm-modal .body b { color:var(--text); font-family:'DM Mono',monospace; }
+  .pm-modal .foot { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  .pm-modal .foot button { padding:6px 16px; font-size:12px; border-radius:5px;
+                            cursor:pointer; border:1px solid var(--border);
+                            background:var(--bg); color:var(--text); }
+  .pm-modal .foot button.primary { background:#067D62; color:#fff; border-color:#067D62; }
+  .pm-modal .foot button.danger  { background:#C7522A; color:#fff; border-color:#C7522A; }
 </style>
 {% endblock %}
 
@@ -174,6 +196,17 @@
   </div>
 </div>
 
+<div id="pmModal" class="pm-modal-bg" style="display:none" onclick="pmDismiss(event)">
+  <div class="pm-modal" onclick="event.stopPropagation()">
+    <h3 id="pmModalTitle"></h3>
+    <div class="body" id="pmModalBody"></div>
+    <div class="foot">
+      <button onclick="pmDismiss()">Cancel</button>
+      <button id="pmModalOk" class="primary" onclick="pmAccept()">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let currentMP = '{{ marketplace }}';
 let currentDays = 30;
@@ -200,6 +233,31 @@ function money(v) {
 function num(v) { return v == null ? '—' : Number(v).toLocaleString(); }
 function esc(s) { return String(s || '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 function csrf() { const m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ''; }
+
+/* Themed confirmation — same modal pattern the rest of Pulse uses, instead of
+   the browser's native confirm(). Returns a promise resolving true/false. */
+let _pmResolve = null;
+function pmConfirm({title, body, okLabel = 'Confirm', danger = false}) {
+  document.getElementById('pmModalTitle').textContent = title;
+  document.getElementById('pmModalBody').innerHTML = body;
+  const ok = document.getElementById('pmModalOk');
+  ok.textContent = okLabel;
+  ok.className = danger ? 'danger' : 'primary';
+  document.getElementById('pmModal').style.display = 'flex';
+  return new Promise(res => { _pmResolve = res; });
+}
+function pmDismiss(ev) {
+  if (ev && ev.target !== ev.currentTarget) return;
+  document.getElementById('pmModal').style.display = 'none';
+  if (_pmResolve) { _pmResolve(false); _pmResolve = null; }
+}
+function pmAccept() {
+  document.getElementById('pmModal').style.display = 'none';
+  if (_pmResolve) { _pmResolve(true); _pmResolve = null; }
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('pmModal').style.display === 'flex') pmDismiss();
+});
 
 /* ── Tab A ─────────────────────────────────────────────────────────────── */
 function filteredMap() {
@@ -233,7 +291,10 @@ function renderMap() {
     <tr class="pm-row ${r.active ? '' : 'pm-inactive'} ${openPrefix === r.prefix ? 'open' : ''}"
         onclick="toggleRow('${r.prefix}')">
       <td>${openPrefix === r.prefix ? '▾' : '▸'}</td>
-      <td class="l"><span class="pm-pfx">${esc(r.prefix)}</span></td>
+      <td class="l"><span class="pm-pfx">${esc(r.prefix)}</span>${
+        (r.aliases || []).length
+          ? `<span class="pm-alias" title="Same product/pack, different regional campaign naming: ${esc(r.aliases.join(', '))}">= ${esc(r.aliases.join(' = '))}</span>`
+          : ''}</td>
       <td class="l">${esc(r.product_type)}</td>
       <td class="l">${esc(r.pack)}</td>
       <td>${num(r.sku_count)}</td>
@@ -275,8 +336,12 @@ function detailRow(r) {
       <td>${money(c.spend)}</td>
       <td class="l"><span class="pm-badge on">Allocated</span></td></tr>`).join('')}
     </tbody></table>` :
-    `<div class="pm-none" style="font-size:11px">No campaigns started with this
-      prefix in the window.</div>`;
+    `<div class="pm-none" style="font-size:11px">No campaigns started with
+      <b>${esc(r.prefix)}-</b> in this window${currentMP ? ' for ' + currentMP.toUpperCase() : ''}.
+      ${(r.aliases || []).length
+        ? `This product's campaigns may be named with ${esc(r.aliases.join(' or '))} instead` +
+          (currentMP ? ', or run in another marketplace — switch the region selector to check.' : '.')
+        : ''}</div>`;
   const shared = r.group_campaign_count > r.campaign_count
     ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">
         ${r.group_campaign_count} campaigns classify to ${esc(r.product_type)} ·
@@ -293,7 +358,15 @@ function detailRow(r) {
       <span style="margin-left:auto;font-size:10px;color:var(--text3)">
         ${esc(r.product_type)} · ${esc(r.pack)} — classification comes from the catalog and is not edited here</span>
     </div>
-    <div class="pm-sec">SKUs / ASINs · ${r.sku_count}</div>${skus}
+    ${(r.aliases || []).length ? `<div class="pm-shared">
+      <b>${esc(r.prefix)}</b> is one of ${r.aliases.length + 1} campaign-naming
+      conventions for <b>${esc(r.product_type)} · ${esc(r.pack)}</b>
+      (also ${esc(r.aliases.join(', '))}) — typically US vs UK/UAE/KSA naming.
+      The SKUs below belong to the product, so they are the same under each of
+      those prefixes. That is the existing configuration, not duplicated data.
+    </div>` : ''}
+    <div class="pm-sec">SKUs / ASINs · ${r.sku_count}
+      ${(r.aliases || []).length ? `<span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3)">— shared with ${esc(r.aliases.join(', '))}</span>` : ''}</div>${skus}
     <div class="pm-sec">Campaigns using this prefix · ${r.campaign_count}</div>${camps}${shared}
   </div></td></tr>`;
 }
@@ -311,15 +384,17 @@ async function savePrefix(id) {
   if (val === (row.prefix || '')) { msg.textContent = 'No change.'; return; }
   // This is live PPC configuration — an accidental edit changes how campaigns
   // are classified from the next classification onward. Confirm explicitly.
-  if (!confirm(
-      `Change prefix "${row.prefix}" to "${val}"?\n\n` +
-      `This is live PPC configuration. Campaigns named "${row.prefix}-…" will ` +
-      `no longer be classified as ${row.product_type} · ${row.pack}, and ` +
-      `campaigns named "${val}-…" will be.\n\n` +
-      `Historical data is not changed — this affects classification going forward.`)) {
-    input.value = row.prefix;
-    return;
-  }
+  const ok = await pmConfirm({
+    title: 'Change prefix?',
+    okLabel: 'Change prefix',
+    body: `<p>Change <b>${esc(row.prefix)}</b> to <b>${esc(val)}</b>?</p>
+      <p>This is live PPC configuration. Campaigns named <b>${esc(row.prefix)}-…</b>
+      will no longer be classified as <b>${esc(row.product_type)} · ${esc(row.pack)}</b>,
+      and campaigns named <b>${esc(val)}-…</b> will be.</p>
+      <p style="color:var(--text3)">Historical data is not changed — this affects
+      classification going forward.</p>`,
+  });
+  if (!ok) { input.value = row.prefix; return; }
   msg.textContent = 'Saving…';
   const r = await fetch(`/dashboard/api/prefix-mapping/${id}/save/`, {
     method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
@@ -333,13 +408,21 @@ async function savePrefix(id) {
 async function toggleActive(id, makeActive) {
   const msg = document.getElementById('msg-' + id);
   const row = (mapData.rows || []).find(r => r.id === id) || {};
-  if (!makeActive && !confirm(
-      `Deactivate prefix "${row.prefix}"?\n\n` +
-      `Campaigns named "${row.prefix}-…" will stop being classified as ` +
-      `${row.product_type} · ${row.pack} and may become unallocated.\n\n` +
-      `Nothing is deleted — no campaign, SKU, historical PPC or Amazon setting ` +
-      `is touched. The prefix simply stops being used going forward, and can be ` +
-      `reactivated here at any time.`)) return;
+  if (!makeActive) {
+    const ok = await pmConfirm({
+      title: 'Deactivate prefix?', okLabel: 'Deactivate', danger: true,
+      body: `<p>Campaigns named <b>${esc(row.prefix)}-…</b> will stop being
+        classified as <b>${esc(row.product_type)} · ${esc(row.pack)}</b> and may
+        become unallocated.</p>
+        ${(row.aliases || []).length
+          ? `<p>${esc(row.aliases.join(', '))} still cover this product, so
+             campaigns using those prefixes are unaffected.</p>` : ''}
+        <p style="color:var(--text3)">Nothing is deleted — no campaign, SKU,
+        historical PPC or Amazon setting is touched. It can be reactivated here
+        at any time.</p>`,
+    });
+    if (!ok) return;
+  }
   msg.textContent = 'Saving…';
   const r = await fetch(`/dashboard/api/prefix-mapping/${id}/save/`, {
     method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},

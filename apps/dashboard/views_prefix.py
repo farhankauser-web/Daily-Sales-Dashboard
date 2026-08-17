@@ -125,8 +125,21 @@ def api_prefix_mapping(request):
             b['campaigns'].append(c)
             b['spend'] += c['spend']
 
+    # Several prefixes legitimately point at the SAME product/pack — that is
+    # the regional naming convention, not duplication: US campaigns use 4BTH
+    # while UK/UAE/KSA use PK4 and LUX for the very same Bath Towels · 4-Pack.
+    # SKUs are a property of the GROUP, so the same SKU list appears under each
+    # alias. Report the alias set explicitly so it reads as one product with
+    # several campaign-naming conventions rather than a duplicated mapping.
+    all_maps = list(CampaignPrefixMap.objects.all())
+    aliases = defaultdict(list)
+    for m in all_maps:
+        aliases[(m.product_type, m.pack)].append(m.prefix)
+    for v in aliases.values():
+        v.sort()
+
     rows = []
-    for m in CampaignPrefixMap.objects.all():
+    for m in all_maps:
         g = (m.product_type, m.pack)
         skus = catalog.get(g, [])
         cg = by_group.get(g, {'campaigns': [], 'spend': 0.0})
@@ -143,6 +156,8 @@ def api_prefix_mapping(request):
             'marketplace': m.marketplace or '',
             'active': m.active, 'note': m.note,
             'updated_at': m.updated_at.isoformat() if m.updated_at else None,
+            # Other prefixes that mean the same product/pack (regional naming).
+            'aliases': [p for p in aliases.get(g, []) if p != m.prefix],
             'sku_count': len(skus),
             'asin_count': len({s['asin'] for s in skus if s['asin']}),
             'campaign_count': len(mine),
