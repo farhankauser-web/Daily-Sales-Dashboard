@@ -61,6 +61,18 @@ def supplier_index() -> dict:
     return idx
 
 
+def pack_assembly_index() -> dict:
+    """{ASSEMBLED_SKU (upper): (component_sku, ratio)} for active repacks.
+
+    INV-REPACK-001. Shipping an assembled SKU draws the base component SKU's
+    PO/opening balance at ratio:1. Keyed on the assembled SKU because that is
+    what a packing list carries.
+    """
+    from .models import PackAssembly
+    return {p.assembled_sku.upper(): (p.component_sku, p.component_per_pack)
+            for p in PackAssembly.objects.filter(active=True)}
+
+
 def _find_header(ws, must_have, limit=12):
     """Row index whose cells contain all `must_have` tokens (lowercased)."""
     for r in range(1, min(ws.max_row, limit) + 1):
@@ -667,6 +679,7 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
                PlanningSku.objects.filter(region=region)
                .values_list('sku', 'name') if s}
     sup_idx = supplier_index()
+    pack_idx = pack_assembly_index()   # INV-REPACK-001: assembled -> base draw
 
     # FOB is entered in the REGION's currency — that is the ledger this
     # container's payment lands in, so no conversion happens anywhere and the
@@ -757,28 +770,54 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
         # would otherwise look allocated. Leave it unallocated instead.
         # INV-CONT-002 / INV-D-011: draw from opening balance first (oldest),
         # then PO lines FIFO.
-        sources = (_open_sources_for(sku, row_sup.pk, r.get('po_number', ''),
-                                     release_container_id=exclude_container_id)
-                   if (sup_ok and row_sup) else [])
+        # INV-REPACK-001: an assembled SKU (e.g. TW-BLK-KTH-12) has no PO of its
+        # own — the factory builds it from a base SKU (TW-BLK-KTH-6) at ratio:1.
+        # Draw its OWN finished-goods backlog first (already assembled), then
+        # convert the shortfall from the base component. `avail` is always in
+        # assembled units (whole packs); `ratio` records base units per pack.
+        kit = pack_idx.get(sku.upper()) if (sup_ok and row_sup) else None
+        po_no = r.get('po_number', '')
+        sources = []
+        if sup_ok and row_sup:
+            own = _open_sources_for(sku, row_sup.pk, po_no,
+                                    release_container_id=exclude_container_id)
+            for s in own:
+                s['ratio'] = 1
+                s['avail'] = s['remaining']
+                s['comp_sku'] = ''
+                sources.append(s)
+            if kit:
+                comp_sku, ratio = kit
+                for s in _open_sources_for(comp_sku, row_sup.pk, po_no,
+                                           release_container_id=exclude_container_id):
+                    s['ratio'] = ratio
+                    s['avail'] = s['remaining'] // ratio   # whole packs only
+                    s['comp_sku'] = comp_sku
+                    sources.append(s)
+
         if not sup_ok:
             pass                      # the supplier error already says why
         elif not sources:
             row['errors'].append(
                 f'No open balance for {sku} on {row_sup.name}'
                 + (f' PO {r["po_number"]}' if r.get('po_number') else '')
+                + (f' (or its base {kit[0]})' if kit else '')
                 + ' — nothing to draw these units from.')
         else:
             left = r['units']
             for s in sources:
                 if left <= 0:
                     break
-                take = min(left, s['remaining'])
+                take = min(left, s.get('avail', s['remaining']))
                 if take <= 0:
                     continue
+                ratio = s.get('ratio', 1)
                 alloc = {'po_line_id': None, 'opening_id': None,
                          'src': s['kind'], 'po': s['po'], 'po_id': s['po_id'],
                          'pp': s['pp'], 'category': s['category'],
-                         'units': take, 'line_remaining': s['remaining']}
+                         'units': take, 'source_units': take * ratio,
+                         'ratio': ratio, 'comp_sku': s.get('comp_sku', ''),
+                         'line_remaining': s.get('avail', s['remaining'])}
                 if s['kind'] == 'opening':
                     alloc['opening_id'] = s['id']
                 else:
@@ -788,11 +827,18 @@ def preview_packing_list(rows, supplier_id, region, container_size='',
             if left > 0:
                 row['errors'].append(
                     f'Over-allocation: {left:,} of {r["units"]:,} units have no '
-                    f'open balance left on {row_sup.name}.')
+                    f'open balance left on {row_sup.name}'
+                    + (f' (base {kit[0]})' if kit else '') + '.')
             elif len(row['allocs']) > 1:
                 row['warnings'].append(
                     f'Split across {len(row["allocs"])} sources '
                     f'(opening balance first, then POs oldest-first).')
+            if kit and any(a['ratio'] > 1 for a in row['allocs']):
+                drew = sum(a['source_units'] for a in row['allocs']
+                           if a['ratio'] > 1)
+                row['warnings'].append(
+                    f'Repack: {r["units"]:,} × {sku} draws {drew:,} × {kit[0]} '
+                    f'from the base PO/opening ({kit[1]}:1).')
         if not r.get('po_number'):
             row['warnings'].append(
                 'No PO number on the packing list — matched automatically: '
@@ -936,6 +982,9 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
         units = int(a['units'])
         if units <= 0:
             continue
+        # INV-REPACK-001: source_units is what the base PO/opening is drawn by
+        # (units × ratio); it equals units for a direct line.
+        su = int(a.get('source_units') or units)
         if a.get('opening_id'):
             key = (a['sku'].upper(), 'opening', int(a['opening_id']))
         elif a.get('po_line_id'):
@@ -944,9 +993,12 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
             continue                       # unattributed — never write blind
         if key in merged:
             merged[key]['units'] += units
+            merged[key]['source_units'] += su
         else:
             merged[key] = {'sku': a['sku'], 'kind': key[1], 'src_id': key[2],
-                           'units': units, 'fnsku': a.get('fnsku', ''),
+                           'units': units, 'source_units': su,
+                           'comp_sku': a.get('comp_sku', ''),
+                           'fnsku': a.get('fnsku', ''),
                            'fob': float(a.get('fob') or 0)}
 
     res = {'container_no': sh.container_no, 'shipment_id': sh.pk,
@@ -969,12 +1021,18 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
                 continue
             avail, label = src.remaining_units, 'opening balance'
             src_kwargs, dup_filter = {'opening_balance': src}, {'opening_balance': src}
-        if m['units'] > avail:
+        # A repack line draws `source_units` (base units) off the source, while
+        # `units` is the assembled qty that ships. The open-balance guard must
+        # compare the base draw against the base line's remaining.
+        draw = int(m.get('source_units') or m['units'])
+        comp = m.get('comp_sku')
+        if draw > avail:
             res['over_allocated'].append(
-                {'sku': m['sku'], 'requested': m['units'], 'available': avail})
+                {'sku': m['sku'], 'requested': draw, 'available': avail,
+                 'component': comp or ''})
             raise ValueError(
-                f'{m["sku"]}: {m["units"]:,} units requested but only '
-                f'{avail:,} remain open on {label}.')
+                f'{m["sku"]}: needs {draw:,} units of {comp or m["sku"]} '
+                f'but only {avail:,} remain open on {label}.')
         # Same SKU drawn from the SAME source is genuinely additive; a
         # different source stays its own row so each attribution survives.
         existing = (sh.lines.filter(sku=m['sku'], **dup_filter).first()
@@ -982,15 +1040,18 @@ def commit_packing_list(container, allocs, supplier_id=None, region='usa',
         if existing:
             # Weighted average, so appending more of the same SKU at a
             # different price does not throw the earlier rate away.
+            prev_su = (existing.source_units if existing.source_units is not None
+                       else existing.units)
             tot = existing.units + m['units']
             existing.fob_rate = (
                 (float(existing.fob_rate or 0) * existing.units
                  + m['fob'] * m['units']) / tot) if tot else 0
             existing.units = tot
-            existing.save(update_fields=['units', 'fob_rate'])
+            existing.source_units = prev_su + draw
+            existing.save(update_fields=['units', 'fob_rate', 'source_units'])
         else:
             InTransitLine.objects.create(
-                shipment=sh, sku=m['sku'], units=m['units'],
+                shipment=sh, sku=m['sku'], units=m['units'], source_units=draw,
                 fnsku=(m.get('fnsku') or '')[:16], fob_rate=m['fob'],
                 **src_kwargs)
         res['lines'] += 1

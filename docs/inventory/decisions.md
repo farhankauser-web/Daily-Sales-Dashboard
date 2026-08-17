@@ -339,8 +339,11 @@ allocatable source mirroring `POLine` (`remaining = units − allocations`);
 `procurement._open_sources_for` draws opening (oldest as_of) then PO lines FIFO;
 a re-upload that would replace a drawn-against balance is refused. Opening
 balance also gained an optional FOB rate (INV-SUP-001) so Outstanding FOB is
-priced. An explicit PO number on a packing-list row still overrides to that PO
-(INV-D-014).
+priced. Opening balance is ALWAYS drawable — a PO number on a packing-list row
+only narrows the PO side to that specific PO (INV-D-014); it never excludes
+opening balance, so a container fills from opening balance AND/OR the PO.
+(Fixed 2026-08-10: an earlier build wrongly skipped opening balance whenever a
+PO number was present, blocking rows that had opening backlog.)
 
 **Context** — Opening balance is backlog a supplier owed before the system went
 live. Today it is a static display figure that nothing draws down, so a packing

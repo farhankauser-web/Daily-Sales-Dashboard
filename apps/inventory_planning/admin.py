@@ -1,7 +1,16 @@
 from django.contrib import admin
 
 from .models import (DemandInput, InTransitLine, InTransitShipment,
-                     PlanningSku, Warehouse, WarehouseStock)
+                     PackAssembly, PlanningSku, Warehouse, WarehouseStock)
+
+
+@admin.register(PackAssembly)
+class PackAssemblyAdmin(admin.ModelAdmin):
+    list_display = ['assembled_sku', 'component_sku', 'component_per_pack',
+                    'active']
+    list_filter = ['active', 'component_per_pack']
+    search_fields = ['assembled_sku', 'component_sku']
+    list_editable = ['component_sku', 'component_per_pack', 'active']
 
 
 @admin.register(Warehouse)

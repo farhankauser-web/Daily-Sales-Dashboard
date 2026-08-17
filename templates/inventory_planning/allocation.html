@@ -314,7 +314,11 @@ function render(){
           ${o.po_line_id===r.allocs[0].po_line_id?'selected':''}>${o.label} — ${N(o.remaining)} open</option>`).join('')
         + '</select>';
     } else {
-      from = r.allocs.map(a => `<span class="chip">${a.pp} · ${a.po}</span> ${N(a.units)}u`).join('<br>');
+      from = r.allocs.map(a => {
+        const conv = (a.ratio > 1)
+          ? ` <span class="muted">→ ${N(a.source_units)}u ${a.comp_sku}</span>` : '';
+        return `<span class="chip">${a.pp} · ${a.po}</span> ${N(a.units)}u${conv}`;
+      }).join('<br>');
     }
     const open = r.allocs.reduce((s,a)=>s+a.line_remaining,0);
     return `<tr class="${cls}">
@@ -356,7 +360,8 @@ async function commit(){
   for (const r of PREV.rows)
     for (const a of r.allocs)
       allocs.push({sku:r.sku, po_line_id:a.po_line_id, opening_id:a.opening_id,
-                   src:a.src, units:a.units, fnsku:r.fnsku, fob:r.fob, po:a.po});
+                   src:a.src, units:a.units, source_units:a.source_units,
+                   comp_sku:a.comp_sku, fnsku:r.fnsku, fob:r.fob, po:a.po});
   const payload = {
     region: PREV.region,
     container: {container_no: f_cno.value, warehouse: f_wh.value,

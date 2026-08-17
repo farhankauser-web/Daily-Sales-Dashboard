@@ -22,8 +22,10 @@
 
 ## Allocation engine (procurement.py)
 - Draw order per packing-list row:
-  - Row names a PO number → that PO's lines only (exact override, INV-D-014). No opening.
-  - No PO number → **opening balances (as_of asc) first, then PO lines (order_date asc)**.
+  - Opening balances (as_of asc) are ALWAYS drawn first, then PO lines (order_date asc).
+  - A PO number on the row only narrows the PO side to that specific PO (INV-D-014);
+    it never excludes opening balance. (Fixed 2026-08-10 — the earlier "PO number
+    bypasses opening" behaviour blocked rows that had opening backlog.)
 - `_remaining_ob(ob, release_container_id)` mirrors `_remaining_for`.
 - Preview alloc entries carry a `src` = `opening` | `po` and the source id.
 - Commit merges by `(sku, src, src_id)`, over-alloc guard reads the right source's remaining,

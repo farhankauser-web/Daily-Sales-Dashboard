@@ -196,6 +196,13 @@ class InTransitLine(models.Model):
     sku      = models.CharField(max_length=64)
     units    = models.PositiveIntegerField(default=0)          # shipped qty (packing list = B)
     received_units = models.PositiveIntegerField(default=0)    # human count, Goods Receipt
+    # INV-REPACK-001: units actually DRAWN from the source (po_line/opening).
+    # For a normal line this equals `units`. For a factory-repack line — where
+    # an assembled SKU (e.g. TW-BLK-KTH-12) is built from a base SKU
+    # (TW-BLK-KTH-6) at N:1 — `sku`/`units` stay the assembled SKU that ships &
+    # receives at Amazon, while `source_units` = units × ratio is what the base
+    # PO/opening balance is decremented by. NULL = legacy/direct line (= units).
+    source_units = models.PositiveIntegerField(null=True, blank=True)
 
     # ── What Amazon reports for this SKU on the linked inbound shipment ──
     # Kept apart from received_units so an API sync never overwrites someone's
@@ -239,6 +246,27 @@ class InTransitLine(models.Model):
                        ('other', 'Other')]
     variance_reason = models.CharField(max_length=16, blank=True,
                                        choices=RECEIPT_REASONS)
+
+    # ── factory-repack drawdown (INV-REPACK-001) ──
+    @property
+    def drawn_units(self) -> int:
+        """Units taken off the linked source. Equals `units` unless this is a
+        repack line, where it is units × ratio (the base-SKU quantity)."""
+        return int(self.source_units) if self.source_units is not None \
+            else int(self.units or 0)
+
+    @property
+    def draw_ratio(self):
+        """Base units consumed per shipped unit — 1 for a direct line."""
+        if self.source_units and self.units:
+            return self.source_units / self.units
+        return 1
+
+    @property
+    def drawn_received_units(self) -> int:
+        """Receipt expressed in the base source's units, so a repacked line's
+        goods-receipt variance reconciles against the base PO line it drew."""
+        return int(round((self.received_units or 0) * self.draw_ratio))
 
     @property
     def counted_units(self) -> int:
@@ -429,16 +457,16 @@ class POLine(models.Model):
 
     @property
     def allocated_units(self):
-        return sum(a.units for a in self._live_allocations())
+        return sum(a.drawn_units for a in self._live_allocations())
 
     @property
     def loaded_units(self):
-        return sum(a.units for a in self._live_allocations()
+        return sum(a.drawn_units for a in self._live_allocations()
                    if a.shipment.status not in PENDING_PICKUP)
 
     @property
     def received_units(self):
-        return sum(a.received_units for a in self._live_allocations())
+        return sum(a.drawn_received_units for a in self._live_allocations())
 
     @property
     def in_transit_units(self):
@@ -462,7 +490,8 @@ class POLine(models.Model):
 
     @property
     def receipt_variance(self):
-        return sum(a.received_units - a.units for a in self._live_allocations()
+        return sum(a.drawn_received_units - a.drawn_units
+                   for a in self._live_allocations()
                    if a.shipment.status == 'received')
 
     # ── goods-receipt variance ──
@@ -483,13 +512,13 @@ class POLine(models.Model):
     def transit_shortage(self):
         """Allocated but not received on containers that HAVE been received —
         lost/damaged/short-shipped between supplier and FC."""
-        return sum(max(a.units - a.received_units, 0)
+        return sum(max(a.drawn_units - a.drawn_received_units, 0)
                    for a in self._live_allocations()
                    if a.shipment.status == 'received')
 
     @property
     def over_receipt(self):
-        return sum(max(a.received_units - a.units, 0)
+        return sum(max(a.drawn_received_units - a.drawn_units, 0)
                    for a in self._live_allocations()
                    if a.shipment.status == 'received')
 
@@ -735,11 +764,11 @@ class SupplierOpeningBalance(models.Model):
 
     @property
     def allocated_units(self):
-        return sum(a.units for a in self._live_allocations())
+        return sum(a.drawn_units for a in self._live_allocations())
 
     @property
     def received_units(self):
-        return sum(a.received_units for a in self._live_allocations())
+        return sum(a.drawn_received_units for a in self._live_allocations())
 
     @property
     def remaining_units(self):
@@ -750,3 +779,33 @@ class SupplierOpeningBalance(models.Model):
     def fob_value(self):
         """Outstanding money value of the remaining backlog, supplier currency."""
         return float(self.fob_rate) * self.remaining_units
+
+
+class PackAssembly(models.Model):
+    """INV-REPACK-001 — factory repack / bill-of-materials.
+
+    An assembled (retail) SKU is built at the factory from N units of a base
+    (procurement) SKU: TW-BLK-KTH-12 = 2 × TW-BLK-KTH-6, WSH-CLT-24-LGY =
+    2 × WSH-CLT-LGY-12. We place POs and carry opening balances in the BASE
+    SKU; the assembled SKU is what ships to and sells on Amazon.
+
+    So allocating the assembled SKU on a packing list draws down the base
+    SKU's PO/opening balance at `component_per_pack` : 1. This is a
+    procurement-side drawdown only — sales and demand forecasts stay attributed
+    to the assembled SKU. The map is explicit (not string-derived) because the
+    naming is inconsistent (a -12 suffix for towels, a -24- infix for
+    washcloths).
+    """
+    assembled_sku      = models.CharField(max_length=64, unique=True)
+    component_sku      = models.CharField(max_length=64)
+    component_per_pack = models.PositiveIntegerField(default=2)
+    active             = models.BooleanField(default=True)
+    note               = models.CharField(max_length=128, blank=True)
+
+    class Meta:
+        ordering = ['assembled_sku']
+        indexes = [models.Index(fields=['assembled_sku'])]
+
+    def __str__(self):
+        return (f'{self.assembled_sku} = {self.component_per_pack}× '
+                f'{self.component_sku}')
