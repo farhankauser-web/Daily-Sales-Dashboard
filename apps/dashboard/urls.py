@@ -5,6 +5,7 @@ from . import views_sti
 from . import views_marketing
 from . import views_actions
 from . import views_prefix
+from . import views_cogs
 
 app_name = 'dashboard'
 
@@ -14,11 +15,18 @@ urlpatterns = [
     path('cogs/',                views.cogs,               name='cogs'),
     path('cogs/fba-template/',   views.fba_rates_template_xlsx, name='fba_template'),
     path('cogs/missing/',        views.cogs_missing_csv,   name='cogs_missing_csv'),
+    # COGS entry browser — filter / sort / edit / delete
+    path('api/cogs/entries/',            views_cogs.api_cogs_entries,     name='api_cogs_entries'),
+    path('api/cogs/entries/<int:pk>/save/',
+                                         views_cogs.api_cogs_entry_save,  name='api_cogs_entry_save'),
+    path('api/cogs/entries/<int:pk>/delete/',
+                                         views_cogs.api_cogs_entry_delete, name='api_cogs_entry_delete'),
 
     # FBA Fee Drift (settlement-actual vs uploaded)
     path('fba-drift/',                  views.fba_fee_drift,            name='fba_fee_drift'),
     path('api/fba-drift/',              views.api_fba_fee_drift,        name='api_fba_fee_drift'),
     path('fba-drift/corrected-xlsx/',   views.fba_drift_corrected_xlsx, name='fba_drift_corrected_xlsx'),
+    path('fba-drift/export-xlsx/',      views.fba_drift_export_xlsx,    name='fba_drift_export_xlsx'),
 
     # Management P&L (settlement + COGS + PPC + manual overhead)
     path('pnl-statement/',              views.pnl_statement,            name='pnl_statement'),

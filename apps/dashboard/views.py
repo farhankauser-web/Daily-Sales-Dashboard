@@ -1956,6 +1956,86 @@ def api_fba_fee_drift(request):
 
 
 @login_required
+@permission_required('can_view_dashboard')
+def fba_drift_export_xlsx(request):
+    """Export the drift table exactly as it is on screen.
+
+    Uses the same filters as api_fba_fee_drift so the file always matches the
+    view — including the default "All SKUs", which shows uploaded vs actual for
+    every SKU, not only the ones that drifted. Distinct from
+    `fba_drift_corrected_xlsx`, which produces a re-upload template of
+    suggested fees for drifting SKUs only.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    from .fba_drift import compute_drift
+
+    marketplace = request.GET.get('mp', 'usa')
+    if not request.user.can_access_marketplace(marketplace):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    statuses_csv = (request.GET.get('status') or '').strip().lower()
+    statuses = [s for s in statuses_csv.split(',') if s] if statuses_csv else []
+    brand_filter = (request.GET.get('brand') or '').strip()
+    family_filter = (request.GET.get('family') or '').strip()
+    try:
+        min_impact = float(request.GET.get('min_impact') or 0)
+    except ValueError:
+        min_impact = 0.0
+
+    rows = [r for r in compute_drift(marketplace)
+            if not (statuses and r.status not in statuses)
+            and not (brand_filter and r.brand != brand_filter)
+            and not (family_filter and r.product_family != family_filter)
+            and r.dollar_impact >= min_impact]
+
+    _LABEL = {'critical': 'Action needed', 'warn': 'Drifting',
+              'ok': 'In line', 'no_upload': 'No uploaded fee'}
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'FBA fee drift'
+    headers = ['SKU', 'ASIN', 'Product', 'Brand', 'Family',
+               'Uploaded fee', 'Actual avg (14d)', 'Actual latest',
+               'Delta', 'Delta %', 'Units (14d)', '$ impact',
+               'Status', 'Latest actual date']
+    ws.append(headers)
+    for r in rows:
+        d = r.as_dict()
+        ws.append([
+            d.get('sku', ''), d.get('asin', ''), (d.get('title') or '')[:80],
+            d.get('brand', ''), d.get('product_family', ''),
+            round(float(d.get('uploaded_fee') or 0), 2),
+            round(float(d.get('actual_fee_avg') or 0), 2),
+            round(float(d.get('actual_fee_latest') or 0), 2),
+            round(float(d.get('delta') or 0), 2),
+            round(float(d.get('pct') or 0), 1),
+            int(d.get('actual_units') or 0),
+            round(float(d.get('dollar_impact') or 0), 2),
+            _LABEL.get(d.get('status'), d.get('status', '')),
+            d.get('actual_latest_date') or '',
+        ])
+    fill = PatternFill('solid', fgColor='232F3E')
+    for c in ws[1]:
+        c.font = Font(bold=True, color='FFFFFF')
+        c.fill = fill
+    ws.freeze_panes = 'A2'
+    for col, w in zip('ABCDEFGHIJKLMN',
+                      [22, 14, 42, 18, 18, 13, 15, 13, 10, 10, 12, 12, 16, 16]):
+        ws.column_dimensions[col].width = w
+
+    resp = HttpResponse(content_type=(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+    tag = statuses_csv.replace(',', '-') or 'all'
+    resp['Content-Disposition'] = (
+        f'attachment; filename="fba-fee-drift-{marketplace}-{tag}-'
+        f'{date.today().isoformat()}.xlsx"')
+    wb.save(resp)
+    return resp
+
+
+@login_required
 @permission_required('can_manage_cogs')
 def fba_drift_corrected_xlsx(request):
     """

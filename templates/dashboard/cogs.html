@@ -1,5 +1,50 @@
 {% extends "base/base.html" %}
-{% block title %}COGS & Product Catalog Upload{% endblock %}
+{% block title %}COGS & Product Catalog Upload
+  /* COGS entries browser */
+  .ce-filters { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+                 padding:8px 12px; margin:10px 0; display:flex; gap:8px;
+                 flex-wrap:wrap; align-items:center; font-size:11px; }
+  .ce-filters .lbl { color:var(--text3); }
+  .ce-filters select, .ce-filters input {
+      padding:4px 8px; font-size:11px; border:1px solid var(--border);
+      border-radius:4px; background:var(--bg); color:var(--text); }
+  .ce-filters input { width:180px; }
+  .ce-btn { padding:4px 12px; font-size:11px; border-radius:4px; cursor:pointer;
+             border:1px solid var(--border); background:var(--bg); color:var(--text); }
+  .ce-btn.go { background:#067D62; color:#fff; border-color:#067D62; }
+  .ce-btn.danger { color:var(--red); }
+  .ce-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .ce-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+                        font-weight:600; color:var(--text2); position:sticky; top:0;
+                        z-index:1; cursor:pointer; user-select:none; white-space:nowrap; }
+  .ce-table thead th.l { text-align:left; }
+  .ce-table thead th.sorted { color:var(--text); }
+  .ce-table tbody td { padding:5px 8px; text-align:right;
+                        border-bottom:1px solid #EAEDED;
+                        font-family:'DM Mono',monospace; }
+  .ce-table tbody td.l { text-align:left; font-family:inherit; }
+  .ce-table tbody tr:hover { background:var(--bg4); }
+  .ce-table input.cell { width:66px; padding:3px 5px; font-size:11px;
+                          border:1px solid var(--border); border-radius:3px;
+                          background:var(--bg2); color:var(--text);
+                          font-family:'DM Mono',monospace; text-align:right; }
+  .ce-msg { font-size:10px; margin-left:4px; }
+
+  /* themed confirm — consistent with the rest of Pulse */
+  .ce-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.4);
+                  display:flex; align-items:center; justify-content:center; z-index:1000; }
+  .ce-modal { background:var(--bg2); border-radius:10px; padding:18px 20px;
+               max-width:520px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,.25); }
+  .ce-modal h3 { margin:0 0 10px; font-size:15px; color:var(--text); }
+  .ce-modal .body { font-size:12px; color:var(--text2); line-height:1.55; }
+  .ce-modal .body b { color:var(--text); font-family:'DM Mono',monospace; }
+  .ce-modal .foot { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  .ce-modal .foot button { padding:6px 16px; font-size:12px; border-radius:5px;
+                            cursor:pointer; border:1px solid var(--border);
+                            background:var(--bg); color:var(--text); }
+  .ce-modal .foot button.danger { background:#C7522A; color:#fff; border-color:#C7522A; }
+
+{% endblock %}
 {% block nav_cogs %}active{% endblock %}
 {% block page_title %}COGS & Product Catalog Upload{% endblock %}
 
@@ -191,77 +236,44 @@
   </div>
 </div>
 
-<!-- UPLOAD HISTORY / RECENT ENTRIES -->
+<!-- COGS ENTRIES — filter · sort · edit · delete -->
 <div class="card">
   <div class="card-header">
-    <div class="card-title">📋 Upload History</div>
-    <span style="font-size:12px;color:var(--text3)">Last 100 entries</span>
+    <div class="card-title">📋 COGS Entries</div>
+    <span style="font-size:12px;color:var(--text3)" id="ceCount"></span>
   </div>
 
-  {% if recent %}
-  <div style="overflow-x:auto">
-    <table>
-      <thead>
-        <tr>
-          <th style="text-align:left">ASIN</th>
-          <th style="text-align:left">Marketplace</th>
-          <th style="text-align:left">Month</th>
-          <th>Unit Cost</th>
-          <th>Shipping</th>
-          <th>Duties</th>
-          <th>Prep</th>
-          <th>Total COGS</th>
-          <th style="text-align:left">Status</th>
-          <th style="text-align:left">Updated</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for e in recent %}
-        <tr>
-          <td>
-            <span style="font-family:'DM Mono',monospace;font-size:11.5px;font-weight:600;color:var(--accent)">
-              {{ e.product.asin }}
-            </span>
-          </td>
-          <td style="text-align:left">
-            {% with mp=e.product.marketplace %}
-            {% if mp == 'usa' %}🇺🇸 USA
-            {% elif mp == 'ca'  %}🇨🇦 CA
-            {% elif mp == 'uk'  %}🇬🇧 UK
-            {% elif mp == 'de'  %}🇩🇪 DE
-            {% elif mp == 'ae'  %}🇦🇪 UAE
-            {% elif mp == 'sa'  %}🇸🇦 KSA
-            {% else %}{{ mp|upper }}{% endif %}
-            {% endwith %}
-          </td>
-          <td style="text-align:left;font-family:'DM Mono',monospace;font-size:11px">
-            {{ e.month|date:"M Y" }}
-          </td>
-          <td>${{ e.unit_cost }}</td>
-          <td>${{ e.shipping_cost }}</td>
-          <td>${{ e.duties_cost }}</td>
-          <td>${{ e.prep_cost }}</td>
-          <td>
-            <strong style="color:var(--text)">${{ e.total_cost|floatformat:2 }}</strong>
-          </td>
-          <td style="text-align:left">
-            <span class="badge badge-green">✓ Saved</span>
-          </td>
-          <td style="text-align:left;font-size:11px;color:var(--text3)">
-            {{ e.updated_at|date:"M j, Y" }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
+  <div class="ce-filters">
+    <span class="lbl">Region</span>
+    <select id="ceMp" onchange="ceLoad()"><option value="">All</option></select>
+    <span class="lbl">Month</span>
+    <select id="ceMonth" onchange="ceLoad()"><option value="">All</option></select>
+    <span class="lbl">SKU group</span>
+    <select id="ceCat" onchange="ceLoad()"><option value="">All</option></select>
+    <input id="ceQ" placeholder="SKU, ASIN or title" oninput="ceDebounce()">
+    <button class="ce-btn" onclick="ceReset()">Reset</button>
+  </div>
+
+  <div style="overflow-x:auto;max-height:calc(100vh - 420px)">
+    <table class="ce-table" id="ceTable">
+      <thead><tr>
+        <th class="l" data-sort="sku">SKU</th>
+        <th class="l" data-sort="asin">ASIN</th>
+        <th class="l" data-sort="category">Group</th>
+        <th class="l" data-sort="marketplace">Region</th>
+        <th class="l" data-sort="month">Month</th>
+        <th data-sort="unit_cost">Unit</th>
+        <th data-sort="shipping_cost">Shipping</th>
+        <th data-sort="duties_cost">Duties</th>
+        <th data-sort="prep_cost">Prep</th>
+        <th data-sort="other_cost">Other</th>
+        <th data-sort="total_cogs">Total</th>
+        <th class="l" data-sort="updated_at">Updated</th>
+        <th class="l"></th>
+      </tr></thead>
+      <tbody id="ceBody"><tr><td colspan="13" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr></tbody>
     </table>
   </div>
-  {% else %}
-  <div style="padding:40px;text-align:center;color:var(--text3)">
-    <div style="font-size:32px;margin-bottom:10px">📊</div>
-    <div style="font-weight:600;margin-bottom:4px;color:var(--text2)">No COGS data uploaded yet</div>
-    <div style="font-size:12px">Upload a CSV or add entries manually to get started.</div>
-  </div>
-  {% endif %}
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════
@@ -400,4 +412,147 @@ function downloadMissingCogs(){
   window.location = "{% url 'dashboard:cogs_missing_csv' %}" + `?mp=usa&month=${month}`;
 }
 </script>
+
+<div id="ceModal" class="ce-modal-bg" style="display:none" onclick="ceDismiss(event)">
+  <div class="ce-modal" onclick="event.stopPropagation()">
+    <h3 id="ceModalTitle"></h3>
+    <div class="body" id="ceModalBody"></div>
+    <div class="foot">
+      <button onclick="ceDismiss()">Cancel</button>
+      <button id="ceModalOk" class="danger" onclick="ceAccept()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── COGS entries: filter · sort · edit · hard delete ────────────────────── */
+let ceData = null, ceSort = {key:'month', dir:-1}, ceTimer = null;
+
+function ceEsc(s){ return String(s==null?'':s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function ceCsrf(){ const m=document.cookie.match(/csrftoken=([^;]+)/); return m?m[1]:''; }
+function ceDebounce(){ clearTimeout(ceTimer); ceTimer=setTimeout(ceLoad, 350); }
+function ceReset(){
+  ['ceMp','ceMonth','ceCat'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ceQ').value=''; ceLoad();
+}
+
+/* themed confirm, same pattern as the other Pulse pages */
+let _ceResolve=null;
+function ceConfirm({title, body, okLabel='Delete'}){
+  document.getElementById('ceModalTitle').textContent=title;
+  document.getElementById('ceModalBody').innerHTML=body;
+  document.getElementById('ceModalOk').textContent=okLabel;
+  document.getElementById('ceModal').style.display='flex';
+  return new Promise(r=>{_ceResolve=r;});
+}
+function ceDismiss(ev){ if(ev&&ev.target!==ev.currentTarget)return;
+  document.getElementById('ceModal').style.display='none';
+  if(_ceResolve){_ceResolve(false);_ceResolve=null;} }
+function ceAccept(){ document.getElementById('ceModal').style.display='none';
+  if(_ceResolve){_ceResolve(true);_ceResolve=null;} }
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && document.getElementById('ceModal').style.display==='flex') ceDismiss(); });
+
+const CE_MP = {usa:'🇺🇸 USA', ca:'🇨🇦 CA', uk:'🇬🇧 UK', de:'🇩🇪 DE', ae:'🇦🇪 UAE', sa:'🇸🇦 KSA'};
+
+function ceRender(){
+  if(!ceData) return;
+  const rows = ceData.rows.slice().sort((a,b)=>{
+    const av=a[ceSort.key], bv=b[ceSort.key];
+    if(av==null&&bv==null) return 0; if(av==null) return 1; if(bv==null) return -1;
+    if(typeof av==='string') return ceSort.dir*av.localeCompare(bv);
+    return ceSort.dir*(av-bv);
+  });
+  document.getElementById('ceCount').textContent =
+    `${ceData.shown} of ${ceData.total} entries` + (ceData.truncated?' (truncated)':'');
+  const b=document.getElementById('ceBody');
+  if(!rows.length){ b.innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--text3);padding:22px">No entries match these filters.</td></tr>'; return; }
+  b.innerHTML = rows.map(r=>`<tr id="ce-${r.id}">
+    <td class="l"><b>${ceEsc(r.sku)||'—'}</b></td>
+    <td class="l" style="color:var(--text2)">${ceEsc(r.asin)}</td>
+    <td class="l" style="color:var(--text2)">${ceEsc(r.category)||'—'}</td>
+    <td class="l">${CE_MP[r.marketplace]||r.marketplace.toUpperCase()}</td>
+    <td class="l">${ceEsc(r.month_label)}</td>
+    <td><input class="cell" id="f-unit_cost-${r.id}" value="${r.unit_cost.toFixed(2)}"></td>
+    <td><input class="cell" id="f-shipping_cost-${r.id}" value="${r.shipping_cost.toFixed(2)}"></td>
+    <td><input class="cell" id="f-duties_cost-${r.id}" value="${r.duties_cost.toFixed(2)}"></td>
+    <td><input class="cell" id="f-prep_cost-${r.id}" value="${r.prep_cost.toFixed(2)}"></td>
+    <td><input class="cell" id="f-other_cost-${r.id}" value="${r.other_cost.toFixed(2)}"></td>
+    <td><b id="tot-${r.id}">$${r.total_cogs.toFixed(2)}</b></td>
+    <td class="l" style="color:var(--text3);font-size:10px">${(r.updated_at||'').slice(0,10)}</td>
+    <td class="l" style="white-space:nowrap">
+      <button class="ce-btn go" onclick="ceSave(${r.id})">Save</button>
+      <button class="ce-btn danger" onclick="ceDelete(${r.id})">Delete</button>
+      <span class="ce-msg" id="msg-${r.id}"></span></td>
+  </tr>`).join('');
+  document.querySelectorAll('#ceTable thead th').forEach(th=>{
+    th.classList.toggle('sorted', th.dataset.sort===ceSort.key); });
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.querySelectorAll('#ceTable thead th').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const k=th.dataset.sort; if(!k) return;
+      if(ceSort.key===k) ceSort.dir*=-1; else ceSort={key:k, dir:-1};
+      ceRender();
+    });
+  });
+  ceLoad();
+});
+
+async function ceSave(id){
+  const msg=document.getElementById('msg-'+id); msg.textContent='Saving…';
+  const body={};
+  ['unit_cost','shipping_cost','duties_cost','prep_cost','other_cost'].forEach(f=>{
+    body[f]=parseFloat(document.getElementById(`f-${f}-${id}`).value||0); });
+  const r=await fetch(`/dashboard/api/cogs/entries/${id}/save/`, {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':ceCsrf()},
+    body:JSON.stringify(body)});
+  const d=await r.json();
+  if(r.ok){
+    document.getElementById('tot-'+id).textContent='$'+d.row.total_cogs.toFixed(2);
+    const i=ceData.rows.findIndex(x=>x.id===id); if(i>=0) ceData.rows[i]=d.row;
+    msg.innerHTML='<span style="color:var(--green)">Saved</span>';
+    setTimeout(()=>{msg.textContent='';}, 1600);
+  } else { msg.innerHTML=`<span style="color:var(--red)">${ceEsc(d.message)}</span>`; }
+}
+
+async function ceDelete(id){
+  const r0=ceData.rows.find(x=>x.id===id)||{};
+  const ok=await ceConfirm({
+    title:'Delete this COGS entry?',
+    body:`<p>Permanently delete the cost entry for <b>${ceEsc(r0.sku)}</b>
+        (${ceEsc(r0.month_label)}, ${ceEsc((CE_MP[r0.marketplace]||r0.marketplace||'').replace(/^\S+\s/,''))})?</p>
+      <p>This SKU will then have <b>no cost for that month</b>. Any later
+        recalculation of that month will show it with zero COGS, which changes
+        the margin figures for the period.</p>
+      <p style="color:var(--text3)">This is permanent — there is no undo.
+        Re-add it by upload or the manual form if you need it back.</p>`});
+  if(!ok) return;
+  const msg=document.getElementById('msg-'+id); msg.textContent='Deleting…';
+  const res=await fetch(`/dashboard/api/cogs/entries/${id}/delete/`, {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':ceCsrf()}});
+  const d=await res.json();
+  if(res.ok){ ceData.rows=ceData.rows.filter(x=>x.id!==id); ceData.total--; ceData.shown--; ceRender(); }
+  else { msg.innerHTML=`<span style="color:var(--red)">${ceEsc(d.message)}</span>`; }
+}
+
+async function ceLoad(){
+  const p=new URLSearchParams();
+  const mp=document.getElementById('ceMp').value, mo=document.getElementById('ceMonth').value;
+  const ct=document.getElementById('ceCat').value, q=document.getElementById('ceQ').value.trim();
+  if(mp)p.set('mp',mp); if(mo)p.set('month',mo); if(ct)p.set('category',ct); if(q)p.set('q',q);
+  const r=await fetch('/dashboard/api/cogs/entries/?'+p.toString());
+  ceData=await r.json();
+  const o=ceData.options;
+  const fill=(id,items,cur)=>{ const el=document.getElementById(id);
+    if(el.options.length<=1){ el.innerHTML='<option value="">All</option>'+items;
+      el.value=cur||''; } };
+  fill('ceMp', o.marketplaces.map(m=>`<option value="${m}">${CE_MP[m]||m.toUpperCase()}</option>`).join(''), mp);
+  fill('ceMonth', o.months.map(m=>`<option value="${m.value}">${ceEsc(m.label)}</option>`).join(''), mo);
+  fill('ceCat', o.categories.map(c=>`<option value="${ceEsc(c)}">${ceEsc(c)}</option>`).join(''), ct);
+  ceRender();
+}
+</script>
+
 {% endblock %}
