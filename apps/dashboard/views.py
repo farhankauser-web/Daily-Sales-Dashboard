@@ -1999,69 +1999,92 @@ def fba_drift_export_xlsx(request):
     if not request.user.can_access_marketplace(marketplace):
         return JsonResponse({'error': 'forbidden'}, status=403)
 
-    statuses_csv = (request.GET.get('status') or '').strip().lower()
-    statuses = [s for s in statuses_csv.split(',') if s] if statuses_csv else []
-    brand_filter = (request.GET.get('brand') or '').strip()
-    family_filter = (request.GET.get('family') or '').strip()
     try:
-        min_impact = float(request.GET.get('min_impact') or 0)
+        window_days = max(1, min(int(request.GET.get('window_days') or 30), 365))
     except ValueError:
-        min_impact = 0.0
+        window_days = 30
 
-    try:
-        window_days = max(1, min(int(request.GET.get('window_days') or 14), 365))
-    except ValueError:
-        window_days = 14
-    show_all = (request.GET.get('show_all') or '').lower() in ('1', 'true', 'yes')
-
-    rows = [r for r in compute_drift(marketplace, window_days=window_days,
-                                     include_zero_volume=show_all)
-            if not (statuses and r.status not in statuses)
-            and not (brand_filter and r.brand != brand_filter)
-            and not (family_filter and r.product_family != family_filter)
-            and r.dollar_impact >= min_impact]
+    # The export is deliberately COMPLETE: every SKU, every marketplace the
+    # user can see, one sheet per region. Screen filters are for finding
+    # something; a download is for working the whole list offline, so status /
+    # brand / min-impact filters are NOT applied here and the volume floor is
+    # dropped. (`fba_drift_corrected_xlsx` remains the narrow, drifting-only
+    # re-upload template.)
+    marketplaces = _allowed_marketplaces(request.user)
+    if request.GET.get('mp') and request.GET.get('scope') == 'current':
+        marketplaces = [marketplace]
 
     _LABEL = {'critical': 'Action needed', 'warn': 'Drifting',
               'ok': 'In line', 'no_upload': 'No uploaded fee',
               'no_actuals': 'No settlement data in window'}
+    _MP_NAME = {'usa': 'USA', 'ca': 'Canada', 'uk': 'UK', 'de': 'Germany',
+                'ae': 'UAE', 'sa': 'KSA'}
+    headers = ['SKU', 'ASIN', 'Product', 'Brand', 'Family',
+               'Uploaded fee', f'Actual avg ({window_days}d)', 'Actual latest',
+               'Delta', 'Delta %', f'Units ({window_days}d)', '$ impact',
+               'Status', 'Latest actual date']
+    fill = PatternFill('solid', fgColor='232F3E')
 
     wb = Workbook()
-    ws = wb.active
-    ws.title = 'FBA fee drift'
-    headers = ['SKU', 'ASIN', 'Product', 'Brand', 'Family',
-               'Uploaded fee', 'Actual avg (14d)', 'Actual latest',
-               'Delta', 'Delta %', 'Units (14d)', '$ impact',
-               'Status', 'Latest actual date']
-    ws.append(headers)
-    for r in rows:
-        d = r.as_dict()
-        ws.append([
-            d.get('sku', ''), d.get('asin', ''), (d.get('title') or '')[:80],
-            d.get('brand', ''), d.get('product_family', ''),
-            round(float(d.get('uploaded_fee') or 0), 2),
-            round(float(d.get('actual_fee_avg') or 0), 2),
-            round(float(d.get('actual_fee_latest') or 0), 2),
-            round(float(d.get('delta') or 0), 2),
-            round(float(d.get('pct') or 0), 1),
-            int(d.get('actual_units') or 0),
-            round(float(d.get('dollar_impact') or 0), 2),
-            _LABEL.get(d.get('status'), d.get('status', '')),
-            d.get('actual_latest_date') or '',
-        ])
-    fill = PatternFill('solid', fgColor='232F3E')
-    for c in ws[1]:
+    wb.remove(wb.active)
+    totals = []
+    for mp in marketplaces:
+        rows = compute_drift(mp, window_days=window_days,
+                             include_zero_volume=True)
+        rows.sort(key=lambda r: -r.dollar_impact)
+        ws = wb.create_sheet(title=_MP_NAME.get(mp, mp.upper())[:31])
+        ws.append(headers)
+        for r in rows:
+            d = r.as_dict()
+            ws.append([
+                d.get('sku', ''), d.get('asin', ''),
+                (d.get('product_name') or '')[:80],
+                d.get('brand', ''), d.get('product_family', ''),
+                round(float(d.get('uploaded_fee') or 0), 2),
+                round(float(d.get('actual_fee_avg') or 0), 2),
+                round(float(d.get('actual_fee_latest') or 0), 2),
+                round(float(d.get('delta') or 0), 2),
+                round(float(d.get('pct') or 0), 1),
+                int(d.get('actual_units') or 0),
+                round(float(d.get('dollar_impact') or 0), 2),
+                _LABEL.get(d.get('status'), d.get('status', '')),
+                d.get('actual_latest_date') or '',
+            ])
+        for c in ws[1]:
+            c.font = Font(bold=True, color='FFFFFF')
+            c.fill = fill
+        ws.freeze_panes = 'A2'
+        ws.auto_filter.ref = f'A1:N{max(ws.max_row, 1)}'
+        for col, w in zip('ABCDEFGHIJKLMN',
+                          [22, 14, 42, 18, 18, 13, 15, 13, 10, 10, 12, 12, 22, 16]):
+            ws.column_dimensions[col].width = w
+        totals.append((mp, len(rows),
+                       sum(1 for r in rows if r.status in ('warn', 'critical'))))
+
+    # Leading summary sheet so the workbook explains itself.
+    s = wb.create_sheet(title='Summary', index=0)
+    s.append(['FBA fee drift — all SKUs'])
+    s.append([f'Generated {date.today().isoformat()} · '
+              f'{window_days}-day settlement window · every SKU included'])
+    s.append([])
+    s.append(['Region', 'SKUs', 'Drifting (🟡+🔴)'])
+    for mp, n, drift in totals:
+        s.append([_MP_NAME.get(mp, mp.upper()), n, drift])
+    s.append([])
+    s.append(['A region with 0 SKUs, or every row showing "No settlement data",',
+              'has no settlement reports ingested yet — drift cannot be',
+              'computed there until it does.'])
+    s['A1'].font = Font(bold=True, size=13)
+    for c in s[4]:
         c.font = Font(bold=True, color='FFFFFF')
         c.fill = fill
-    ws.freeze_panes = 'A2'
-    for col, w in zip('ABCDEFGHIJKLMN',
-                      [22, 14, 42, 18, 18, 13, 15, 13, 10, 10, 12, 12, 16, 16]):
-        ws.column_dimensions[col].width = w
+    for col, w in zip('ABC', [34, 12, 18]):
+        s.column_dimensions[col].width = w
 
     resp = HttpResponse(content_type=(
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
-    tag = statuses_csv.replace(',', '-') or 'all'
     resp['Content-Disposition'] = (
-        f'attachment; filename="fba-fee-drift-{marketplace}-{tag}-'
+        f'attachment; filename="fba-fee-drift-all-regions-'
         f'{date.today().isoformat()}.xlsx"')
     wb.save(resp)
     return resp

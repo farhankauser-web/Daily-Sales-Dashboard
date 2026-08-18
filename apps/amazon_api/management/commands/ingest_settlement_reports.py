@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -202,7 +203,16 @@ class Command(BaseCommand):
                                        'currency': native_ccy,
                                        'source_note': 'settlement'},
                         )
-                        row.amount = (row.amount or 0) + round(vals['amount'], 2)
+                        # row.amount comes back from the DB as Decimal, while
+                        # the parsed settlement value is a float — adding them
+                        # raises TypeError and, because this runs inside the
+                        # same transaction.atomic() as the SkuFeeActual writes
+                        # above, it rolled the FEE ROWS BACK TOO. That is why
+                        # the FBA "actual" fee stopped updating entirely.
+                        # Convert through str so binary float error is not
+                        # carried into the decimal.
+                        row.amount = (row.amount or Decimal('0')) + Decimal(
+                            str(round(float(vals['amount']), 2)))
                         row.units  = (row.units or 0) + int(vals['units'])
                         row.currency = native_ccy
                         row.source_note = 'settlement'

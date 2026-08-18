@@ -135,7 +135,7 @@
   </label>
 
   <button class="btn btn-secondary btn-sm" style="margin-left:auto;padding:5px 12px;font-size:11px"
-          onclick="exportDrift()">⬇ Export view (Excel)</button>
+          onclick="exportDrift()" title="All SKUs, all regions — one sheet per region">⬇ Download all SKUs (Excel)</button>
 
   <label>Brand:</label>
   <select id="fBrand" onchange="reloadTable()"><option value="">All</option></select>
@@ -208,21 +208,20 @@ function downloadCorrected() {
 }
 
 function reloadTable() {
-  if (!driftData) return loadDrift();
-  renderTable();
+  // Every filter on this page (status, brand, family, min-impact, window,
+  // show-all) is applied SERVER-side, so a change must re-fetch. Re-rendering
+  // the cached payload silently ignored the new filter.
+  return loadDrift();
 }
 
 /* Export exactly what the table is currently showing — same filters, same
    rows, so the file always matches the screen. */
 function exportDrift() {
+  // Downloads EVERY SKU for every region you can see, one sheet per region —
+  // screen filters are not applied, so the file is always the full picture.
   const qs = new URLSearchParams({
     mp: currentMP,
-    status: document.getElementById('fStatus').value,
-    brand: document.getElementById('fBrand').value,
-    family: document.getElementById('fFamily').value,
-    min_impact: document.getElementById('fMinImpact').value || 0,
     window_days: document.getElementById('fWindowDays').value,
-    show_all: document.getElementById('fShowAll').checked ? '1' : '',
   });
   window.location = '/dashboard/fba-drift/export-xlsx/?' + qs.toString();
 }
