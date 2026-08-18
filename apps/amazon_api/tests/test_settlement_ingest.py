@@ -109,3 +109,35 @@ class DriftWindowTests(TestCase):
 
         self.assertEqual(_classify(pct=-100.0, impact=0.0,
                                    uploaded_fee=5.0, units=0), 'no_actuals')
+
+
+class SettlementDateFormatTests(TestCase):
+    """Amazon localises posted-date per marketplace — all forms must parse."""
+
+    def _parse(self, s):
+        from apps.amazon_api.management.commands.ingest_settlement_reports \
+            import Command
+        return Command._parse_iso_date(s)
+
+    def test_us_iso_format(self):
+        self.assertEqual(self._parse('2026-07-23'), date(2026, 7, 23))
+
+    def test_us_iso_with_time(self):
+        self.assertEqual(self._parse('2026-07-23T09:46:55+00:00'),
+                         date(2026, 7, 23))
+
+    def test_uk_eu_dotted_format(self):
+        """The exact string that silently dropped every UK fee row."""
+        self.assertEqual(self._parse('23.07.2026'), date(2026, 7, 23))
+
+    def test_uk_eu_dotted_with_time_and_zone(self):
+        self.assertEqual(self._parse('23.07.2026 09:46:55 UTC'),
+                         date(2026, 7, 23))
+
+    def test_day_is_not_read_as_month(self):
+        """13.07 must be 13 July, never 7 December."""
+        self.assertEqual(self._parse('13.07.2026'), date(2026, 7, 13))
+
+    def test_garbage_returns_none_not_exception(self):
+        for bad in ('', None, 'not-a-date', '99.99.9999'):
+            self.assertIsNone(self._parse(bad))
