@@ -64,6 +64,7 @@
   .fd-status.warn      { background:var(--warn-weak); color:var(--warn-ink); }
   .fd-status.critical  { background:var(--crit-weak); color:#B12704; }
   .fd-status.no_upload { background:#EEF1F4; color:var(--text2); }
+  .fd-status.no_actuals{ background:#EEF1F4; color:var(--text3); }
 
   .fd-delta.pos { color:#B12704; font-weight:600; }   /* actual > uploaded — over-spending */
   .fd-delta.neg { color:var(--green); font-weight:600; }   /* actual < uploaded — under-spending */
@@ -116,7 +117,22 @@
     <option value="warn">Warning only (🟡)</option>
     <option value="ok">In line (🟢)</option>
     <option value="no_upload">No uploaded fee</option>
+    <option value="no_actuals">No settlement data</option>
   </select>
+
+  <label>Window:</label>
+  <select id="fWindowDays" onchange="reloadTable()">
+    <option value="14">14 days</option>
+    <option value="30" selected>30 days</option>
+    <option value="60">60 days</option>
+    <option value="90">90 days</option>
+    <option value="365">All available</option>
+  </select>
+
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" id="fShowAll" checked onchange="reloadTable()">
+    <span title="Include SKUs below the 10-unit volume floor, and SKUs with no settlement rows in the window">Show every SKU</span>
+  </label>
 
   <button class="btn btn-secondary btn-sm" style="margin-left:auto;padding:5px 12px;font-size:11px"
           onclick="exportDrift()">⬇ Export view (Excel)</button>
@@ -205,6 +221,8 @@ function exportDrift() {
     brand: document.getElementById('fBrand').value,
     family: document.getElementById('fFamily').value,
     min_impact: document.getElementById('fMinImpact').value || 0,
+    window_days: document.getElementById('fWindowDays').value,
+    show_all: document.getElementById('fShowAll').checked ? '1' : '',
   });
   window.location = '/dashboard/fba-drift/export-xlsx/?' + qs.toString();
 }
@@ -215,7 +233,11 @@ async function loadDrift() {
   const family     = document.getElementById('fFamily').value;
   const minImpact  = document.getElementById('fMinImpact').value || 0;
 
-  const qs = new URLSearchParams({mp: currentMP, status, brand, family, min_impact: minImpact});
+  const windowDays = document.getElementById('fWindowDays').value;
+  const showAll    = document.getElementById('fShowAll').checked ? '1' : '';
+  const qs = new URLSearchParams({mp: currentMP, status, brand, family,
+                                  min_impact: minImpact,
+                                  window_days: windowDays, show_all: showAll});
   const r  = await fetch(URL_API + '?' + qs.toString());
   driftData = await r.json();
   populateFilters();
@@ -304,6 +326,7 @@ function renderTable() {
         <td><span class="fd-status ${r.status}">${
           r.status === 'critical'  ? '🔴 Action' :
           r.status === 'warn'      ? '🟡 Drift'  :
+          r.status === 'no_actuals'? 'No settlement data' :
           r.status === 'no_upload' ? 'No upload' :
           '🟢 OK'
         }</span></td>

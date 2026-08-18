@@ -52,8 +52,17 @@ class DriftRow:
         return d
 
 
-def _classify(pct: float, impact: float, uploaded_fee: float) -> str:
-    """Map (pct drift, $ impact, uploaded fee presence) → status flag."""
+def _classify(pct: float, impact: float, uploaded_fee: float,
+              units: int = 1) -> str:
+    """Map (pct drift, $ impact, uploaded fee, volume) → status flag.
+
+    `units == 0` means no settlement rows for this SKU in the window, so there
+    is nothing to compare against. Without this guard the row computed as
+    actual=0 → −100% drift → 'critical', inventing an alarm out of missing
+    data. It is reported as its own state instead.
+    """
+    if units <= 0:
+        return 'no_actuals'
     if uploaded_fee <= 0:
         return 'no_upload'
     abs_pct = abs(pct)
@@ -183,7 +192,10 @@ def compute_drift(
         latest_fee  = agg.get('latest_fee', 0.0)
         latest_date = agg.get('latest_date')
 
-        if uploaded_fee > 0:
+        # With no settlement rows there is no actual to compare — leave the
+        # delta at zero rather than reading the absent value as 0.00 and
+        # reporting a −100% drift.
+        if uploaded_fee > 0 and units > 0:
             delta = actual_avg - uploaded_fee
             pct   = (delta / uploaded_fee) * 100.0
         else:
@@ -191,7 +203,7 @@ def compute_drift(
             pct   = 0.0
 
         impact = abs(delta) * units
-        status = _classify(pct, impact, uploaded_fee)
+        status = _classify(pct, impact, uploaded_fee, units)
 
         rows.append(DriftRow(
             sku                = sku,

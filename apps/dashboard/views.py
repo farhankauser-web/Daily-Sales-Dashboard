@@ -1906,7 +1906,18 @@ def api_fba_fee_drift(request):
     if not request.user.can_access_marketplace(marketplace):
         return JsonResponse({'error': 'forbidden'}, status=403)
 
-    rows = compute_drift(marketplace)
+    # Window and volume floor are user-controllable: settlement data arrives in
+    # arrears and varies by marketplace, so a fixed 14-day / 10-unit view hides
+    # most of the catalogue. `show_all` drops the volume floor so SKUs with
+    # little or no settlement volume are still listed (as 'no_actuals').
+    try:
+        window_days = max(1, min(int(request.GET.get('window_days') or 14), 365))
+    except ValueError:
+        window_days = 14
+    show_all = (request.GET.get('show_all') or '').lower() in ('1', 'true', 'yes')
+
+    rows = compute_drift(marketplace, window_days=window_days,
+                         include_zero_volume=show_all)
     summary = summarize(rows)
 
     # Apply optional filters from query string
@@ -1939,10 +1950,23 @@ def api_fba_fee_drift(request):
                     .filter(marketplace=marketplace, status='ok')
                     .order_by('-end_date', '-synced_at').first())
 
+    # Coverage — so the page can distinguish "no drift" from "no data".
+    from .models import SkuFeeActual
+    cov = SkuFeeActual.objects.filter(marketplace=marketplace)
+    coverage = {
+        'has_settlement_data': cov.exists(),
+        'latest_actual': (cov.order_by('-date')
+                          .values_list('date', flat=True).first().isoformat()
+                          if cov.exists() else None),
+        'window_days': window_days,
+        'show_all': show_all,
+    }
+
     return JsonResponse({
         'marketplace':         marketplace,
         'rows':                filtered,
         'summary':             summary,
+        'coverage':            coverage,
         'brand_options':       brands,
         'family_options':      families,
         'last_settlement':     {
@@ -1984,14 +2008,22 @@ def fba_drift_export_xlsx(request):
     except ValueError:
         min_impact = 0.0
 
-    rows = [r for r in compute_drift(marketplace)
+    try:
+        window_days = max(1, min(int(request.GET.get('window_days') or 14), 365))
+    except ValueError:
+        window_days = 14
+    show_all = (request.GET.get('show_all') or '').lower() in ('1', 'true', 'yes')
+
+    rows = [r for r in compute_drift(marketplace, window_days=window_days,
+                                     include_zero_volume=show_all)
             if not (statuses and r.status not in statuses)
             and not (brand_filter and r.brand != brand_filter)
             and not (family_filter and r.product_family != family_filter)
             and r.dollar_impact >= min_impact]
 
     _LABEL = {'critical': 'Action needed', 'warn': 'Drifting',
-              'ok': 'In line', 'no_upload': 'No uploaded fee'}
+              'ok': 'In line', 'no_upload': 'No uploaded fee',
+              'no_actuals': 'No settlement data in window'}
 
     wb = Workbook()
     ws = wb.active
