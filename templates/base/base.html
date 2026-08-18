@@ -631,6 +631,9 @@ tfoot td:first-child { text-align: left; }
   <a href="{% url 'dashboard:fba_fee_drift' %}" class="nav-item {% block nav_fba_drift %}{% endblock %}">
     <span class="nav-icon">⚖️</span> FBA Fee Drift
   </a>
+  <a href="{% url 'dashboard:fba_intelligence' %}" class="nav-item {% block nav_fba_intel %}{% endblock %}">
+    <span class="nav-icon">🧾</span> FBA Fee Intelligence
+  </a>
   {% endif %}
   {% if user|has_perm:'can_manage_targets' %}
   <a href="{% url 'dashboard:targets' %}" class="nav-item {% block nav_targets %}{% endblock %}">

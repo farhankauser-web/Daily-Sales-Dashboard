@@ -6,6 +6,7 @@ from . import views_marketing
 from . import views_actions
 from . import views_prefix
 from . import views_cogs
+from . import views_fba_intel
 
 app_name = 'dashboard'
 
@@ -24,6 +25,10 @@ urlpatterns = [
 
     # FBA Fee Drift (settlement-actual vs uploaded)
     path('fba-drift/',                  views.fba_fee_drift,            name='fba_fee_drift'),
+    # FBA Fee Intelligence (Phase A) — what the fee did and what it cost
+    path('fba-intelligence/',           views_fba_intel.fba_intelligence,        name='fba_intelligence'),
+    path('api/fba-intelligence/',       views_fba_intel.api_fba_intelligence,    name='api_fba_intelligence'),
+    path('fba-intelligence/export/',    views_fba_intel.fba_intelligence_export, name='fba_intelligence_export'),
     path('api/fba-drift/',              views.api_fba_fee_drift,        name='api_fba_fee_drift'),
     path('fba-drift/corrected-xlsx/',   views.fba_drift_corrected_xlsx, name='fba_drift_corrected_xlsx'),
     path('fba-drift/export-xlsx/',      views.fba_drift_export_xlsx,    name='fba_drift_export_xlsx'),

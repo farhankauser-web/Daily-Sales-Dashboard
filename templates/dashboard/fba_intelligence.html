@@ -1,0 +1,301 @@
+{% extends "base/base.html" %}
+{% block title %}FBA Fee Intelligence{% endblock %}
+{% block nav_fba_intel %}active{% endblock %}
+{% block page_title %}FBA Fee Intelligence{% endblock %}
+
+{% block topbar_controls %}
+<div class="mp-selector" id="mpSelector">
+  {% for mp in allowed_marketplaces %}
+  <button class="mp-btn {% if mp == marketplace %}active{% endif %}"
+          data-mp="{{ mp }}" onclick="setMP('{{ mp }}', this)">
+    {% if mp == 'usa' %}🇺🇸 USA{% elif mp == 'ca' %}🇨🇦 CA{% elif mp == 'uk' %}🇬🇧 UK
+    {% elif mp == 'de' %}🇩🇪 DE{% elif mp == 'ae' %}🇦🇪 UAE{% elif mp == 'sa' %}🇸🇦 KSA
+    {% else %}{{ mp|upper }}{% endif %}
+  </button>
+  {% endfor %}
+</div>
+<div class="date-bar">
+  {% for d in period_options %}
+  <button class="date-btn {% if d == 30 %}active{% endif %}"
+          data-days="{{ d }}" onclick="setDays({{ d }}, this)">{{ d }}D</button>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .fi-kpi { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:12px; }
+  .fi-k { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 13px; }
+  .fi-k .lbl { font-size:10px; color:var(--text3); text-transform:uppercase; letter-spacing:.3px; }
+  .fi-k .val { font-size:20px; font-weight:700; font-family:'DM Mono',monospace; color:var(--text); }
+  .fi-k .sub { font-size:10px; color:var(--text2); margin-top:2px; }
+  .fi-k.cost { border-top:3px solid #C7522A; }
+  .fi-k.save { border-top:3px solid #067D62; }
+  .fi-k.net  { border-top:3px solid #3B4FA0; }
+  .up   { color:#C7522A; } .down { color:#067D62; }
+
+  .fi-scope { background:var(--bg2); border:1px solid var(--border);
+               border-left:3px solid #3B4FA0; border-radius:6px; padding:8px 12px;
+               margin-bottom:12px; font-size:11px; color:var(--text2); }
+  .fi-bar { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+             padding:8px 12px; margin-bottom:10px; display:flex; gap:8px;
+             flex-wrap:wrap; align-items:center; font-size:11px; }
+  .fi-bar select, .fi-bar input { padding:4px 8px; font-size:11px;
+      border:1px solid var(--border); border-radius:4px; background:var(--bg); color:var(--text); }
+  .fi-btn { padding:4px 12px; font-size:11px; border-radius:4px; cursor:pointer;
+             border:1px solid var(--border); background:var(--bg); color:var(--text); }
+  .fi-chart { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+               padding:10px 12px; margin-bottom:12px; height:260px; }
+  .fi-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .fi-table thead th { background:var(--bg); padding:7px 8px; text-align:right;
+      font-weight:600; color:var(--text2); position:sticky; top:0; z-index:1;
+      cursor:pointer; user-select:none; white-space:nowrap; }
+  .fi-table thead th.l { text-align:left; }
+  .fi-table thead th.sorted { color:var(--text); }
+  .fi-table tbody td { padding:6px 8px; text-align:right; border-bottom:1px solid #EAEDED;
+      font-family:'DM Mono',monospace; }
+  .fi-table tbody td.l { text-align:left; font-family:inherit; }
+  .fi-table tbody tr.r { cursor:pointer; } .fi-table tbody tr.r:hover { background:var(--bg4); }
+  .fi-table tbody tr.open { background:var(--bg4); }
+  .fi-sig { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700; }
+  .fi-sig.fee_up_cover_down { background:var(--warn-weak); color:var(--warn-ink); }
+  .fi-sig.fee_down_cover_up { background:var(--good-weak); color:var(--green); }
+  .fi-sig.no_clear_relationship { background:var(--bg3); color:var(--text2); }
+  .fi-sig.insufficient_data { background:var(--bg3); color:var(--text3); }
+  .fi-detail > td { background:var(--bg); padding:0; border-bottom:2px solid var(--border); }
+  .fi-panel { padding:12px 16px 14px 30px; }
+  .fi-panel .g { display:flex; gap:18px; flex-wrap:wrap; font-size:11px;
+                  color:var(--text2); margin-bottom:8px; }
+  .fi-panel .g b { color:var(--text); font-family:'DM Mono',monospace; }
+  .fi-mini { height:170px; }
+  .fi-empty { background:var(--bg2); border:1px dashed #D5D9D9; border-radius:8px;
+               padding:28px; text-align:center; color:var(--text2); font-size:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<div class="fi-kpi">
+  <div class="fi-k"><div class="lbl">Current fee / unit</div>
+    <div class="val" id="kFee">—</div><div class="sub" id="kFeeSub"></div></div>
+  <div class="fi-k"><div class="lbl">7-day drift</div>
+    <div class="val" id="k7">—</div><div class="sub">vs prior 7d</div></div>
+  <div class="fi-k"><div class="lbl">14-day drift</div>
+    <div class="val" id="k14">—</div><div class="sub">vs prior 14d</div></div>
+  <div class="fi-k cost"><div class="lbl">Incremental cost</div>
+    <div class="val up" id="kCost">—</div><div class="sub" id="kCostSub"></div></div>
+  <div class="fi-k save"><div class="lbl">Savings</div>
+    <div class="val down" id="kSave">—</div><div class="sub" id="kSaveSub"></div></div>
+  <div class="fi-k net"><div class="lbl">Net impact</div>
+    <div class="val" id="kNet">—</div><div class="sub" id="kNetSub"></div></div>
+</div>
+
+<div class="fi-scope" id="scopeNote"></div>
+
+<div class="fi-chart"><canvas id="mainChart"></canvas></div>
+
+<div class="fi-bar">
+  <span style="color:var(--text3)">Filter:</span>
+  <select id="fCat" onchange="load()"><option value="">All categories</option></select>
+  <input id="fQ" placeholder="SKU, ASIN or product" oninput="debounced()" style="width:200px">
+  <select id="fImpact" onchange="render()">
+    <option value="">All SKUs</option>
+    <option value="cost">Cost increases only</option>
+    <option value="save">Savings only</option>
+    <option value="signal">Fee up while cover fell</option>
+  </select>
+  <button class="fi-btn" onclick="exportXlsx()">⬇ Export (Excel)</button>
+  <span id="cnt" style="margin-left:auto;color:var(--text3)"></span>
+</div>
+
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+            padding:8px;overflow:auto;max-height:calc(100vh - 560px)">
+  <table class="fi-table" id="tbl">
+    <thead><tr>
+      <th style="width:18px"></th>
+      <th class="l" data-sort="sku">SKU</th>
+      <th class="l" data-sort="asin">ASIN</th>
+      <th data-sort="current_fee">Current fee</th>
+      <th data-sort="previous_fee">Previous</th>
+      <th data-sort="fee_delta">Δ / unit</th>
+      <th data-sort="drift_7d">7d</th>
+      <th data-sort="drift_14d">14d</th>
+      <th data-sort="drift_30d">30d</th>
+      <th data-sort="billed_units">Billed</th>
+      <th data-sort="units_sold">Sold</th>
+      <th data-sort="incremental_cost">Incr. cost</th>
+      <th data-sort="savings">Savings</th>
+      <th data-sort="net_impact" class="sorted">Net impact</th>
+      <th data-sort="current_inventory">Inv</th>
+      <th data-sort="current_days_cover">Cover</th>
+      <th class="l">Inventory signal</th>
+    </tr></thead>
+    <tbody id="body"><tr><td colspan="17" style="text-align:center;color:var(--text3);padding:22px">Loading…</td></tr></tbody>
+  </table>
+</div>
+<div id="method" style="margin-top:8px;font-size:10px;color:var(--text3)"></div>
+
+<script>
+let MP='{{ marketplace }}', DAYS=30, DATA=null, SORT={k:'net_impact',d:-1}, OPEN=null, T=null, CH=null, MINI=null;
+
+function setMP(mp,b){ MP=mp; document.querySelectorAll('.mp-btn').forEach(x=>x.classList.remove('active')); if(b)b.classList.add('active'); load(); }
+function setDays(d,b){ DAYS=d; document.querySelectorAll('.date-btn').forEach(x=>x.classList.remove('active')); if(b)b.classList.add('active'); load(); }
+function debounced(){ clearTimeout(T); T=setTimeout(load,350); }
+function esc(s){ return String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function money(v){ if(v==null) return '—'; const a=Math.abs(v); const s=v<0?'-':'';
+  return a>=1000? s+'$'+(a/1000).toFixed(1)+'k' : s+'$'+a.toFixed(2); }
+function fee(v){ return v==null?'—':'$'+Number(v).toFixed(2); }
+function dlt(v){ if(v==null) return '<span style="color:var(--text3)">—</span>';
+  const c=v>0?'up':(v<0?'down':''); const s=v>0?'+':'';
+  return `<span class="${c}">${s}$${Math.abs(v).toFixed(3)}</span>`; }
+function num(v){ return v==null?'—':Number(v).toLocaleString(); }
+
+const SIG={fee_up_cover_down:'Fee ↑ cover ↓', fee_down_cover_up:'Fee ↓ cover ↑',
+           no_clear_relationship:'No clear link', insufficient_data:'Insufficient data'};
+
+function exportXlsx(){
+  const p=new URLSearchParams({mp:MP,days:DAYS,category:document.getElementById('fCat').value,q:document.getElementById('fQ').value});
+  window.location='/dashboard/fba-intelligence/export/?'+p;
+}
+
+function drawMain(s){
+  const el=document.getElementById('mainChart');
+  if(CH){CH.destroy();CH=null;}
+  if(!s||!s.length||typeof Chart==='undefined') return;
+  const hasCover=s.some(x=>x.days_cover!=null);
+  CH=new Chart(el,{data:{labels:s.map(x=>x.date.slice(5)),datasets:[
+      {type:'line',label:'FBA fee / unit',data:s.map(x=>x.fee),borderColor:'#C7522A',
+       backgroundColor:'#C7522A',borderWidth:2,pointRadius:0,tension:.25,yAxisID:'y'},
+      ...(hasCover?[{type:'line',label:'Days of cover (avg)',data:s.map(x=>x.days_cover),
+       borderColor:'#3B4FA0',backgroundColor:'#3B4FA0',borderWidth:1.5,pointRadius:0,
+       borderDash:[4,3],tension:.25,yAxisID:'y1'}]:[])]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{boxWidth:10,font:{size:10}}}},
+      scales:{x:{ticks:{font:{size:9},maxTicksLimit:16}},
+        y:{position:'left',ticks:{font:{size:9},callback:v=>'$'+v.toFixed(2)}},
+        ...(hasCover?{y1:{position:'right',grid:{drawOnChartArea:false},
+          ticks:{font:{size:9}},title:{display:true,text:'days cover',font:{size:9}}}}:{})}}});
+}
+
+function filtered(){
+  if(!DATA) return [];
+  const f=document.getElementById('fImpact').value;
+  let r=DATA.rows.slice();
+  if(f==='cost')   r=r.filter(x=>x.incremental_cost>0);
+  if(f==='save')   r=r.filter(x=>x.savings>0);
+  if(f==='signal') r=r.filter(x=>x.inventory_signal==='fee_up_cover_down');
+  return r.sort((a,b)=>{const A=a[SORT.k],B=b[SORT.k];
+    if(A==null&&B==null)return 0; if(A==null)return 1; if(B==null)return -1;
+    return typeof A==='string'? SORT.d*A.localeCompare(B) : SORT.d*(A-B);});
+}
+
+function render(){
+  const rows=filtered(), b=document.getElementById('body');
+  document.getElementById('cnt').textContent=`${rows.length} of ${DATA?DATA.rows.length:0} SKUs`;
+  if(!rows.length){ b.innerHTML='<tr><td colspan="17"><div class="fi-empty">No SKUs match.</div></td></tr>'; return; }
+  b.innerHTML=rows.map(r=>`
+    <tr class="r ${OPEN===r.sku?'open':''}" onclick="toggle('${esc(r.sku).replace(/'/g,"\\\\'")}')">
+      <td>${OPEN===r.sku?'▾':'▸'}</td>
+      <td class="l"><b>${esc(r.sku)}</b></td>
+      <td class="l" style="color:var(--text2)">${esc(r.asin)}</td>
+      <td>${fee(r.current_fee)}</td><td>${fee(r.previous_fee)}</td>
+      <td>${dlt(r.fee_delta)}</td><td>${dlt(r.drift_7d)}</td>
+      <td>${dlt(r.drift_14d)}</td><td>${dlt(r.drift_30d)}</td>
+      <td>${num(r.billed_units)}</td><td style="color:var(--text3)">${num(r.units_sold)}</td>
+      <td class="up">${r.incremental_cost>0?money(r.incremental_cost):'—'}</td>
+      <td class="down">${r.savings>0?money(r.savings):'—'}</td>
+      <td class="${r.net_impact>0?'up':(r.net_impact<0?'down':'')}"><b>${money(r.net_impact)}</b></td>
+      <td>${num(r.current_inventory)}</td>
+      <td>${r.current_days_cover==null?'—':r.current_days_cover.toFixed(1)}</td>
+      <td class="l"><span class="fi-sig ${r.inventory_signal}">${SIG[r.inventory_signal]||r.inventory_signal}</span></td>
+    </tr>${OPEN===r.sku?detail(r):''}`).join('');
+  document.querySelectorAll('#tbl thead th').forEach(th=>th.classList.toggle('sorted',th.dataset.sort===SORT.k));
+  document.getElementById('method').textContent=DATA.methodology||'';
+  if(OPEN){ const r=rows.find(x=>x.sku===OPEN); if(r) setTimeout(()=>drawMini(r),0); }
+}
+
+function detail(r){
+  const corr=r.correlation==null?'—':r.correlation.toFixed(2);
+  return `<tr class="fi-detail"><td colspan="17"><div class="fi-panel">
+    <div class="g">
+      <span>${esc(r.title||r.sku)}</span>
+      <span>Fee <b>${fee(r.previous_fee)} → ${fee(r.current_fee)}</b></span>
+      <span>Δ <b>${r.fee_delta==null?'—':'$'+r.fee_delta.toFixed(3)}/unit</b></span>
+      <span>Billed <b>${num(r.billed_units)}</b></span>
+      <span>Sold <b>${num(r.units_sold)}</b></span>
+      <span>Net <b>${money(r.net_impact)}</b></span>
+      <span>Inventory <b>${num(r.current_inventory)}</b></span>
+      <span>Cover <b>${r.current_days_cover==null?'—':r.current_days_cover.toFixed(1)}d</b></span>
+      <span>Fee↔cover corr <b>${corr}</b> (${r.data_days} days)</span>
+    </div>
+    <div class="fi-mini"><canvas id="mini"></canvas></div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px">
+      Correlation only — Phase A cannot attribute this change to a specific
+      Amazon fee component (base, fuel, low-inventory, SIPP). That needs SKU Economics.
+    </div></div></td></tr>`;
+}
+
+function drawMini(r){
+  const el=document.getElementById('mini'); if(!el) return;
+  if(MINI){MINI.destroy();MINI=null;}
+  const s=r.series||[]; if(!s.length||typeof Chart==='undefined') return;
+  const hasCover=s.some(x=>x.days_cover!=null);
+  MINI=new Chart(el,{data:{labels:s.map(x=>x.date.slice(5)),datasets:[
+      {type:'line',label:'Fee / unit',data:s.map(x=>x.fee),borderColor:'#C7522A',
+       backgroundColor:'#C7522A',borderWidth:2,pointRadius:2,tension:.2,yAxisID:'y'},
+      ...(hasCover?[{type:'line',label:'Days cover',data:s.map(x=>x.days_cover),
+       borderColor:'#3B4FA0',borderWidth:1.5,pointRadius:0,borderDash:[4,3],
+       tension:.2,yAxisID:'y1'}]:[])]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{boxWidth:10,font:{size:9}}}},
+      scales:{x:{ticks:{font:{size:8},maxTicksLimit:12}},
+        y:{ticks:{font:{size:8},callback:v=>'$'+v.toFixed(2)}},
+        ...(hasCover?{y1:{position:'right',grid:{drawOnChartArea:false},ticks:{font:{size:8}}}}:{})}}});
+}
+
+function toggle(sku){ OPEN = OPEN===sku?null:sku; render(); }
+
+document.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('#tbl thead th').forEach(th=>th.addEventListener('click',()=>{
+    const k=th.dataset.sort; if(!k) return;
+    if(SORT.k===k) SORT.d*=-1; else SORT={k,d:-1};
+    render();
+  }));
+  load();
+});
+
+async function load(){
+  const p=new URLSearchParams({mp:MP,days:DAYS});
+  const c=document.getElementById('fCat').value, q=document.getElementById('fQ').value.trim();
+  if(c)p.set('category',c); if(q)p.set('q',q);
+  const r=await fetch('/dashboard/api/fba-intelligence/?'+p);
+  DATA=await r.json();
+  document.getElementById('scopeNote').textContent=DATA.scope_note||'';
+  const el=document.getElementById('fCat');
+  if(el.options.length<=1 && DATA.categories)
+    el.innerHTML='<option value="">All categories</option>'+DATA.categories.map(x=>`<option>${esc(x)}</option>`).join('');
+  if(!DATA.has_data){
+    document.getElementById('body').innerHTML=`<tr><td colspan="17"><div class="fi-empty">${esc(DATA.note||'No fee data.')}</div></td></tr>`;
+    ['kFee','k7','k14','kCost','kSave','kNet'].forEach(i=>document.getElementById(i).textContent='—');
+    drawMain([]); return;
+  }
+  const P=DATA.position;
+  document.getElementById('kFee').textContent=fee(P.current_fee);
+  document.getElementById('kFeeSub').textContent=`from ${fee(P.previous_fee)} · ${num(P.billed_units)} billed units`;
+  document.getElementById('k7').innerHTML=dlt(P.drift_7d);
+  document.getElementById('k14').innerHTML=dlt(P.drift_14d);
+  document.getElementById('kCost').textContent=money(P.incremental_cost);
+  document.getElementById('kCostSub').textContent=`${P.skus_worse} SKUs more expensive`;
+  document.getElementById('kSave').textContent=money(P.savings);
+  document.getElementById('kSaveSub').textContent=`${P.skus_better} SKUs cheaper`;
+  const net=document.getElementById('kNet');
+  net.textContent=money(P.net_impact);
+  net.className='val '+(P.net_impact>0?'up':(P.net_impact<0?'down':''));
+  document.getElementById('kNetSub').textContent=`${DATA.period.current} · 30d drift ${P.drift_30d==null?'—':'$'+P.drift_30d.toFixed(3)}`;
+  drawMain(DATA.series);
+  render();
+}
+</script>
+{% endblock %}
