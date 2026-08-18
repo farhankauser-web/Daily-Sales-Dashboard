@@ -86,7 +86,18 @@ def compute_drift(
     from .models import COGSEntry, FBAFeeRate, Product, SkuFeeActual
 
     today = today or date.today()
-    window_start = today - timedelta(days=window_days)
+
+    # The "actual" window is anchored to the most recent settlement data we
+    # HAVE, not to the calendar. Settlement reports arrive weeks in arrears, so
+    # a window of `today - 14 days` is routinely empty and the page then shows
+    # nothing at all — which reads as "no drift" when it actually means "no
+    # data yet". Anchoring to the latest actual keeps the comparison populated
+    # and honest; `window_end` is reported so the UI can state the real period.
+    window_end = (SkuFeeActual.objects
+                  .filter(marketplace=marketplace, date__lte=today)
+                  .order_by('-date')
+                  .values_list('date', flat=True).first()) or today
+    window_start = window_end - timedelta(days=window_days)
     month_start  = today.replace(day=1)
 
     # 1) Load most-recent uploaded FBA rate per product. Sync.py uses the
@@ -127,7 +138,7 @@ def compute_drift(
 
     # 3) Load all actual fee rows in window, aggregate per SKU
     actuals_qs = (SkuFeeActual.objects
-                   .filter(marketplace=marketplace, date__gte=window_start, date__lte=today)
+                   .filter(marketplace=marketplace, date__gte=window_start, date__lte=window_end)
                    .values('sku', 'date', 'units', 'fba_fee_total', 'fee_per_unit'))
     agg_by_sku: dict[str, dict] = {}
     for r in actuals_qs:
