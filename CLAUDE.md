@@ -43,6 +43,15 @@ Grep it; do not read it whole. `docs/` says which function to grep for.
   manual, `amazon_received_units` is the API; `counted_units` prefers the human.
 - **`CSRF_COOKIE_HTTPONLY` must stay `False`** or every fetch button breaks with
   "unexpected token '<'".
+- **A Walmart order is archivable only on UNIT-level coverage, never on Amazon's
+  MCF status alone.** `COMPLETEPARTIALLED` is ambiguous — Amazon returns it both
+  for "some units are unfulfillable" and for "some units shipped, the rest are
+  still processing". Comparing SKU *sets* is also not enough: 3 shipped of 5
+  units of one SKU looks "covered". `apps/walmart_mcf/pipeline.py`
+  `_order_fully_shipped()` is the single gate for all three archive paths
+  (`upload_tracking` ×2, `reconcile`) — treat COMPLETE and the cancel statuses
+  as terminal, everything else must pass `_order_units_covered()`. Archiving
+  early hides un-shipped units from ops and from Walmart (PO 200015153699282).
 
 ## Commands
 
@@ -61,6 +70,31 @@ cd /home/ubuntu/Daily-Sales-Dashboard && git pull origin main \
 
 Scheduled jobs live in `deploy/crontab.txt` — **a macOS template**. The EC2
 crontab is maintained by hand and has drifted; see `INFRA-01` in `docs/gaps.md`.
+
+### Git and machine facts
+
+Established flow is **edit on the Mac → push → pull on EC2**. Nothing is edited
+directly on the server.
+
+- Mac working copy: `/Users/farhankauser/Desktop/Usman Agents/infinitee_app(1)`
+- Remote: `git@github.com:farhankauser-web/Daily-Sales-Dashboard.git`, branch `main`
+- **Auth is SSH** (`~/.ssh/id_ed25519`). There is **no `gh` CLI** and **no
+  credential helper** — an HTTPS remote will prompt for a username and can never
+  succeed, since GitHub dropped password auth. If a clone prompts, the fix is
+  `git remote set-url origin git@github.com:...`, not a token.
+- EC2: `ubuntu@13.62.83.159`, project at `/home/ubuntu/Daily-Sales-Dashboard`,
+  venv at `venv/`. Activate the venv only when running Python; a plain
+  `git pull` does not need it.
+- Django settings module is **`infinitee.settings`** (project package is
+  `infinitee/`, not `pulse/` — the site is *called* Pulse but the package is not).
+  Standalone scripts must set `DJANGO_SETTINGS_MODULE=infinitee.settings` and run
+  from the repo root.
+
+**Cowork device-bridge limits.** The bridge can read and write files under the
+mounted folders but **cannot delete** them, and `git` run through it leaves a
+`.git/index.lock` behind that it cannot clean up. After any bridge-side git
+command the user must run `rm -f .git/index.lock` in a real Mac terminal before
+`git add`/`commit` will work. Prefer: agent edits files, user runs all git.
 
 ## Conventions
 

@@ -31,7 +31,7 @@ import sys
 
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'pulse.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'infinitee.settings')
 django.setup()
 
 from django.db import transaction                                   # noqa: E402
