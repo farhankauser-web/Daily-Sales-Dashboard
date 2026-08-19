@@ -702,6 +702,138 @@ class SPAPIClient:
         return 'ok', data
 
     # ── REPORTS API: Brand-Analytics Search Query Performance ────────────────
+    # ── DATA KIOSK: seller economics (FBA fee components) ───────────────────
+    #
+    # WHY THIS EXISTS
+    #   SKU Economics is NOT a Reports API report type. Probing
+    #   `GET_SKU_ECONOMICS` returns 400 InvalidInput "Invalid Report Type" —
+    #   a type-registry rejection, not a permissions problem. The data lives in
+    #   Data Kiosk under the GraphQL schema `analytics_economics_2024_03_15`.
+    #   Verified live against the production USA account.
+    #
+    # AUTH is unchanged: same LWA token, same _headers(), same host. Only the
+    # path and the submit/poll/download shape differ from the Reports API.
+    #
+    # Full validation record: docs/PHASE2_FBA_COMPONENTS_VALIDATION.md
+    DATAKIOSK_PATH   = '/dataKiosk/2023-11-15'
+    DK_ECONOMICS_VER = 'analytics_economics_2024_03_15'
+
+    def submit_dk_query(self, graphql: str) -> str:
+        """Submit a Data Kiosk GraphQL query. Returns queryId.
+
+        Amazon answers 202 with {"queryId": "..."}. Errors carry a useful body,
+        so we surface it rather than letting raise_for_status() discard it.
+        """
+        resp = requests.post(
+            f'{self.endpoint}{self.DATAKIOSK_PATH}/queries',
+            headers=self._headers(), json={'query': graphql}, timeout=60,
+        )
+        if resp.status_code not in (200, 202):
+            raise RuntimeError(
+                f'dataKiosk createQuery failed: '
+                f'{_extract_http_error_detail(resp)}')
+        return resp.json()['queryId']
+
+    def get_dk_query_status(self, query_id: str) -> dict:
+        """processingStatus: IN_QUEUE | IN_PROGRESS | DONE | CANCELLED | FATAL.
+
+        On DONE the payload carries `dataDocumentId`. A FATAL query may instead
+        carry `errorDocumentId`, whose document explains the failure — callers
+        should check both rather than assuming success.
+        """
+        return self._get(f'{self.DATAKIOSK_PATH}/queries/{query_id}',
+                         timeout=30)
+
+    def download_dk_document(self, document_id: str) -> list[dict]:
+        """Fetch + decompress a Data Kiosk document. Returns parsed JSONL rows.
+
+        Data Kiosk returns newline-delimited JSON (one record per line), not a
+        single JSON array — a 31-day USA economics pull is ~30k lines / 12 MB.
+        """
+        last_exc = None
+        for attempt in range(4):                      # resilient to flaky S3
+            try:
+                meta = self._get(
+                    f'{self.DATAKIOSK_PATH}/documents/{document_id}',
+                    timeout=30)
+                url = meta.get('documentUrl') or meta.get('url')
+                r = requests.get(url, timeout=(10, 300))
+                r.raise_for_status()
+                body = self._decompress_if_needed(
+                    r.content, meta.get('compressionAlgorithm') or '')
+                text = body.decode('utf-8-sig', errors='replace')
+                return [json.loads(ln) for ln in text.splitlines() if ln.strip()]
+            except (requests.exceptions.RequestException, OSError) as exc:
+                last_exc = exc
+                time.sleep(2 * (attempt + 1))         # 2s, 4s, 6s backoff
+        raise RuntimeError(f'dataKiosk download failed after retries: {last_exc}')
+
+    def run_dk_query(self, graphql: str, max_wait: int = 900,
+                     poll_every: int = 10) -> tuple[list[dict], dict]:
+        """Submit → poll → download in one call. Returns (rows, status).
+
+        Observed latency: a 31-day USA economics pull completes in ~25s, so the
+        default ceiling is generous. Returns ([], status) rather than raising
+        when the query ends without data, so callers can log and continue
+        instead of aborting a multi-marketplace sweep.
+        """
+        qid = self.submit_dk_query(graphql)
+        status: dict = {}
+        deadline = time.time() + max_wait
+        while time.time() < deadline:
+            status = self.get_dk_query_status(qid)
+            if status.get('processingStatus') in ('DONE', 'CANCELLED', 'FATAL'):
+                break
+            time.sleep(poll_every)
+        doc = status.get('dataDocumentId')
+        if not doc:
+            return [], status
+        return self.download_dk_document(doc), status
+
+    @classmethod
+    def build_economics_query(cls, marketplace_id: str, start: str, end: str,
+                              granularity: str = 'DAY',
+                              product_id: str = 'MSKU',
+                              fee_types: tuple = ('FBA_FULFILLMENT_FEE',)
+                              ) -> str:
+        """Build the seller-economics GraphQL document.
+
+        `includeComponentsForFeeTypes` is what unlocks Phase 2: omit it and
+        `Fee.components` comes back null. The FeeType enum has exactly two
+        members — FBA_FULFILLMENT_FEE and FBA_STORAGE_FEE.
+
+        Both `amount` (rate card, GROSS) and `totalAmount` (net of promotion
+        and tax) are selected deliberately. Size-tier / packaging inference
+        MUST use `amount`, because promotions depress the net figures and would
+        be misread as good packing. Verified: 140 of 3,057 USA July fee rows
+        carried a promotion totalling $989.54.
+        """
+        detail = ('{ quantity '
+                  'amount { amount currencyCode } '
+                  'amountPerUnit { amount currencyCode } '
+                  'amountPerUnitDelta { amount currencyCode } '
+                  'promotionAmount { amount currencyCode } '
+                  'taxAmount { amount currencyCode } '
+                  'totalAmount { amount currencyCode } }')
+        return (
+            'query PulseEconomics { %s { economics('
+            'startDate: "%s" endDate: "%s" '
+            'aggregateBy: { date: %s, productId: %s } '
+            'marketplaceIds: ["%s"] '
+            'includeComponentsForFeeTypes: [%s]) { '
+            'startDate endDate marketplaceId msku fnsku childAsin parentAsin '
+            'sales { netUnitsSold unitsOrdered unitsRefunded '
+            '  netProductSales { amount currencyCode } } '
+            'fees { feeTypeName charges { '
+            '  identifier startDate endDate '
+            '  properties { propertyName propertyValue } '
+            '  aggregatedDetail %s '
+            '  components { name '
+            '    properties { propertyName propertyValue } '
+            '    aggregatedDetail %s } } } } } }'
+        ) % (cls.DK_ECONOMICS_VER, start, end, granularity, product_id,
+             marketplace_id, ', '.join(fee_types), detail, detail)
+
     REPORT_TYPE_SETTLEMENT = 'GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2'
 
     def list_settlement_reports(
