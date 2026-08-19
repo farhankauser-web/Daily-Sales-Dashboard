@@ -638,41 +638,80 @@ def _parse_dt(v):
 
 # ── Step 7+8: upload tracking to Walmart ─────────────────────────────────────
 
-def _order_fully_shipped(order) -> bool:
-    """True only when no further shipments are coming for this order, so it is
-    safe to move it to a terminal (archivable) state.
+def _order_units_covered(order, mcf) -> bool:
+    """Unit-level reconciliation: is every ordered UNIT covered by a shipped
+    package?
 
-    A multi-SKU order that Amazon has only partially shipped must stay Active
-    and keep being polled — archiving it now would hide the un-shipped SKUs.
+    A SKU-set comparison is not enough: an order for 5 units of one SKU with
+    only 3 units shipped would wrongly compare as "covered". We therefore sum
+    quantities per SKU on both sides.
 
-    Terminal is decided from two independent signals (either is sufficient):
-      • Amazon MCF reached a done/cancel status (COMPLETE / COMPLETEPARTIALLED /
-        CANCELLED / UNFULFILLABLE / INVALID) — no more packages will appear; or
-      • every ordered SKU is already covered by a shipped package (item-level
-        reconciliation, used as a fallback when the MCF status lags).
+    If Amazon returned no usable quantity on any shipped item (legacy or
+    degraded payload) we fall back to the old SKU-set comparison rather than
+    hanging the order forever.
     """
-    mcf = getattr(order, 'mcf', None)
-    if mcf is None:
-        return False
-    st = (mcf.amazon_status or '').upper()
-    if st in AMAZON_DONE_STATUSES or st in AMAZON_CANCEL_STATUSES:
-        return True
-    # item-coverage fallback: are all ordered SKUs covered by shipped packages?
     order_items = list(order.items.all())
     if not order_items:
         return False
     sku_map = {m.walmart_sku: m.amazon_sku for m in
                SkuMapping.objects.filter(
                    walmart_sku__in=[i.walmart_sku for i in order_items])}
-    ordered = {(sku_map.get(i.walmart_sku) or i.walmart_sku).upper()
-               for i in order_items}
-    shipped = set()
+    ordered = {}
+    for i in order_items:
+        key = (sku_map.get(i.walmart_sku) or i.walmart_sku).upper()
+        ordered[key] = ordered.get(key, 0) + int(i.quantity or 0)
+
+    shipped_qty = {}
+    saw_quantity = False
     for p in mcf.packages.all():
         for pi in (p.items or []):
             s = pi.get('sellerSku') or pi.get('SellerSKU')
-            if s:
-                shipped.add(str(s).upper())
-    return ordered.issubset(shipped)
+            if not s:
+                continue
+            key = str(s).upper()
+            raw = pi.get('quantity', pi.get('Quantity'))
+            try:
+                qty = int(raw)
+            except (TypeError, ValueError):
+                qty = 0
+            if qty > 0:
+                saw_quantity = True
+            shipped_qty[key] = shipped_qty.get(key, 0) + qty
+
+    if not saw_quantity:
+        # no quantity data at all -> legacy SKU-coverage behaviour
+        return set(ordered).issubset(set(shipped_qty))
+    return all(shipped_qty.get(sku, 0) >= qty for sku, qty in ordered.items())
+
+
+def _order_fully_shipped(order) -> bool:
+    """True only when no further shipments are coming for this order, so it is
+    safe to move it to a terminal (archivable) state.
+
+    A multi-SKU **or multi-unit** order that Amazon has only partially shipped
+    must stay Active and keep being polled — archiving it now would hide the
+    un-shipped units from ops and from Walmart.
+
+    Decision table on Amazon MCF fulfillmentOrderStatus:
+      • COMPLETE                            -> terminal. Every unit fulfilled.
+      • CANCELLED / UNFULFILLABLE / INVALID -> terminal. Nothing more is coming.
+      • COMPLETEPARTIALLED                  -> AMBIGUOUS. Amazon uses this both
+        for "some units are unfulfillable" AND for "some units shipped, the
+        rest are still processing". Terminal only when unit-level
+        reconciliation shows every ordered unit is already covered.
+      • anything else (RECEIVED / PLANNING / PROCESSING / ...) -> terminal only
+        if unit coverage is already complete (status lagging reality).
+
+    Note: treating COMPLETEPARTIALLED as terminal on status alone is what
+    archived PO 200015153699282 with 2 of 5 units still unshipped.
+    """
+    mcf = getattr(order, 'mcf', None)
+    if mcf is None:
+        return False
+    st = (mcf.amazon_status or '').upper()
+    if st == 'COMPLETE' or st in AMAZON_CANCEL_STATUSES:
+        return True
+    return _order_units_covered(order, mcf)
 
 
 def _walmart_order_already_shipped(wc, po: str) -> bool:
@@ -1075,11 +1114,13 @@ def reconcile(stuck_after_hours: int = 24) -> dict:
     now = timezone.now()
     fixed, stuck, closed_manual = 0, [], 0
 
-    # TRACKING_UPLOADED + Amazon complete → COMPLETED
+    # TRACKING_UPLOADED + Amazon done + EVERY ORDERED UNIT SHIPPED → COMPLETED
+    # _order_fully_shipped() checks the MCF status *and* unit-level coverage,
+    # so an ambiguous COMPLETEPARTIALLED with units still processing stays
+    # Active instead of being archived behind ops' back.
     for order in WalmartOrder.objects.filter(
             status=S.TRACKING_UPLOADED).select_related('mcf'):
-        mcf = getattr(order, 'mcf', None)
-        if mcf and mcf.amazon_status.upper() in AMAZON_DONE_STATUSES:
+        if _order_fully_shipped(order):
             if transition(order, S.COMPLETED, 'reconcile'):
                 fixed += 1
 
@@ -1095,7 +1136,7 @@ def reconcile(stuck_after_hours: int = 24) -> dict:
     cutoff = now - timedelta(hours=stuck_after_hours)
     for order in WalmartOrder.objects.filter(
             status__in=[S.NEW, S.VALIDATED, S.PROCESSING, S.MCF_CREATED,
-                        S.SHIPPED, S.HOLD],
+                        S.SHIPPED, S.TRACKING_UPLOADED, S.HOLD],
             updated_at__lt=cutoff):
         stuck.append(f'{order.purchase_order_id}: {order.status} since '
                      f'{order.updated_at:%Y-%m-%d %H:%M} '
