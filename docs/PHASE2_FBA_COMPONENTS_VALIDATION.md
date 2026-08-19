@@ -313,6 +313,82 @@ probed. Do not design around it until confirmed.
 
 ---
 
+## K. DATA HAZARDS — observed live, must be handled by the ingest
+
+Found while proving the client against USA 2026-08-01..07 (6,958 rows,
+784 with fees, 685 charges with components).
+
+### K1. EXCLUDE Amazon-generated `amzn.` MSKUs — BUSINESS RULE
+
+Amazon returns generated MSKUs alongside real ones:
+
+    TWL-WHT-BTH-8-600                              <- real seller SKU
+    amzn.gr.TW-BLU-BTH-4-iTlG9GVkiK8EKmva-LN       <- Amazon-generated
+    amzn.gr.LUX-PK2-TWL-TEL-qyCObLH5LN9JG-VG
+    amzn.gr.BTH-SHT-WHT-600-u72fnT-Qj6l-r-LN
+
+CONFIRMED BY THE BUSINESS (CEO): these are **customer-returned units that
+Amazon relists itself** under grade-and-resell as "Used - Like New" or similar
+conditions. They are a DIFFERENT ECONOMIC EVENT from new-unit fulfilment.
+
+    RULE: exclude any msku beginning with `amzn.` from ALL FBA fee impact
+          analysis — packaging drift, fee drift, low-inventory, waterfall.
+
+Rationale: a returned unit's handling has nothing to do with how the factory
+filled the polybag, so including them corrupts packaging attribution.
+
+This REPLACES the earlier plan to resolve them via ASIN. No string surgery, no
+ASIN fallback needed for these — they are simply filtered out. (Plain `msku`
+-> `Product.sku` matching still applies for real SKUs.)
+
+Store them if useful for a separate returns view, but never in fee impact.
+
+FIGURES NEEDING RECOMPUTATION UNDER THIS RULE — the validation numbers in this
+document were computed BEFORE the exclusion was known:
+
+    July 2026 USA component totals (base $292,030.28 / fuel $10,418.80 /
+    low-inventory $1,354.32) include grade-and-resell units.
+
+    The $10,927.62 packaging-drift total is probably close to correct, since it
+    gated on >=100 units/month and individual returned units rarely reach that
+    — but re-verify with the filter applied before quoting it externally.
+
+    The top-20 SKU list contains no `amzn.` entries, so per-SKU figures and the
+    top-10 action list stand.
+
+### K2. Zero-quantity and negative-amount adjustment rows
+
+    BaseFbaFulfilmentFee   gross = -0.26   qty = 0.0
+    FuelSurcharge          gross = +0.26   qty = 1.0
+
+NOTE: every observed instance of this occurred on an `amzn.` grade-and-resell
+SKU, so the K1 exclusion removes most of it. Keep the guards anyway — defensive,
+cheap, and not proven to be exclusive to those SKUs.
+
+Amazon reclassifying an amount between components; nets to zero. Therefore:
+
+  * `quantity` CAN BE 0.0 -> guard every division.
+  * `amount` CAN BE NEGATIVE -> per-unit rates must handle sign.
+  * These rows are REAL and must be STORED (they affect totals) but must be
+    EXCLUDED from rate-per-unit derivation, or the packaging-drift figure is
+    polluted by meaningless negative "rates".
+
+Suggested rule: store all rows; derive rate-card rate only where
+`quantity > 0 AND amount > 0`; flag the rest as `adjustment`.
+
+### K3. Most rows carry no fees
+
+784 of 6,958 rows (11%) had any fees; the rest are zero-sale days. The ingest
+should skip empty-fee rows rather than writing empty component records.
+
+### K4. Volume / latency
+
+A 7-day USA pull returned 6,958 rows in seconds; 31 days returned 30,814 rows
+(11.9 MB) in ~25s. Daily incremental ingest is cheap — no elaborate windowing
+needed. LowInventoryLevelFee was still active in Aug 1-7 (44 occurrences).
+
+---
+
 ## I. Outstanding
 
 - Confirm June settlement patchiness via `SkuFeeActual` monthly density query
