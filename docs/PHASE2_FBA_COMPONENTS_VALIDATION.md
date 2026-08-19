@@ -343,18 +343,30 @@ ASIN fallback needed for these — they are simply filtered out. (Plain `msku`
 
 Store them if useful for a separate returns view, but never in fee impact.
 
-FIGURES NEEDING RECOMPUTATION UNDER THIS RULE — the validation numbers in this
-document were computed BEFORE the exclusion was known:
+IMPACT OF THE RULE — MEASURED, July 2026 USA (2,837 real / 220 amzn charges):
 
-    July 2026 USA component totals (base $292,030.28 / fuel $10,418.80 /
-    low-inventory $1,354.32) include grade-and-resell units.
+                            REAL SKUs      grade-and-resell
+    BaseFbaFulfilmentFee   $290,040.00        $1,990.28
+    FuelSurcharge           $10,346.92           ~$71.88
+    LowInventoryLevelFee     $1,354.32            $0.00
+                           ------------      -----------
+                           $301,741.24        ~$2,062.16
 
-    The $10,927.62 packaging-drift total is probably close to correct, since it
-    gated on >=100 units/month and individual returned units rarely reach that
-    — but re-verify with the filter applied before quoting it externally.
+Both sides reconcile back to the pre-filter total of $303,803.40 — the filter
+is clean, nothing is lost or double-counted.
 
-    The top-20 SKU list contains no `amzn.` entries, so per-SKU figures and the
-    top-10 action list stand.
+Grade-and-resell is only 0.68% of the fee bill. CONSEQUENCES:
+
+  * LowInventoryLevelFee was ALREADY entirely on real SKUs. The $1,354.32/month
+    figure needs NO adjustment.
+  * The $10,927.62 packaging-drift total STANDS. It gated on >=100 units/month
+    per SKU, and 220 charges spread across many distinct `amzn.` SKUs means
+    none could clear that bar.
+  * The top-20 SKU list contains no `amzn.` entries; the top-10 action list
+    stands unchanged.
+
+The rule still matters going forward — grade-and-resell volume can grow, and
+per-SKU packaging attribution must never mix returned units with new ones.
 
 ### K2. Zero-quantity and negative-amount adjustment rows
 
