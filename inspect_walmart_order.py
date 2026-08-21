@@ -98,7 +98,14 @@ def dump(order):
         if lg.request_body and ('shipping' in lg.endpoint.lower()
                                 or 'orderShipment' in lg.request_body):
             print(f'      REQUEST : {lg.request_body[:2500]}')
-            print(f'      RESPONSE: {lg.response_body[:400]}')
+        # For GET /orders/{po} show what WALMART thinks each line's status is
+        if lg.response_body:
+            body = lg.response_body
+            idx = body.find('orderLineStatuses')
+            if idx == -1:
+                idx = body.find('orderLines')
+            if idx != -1:
+                print(f'      WALMART LINE STATUS: ...{body[idx:idx + 2000]}')
     print()
 
     ev = AuditEvent.objects.filter(order_id=order.pk).order_by('created_at')
