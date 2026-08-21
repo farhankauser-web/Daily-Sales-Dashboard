@@ -91,6 +91,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--po', action='append', default=None)
+    ap.add_argument('--include-settled', action='store_true',
+                    help='also repair orders whose Walmart line is already '
+                         'settled. Those parcels shipped long ago and nothing '
+                         'can be uploaded now, so this only re-opens them for '
+                         'an audit — it will raise one admin alert each.')
     args = ap.parse_args()
 
     print('\n' + '=' * 72)
@@ -104,7 +109,7 @@ def main():
 
     print(f'{len(found)} order(s) to verify against Walmart...\n')
     wc = WalmartClient()
-    to_fix, unreachable = [], []
+    recoverable, historical, unreachable = [], [], []
 
     for order, pkgs in found:
         snap = _walmart_order_snapshot(wc, order.purchase_order_id)
@@ -123,21 +128,33 @@ def main():
             print(f'     {"HELD    " if ok else "MISSING "} '
                   f'{p.tracking_number}')
         if bad:
-            to_fix.append((order, bad))
+            # Walmart line still OPEN -> the tracking can still be accepted.
+            # Walmart line SETTLED    -> nothing to upload; audit record only.
+            (historical if snap['fully_shipped'] else recoverable).append(
+                (order, bad))
         print()
 
     print('-' * 72)
-    print(f'{len(to_fix)} order(s) have tracking Walmart never received.')
+    print(f'RECOVERABLE : {len(recoverable):>3}  Walmart line still open — the '
+          f'tracking can still be uploaded')
+    for o, bad in recoverable:
+        print(f'                 PO {o.purchase_order_id} '
+              f'({len(bad)} package(s))')
+    print(f'HISTORICAL  : {len(historical):>3}  Walmart line already settled — '
+          f'parcel shipped, Walmart never got the tracking.')
+    print( '                 Nothing can be uploaded now. Left untouched '
+           'unless --include-settled.')
     if unreachable:
-        print(f'{len(unreachable)} order(s) could not be checked (API error).')
+        print(f'UNCHECKED   : {len(unreachable):>3}  Walmart lookup failed — '
+              f'never guessed at')
 
+    to_fix = recoverable + (historical if args.include_settled else [])
     if not to_fix:
         print()
         return 0
 
     if not args.apply:
-        print('DRY RUN — re-run with --apply to un-mark those packages and '
-              'send the orders back through upload_tracking.\n')
+        print(f'\nDRY RUN — --apply would repair {len(to_fix)} order(s).\n')
         return 0
 
     print('\nRepairing...\n')
@@ -145,8 +162,9 @@ def main():
         repair(order, bad)
         print(f'  fixed PO {order.purchase_order_id} '
               f'({len(bad)} package(s) un-marked, order -> SHIPPED)')
-    print(f'\nDone. The next upload_tracking run will retry these; any Walmart '
-          f'still refuses will land in ERROR with an admin alert.\n')
+    print('\nDone. The next upload_tracking run retries these. Walmart accepts '
+          'the ones whose line is open; anything it refuses lands in ERROR '
+          'with an admin alert naming the tracking number.\n')
     return 0
 
 
