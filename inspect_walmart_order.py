@@ -30,6 +30,7 @@ def dump(order):
     print('=' * 72)
     print(f'PO {order.purchase_order_id}   (pk={order.pk})')
     print('=' * 72)
+    print(f'  customer_order  : {order.customer_order_id}')
     print(f'  status          : {order.status}')
     print(f'  marketplace     : {order.marketplace}')
     print(f'  order_date      : {order.order_date}')
@@ -83,16 +84,20 @@ def dump(order):
               f'{total_ordered - total_shipped} pending')
 
     # The decisive evidence: what quantity did WE declare to Walmart?
+    from django.db.models import Q
     po = order.purchase_order_id
-    logs = (APILog.objects
-            .filter(endpoint__contains=po)
-            .order_by('created_at'))
+    q = Q(endpoint__contains=po) | Q(request_body__contains=po)
+    if order.customer_order_id:
+        q |= Q(endpoint__contains=order.customer_order_id)
+        q |= Q(request_body__contains=order.customer_order_id)
+    logs = APILog.objects.filter(q).order_by('created_at')
     print(f'  WALMART API CALLS mentioning this PO ({logs.count()})')
     for lg in logs:
         print(f'    {lg.created_at:%Y-%m-%d %H:%M:%S} {lg.direction} '
               f'{lg.method} {lg.endpoint}  -> {lg.status_code}')
-        if 'shipping' in lg.endpoint.lower() and lg.request_body:
-            print(f'      REQUEST : {lg.request_body[:1500]}')
+        if lg.request_body and ('shipping' in lg.endpoint.lower()
+                                or 'orderShipment' in lg.request_body):
+            print(f'      REQUEST : {lg.request_body[:2500]}')
             print(f'      RESPONSE: {lg.response_body[:400]}')
     print()
 
@@ -129,9 +134,11 @@ def main():
         ap.error('give a PO id, or use --recent N')
 
     for po in args.po:
-        order = WalmartOrder.objects.filter(purchase_order_id=po).first()
+        order = (WalmartOrder.objects.filter(purchase_order_id=po).first()
+                 or WalmartOrder.objects.filter(customer_order_id=po).first())
         if order is None:
-            print(f'\n!! no WalmartOrder row with purchase_order_id={po!r}\n')
+            print(f'\n!! no WalmartOrder row with purchase_order_id or '
+                  f'customer_order_id = {po!r}\n')
             continue
         dump(order)
     return 0
