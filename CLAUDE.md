@@ -52,6 +52,19 @@ Grep it; do not read it whole. `docs/` says which function to grep for.
   (`upload_tracking` ×2, `reconcile`) — treat COMPLETE and the cancel statuses
   as terminal, everything else must pass `_order_units_covered()`. Archiving
   early hides un-shipped units from ops and from Walmart (PO 200015153699282).
+- **An order is archivable only once Walmart holds EVERY tracking number.**
+  `_all_packages_uploaded()` gates all three archive sites alongside
+  `_order_fully_shipped()`. Never mark a `ShipmentPackage` uploaded unless
+  Walmart's own order response contains that tracking number — recording a
+  parcel as uploaded when it was rejected leaves the customer with a shipment
+  Walmart cannot see, and it fails silently because the order looks finished.
+- **Walmart line status is about QUANTITY, not the presence of a status
+  string.** A 4-unit line carrying one 2-unit `Shipped` entry still has 2 units
+  open. `_walmart_order_snapshot()` sums `statusQuantity` per line; the old
+  set-membership test (`'Shipped' in statuses`) read a partial shipment as
+  complete and silently dropped the second tracking number
+  (PO 129123364460162). A failed Walmart lookup returns `None` and must never
+  be read as "fully shipped".
 
 ## Commands
 

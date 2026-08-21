@@ -714,26 +714,71 @@ def _order_fully_shipped(order) -> bool:
     return _order_units_covered(order, mcf)
 
 
-def _walmart_order_already_shipped(wc, po: str) -> bool:
-    """True when Walmart already shows every line of this order shipped/
-    delivered (tracking already on Walmart) — so a shipping update would be
-    rejected as a duplicate."""
+def _all_packages_uploaded(order) -> bool:
+    """True when every real (non-TBA) package for this order has been accepted
+    by Walmart.
+
+    An order must never be archived while any tracking number is still missing
+    from Walmart: the customer would have a parcel in transit that Walmart
+    cannot see, and the order would look finished to us while it is not.
+    """
+    mcf = getattr(order, 'mcf', None)
+    if mcf is None:
+        return False
+    pkgs = [p for p in mcf.packages.all()
+            if not p.tracking_number.upper().startswith('TBA')]
+    if not pkgs:
+        return False
+    return all(p.uploaded_to_walmart_at is not None for p in pkgs)
+
+
+def _walmart_order_snapshot(wc, po: str):
+    """What Walmart currently believes about this order.
+
+    Returns None on any API error or empty payload — a failed lookup must never
+    be read as "everything shipped". Otherwise:
+
+        {'fully_shipped': bool, 'tracking': set[str]}
+
+    `fully_shipped` compares QUANTITIES, not the presence of a status. A 4-unit
+    line carrying a single 2-unit "Shipped" entry is NOT fully shipped, even
+    though the string "Shipped" appears on it — reading the status set alone is
+    what silently dropped a second tracking number on PO 129123364460162.
+    """
     try:
         data = wc.get_order(po)
     except Exception:
-        return False
+        return None
     o = data.get('order') or data
     lines = ((o.get('orderLines') or {}).get('orderLine')) or []
     if not lines:
-        return False
-    saw_line = False
+        return None
+
+    tracking, fully = set(), True
     for ln in lines:
-        saw_line = True
-        sts = {s.get('status') for s in
-               ((ln.get('orderLineStatuses') or {}).get('orderLineStatus')) or []}
-        if not (sts & {'Shipped', 'Delivered', 'Cancelled'}):
-            return False               # a line is still open → not fully shipped
-    return saw_line                    # only "shipped" if we actually saw lines
+        try:
+            ordered = int((ln.get('orderLineQuantity') or {}).get('amount') or 0)
+        except (TypeError, ValueError):
+            ordered = 0
+        settled = 0
+        for st in ((ln.get('orderLineStatuses') or {}).get('orderLineStatus')) or []:
+            tn = str((st.get('trackingInfo') or {}).get('trackingNumber') or '').strip()
+            if tn:
+                tracking.add(tn.upper())
+            if st.get('status') in ('Shipped', 'Delivered', 'Cancelled'):
+                try:
+                    settled += int((st.get('statusQuantity') or {}).get('amount') or 0)
+                except (TypeError, ValueError):
+                    pass
+        if ordered <= 0 or settled < ordered:
+            fully = False
+    return {'fully_shipped': fully, 'tracking': tracking}
+
+
+def _walmart_order_already_shipped(wc, po: str) -> bool:
+    """True only when Walmart shows every ordered UNIT settled."""
+    snap = _walmart_order_snapshot(wc, po)
+    return bool(snap and snap['fully_shipped'])
 
 
 def _walmart_order_cancelled(wc, po: str) -> bool:
@@ -815,22 +860,61 @@ def upload_tracking(order_ids: list[int] | None = None) -> dict:
         pending = [p for p in order.mcf.packages.all()
                    if p.uploaded_to_walmart_at is None
                    and not p.tracking_number.upper().startswith('TBA')]
-        # If Walmart already shows the order shipped (tracking updated manually
-        # or in a prior run), the shipping update fails as a duplicate — treat
-        # it as done: mark packages uploaded and archive.
-        if pending and _walmart_order_already_shipped(wc, order.purchase_order_id):
+        # Walmart may already show the order settled (tracking added manually,
+        # a prior run, or the line auto-closed by an earlier partial shipping
+        # update). A further shipping update would be rejected as a duplicate —
+        # so reconcile against the tracking numbers Walmart actually holds
+        # rather than assuming our pending packages made it.
+        snap = (_walmart_order_snapshot(wc, order.purchase_order_id)
+                if pending else None)
+        if snap and snap['fully_shipped']:
+            # Walmart considers the order settled. Only the packages whose
+            # tracking Walmart ACTUALLY holds count as uploaded. Anything else
+            # is a parcel Walmart cannot see — never record that as success.
             now = timezone.now()
+            missing = []
             for p in pending:
-                p.uploaded_to_walmart_at = now
-                p.upload_error = 'tracking already present on Walmart'
-                p.save(update_fields=['uploaded_to_walmart_at', 'upload_error'])
+                if p.tracking_number.upper() in snap['tracking']:
+                    p.uploaded_to_walmart_at = now
+                    p.upload_error = ''
+                    p.save(update_fields=['uploaded_to_walmart_at',
+                                          'upload_error'])
+                    uploaded += 1
+                else:
+                    missing.append(p)
+
+            if missing:
+                for p in missing:
+                    p.upload_error = (
+                        'Walmart shows the order fully settled but does not '
+                        'hold this tracking number — the line was closed by an '
+                        'earlier partial shipping update. Needs manual upload '
+                        'on Walmart.')[:500]
+                    p.save(update_fields=['upload_error'])
+                failed += len(missing)
+                tns = ', '.join(p.tracking_number for p in missing)
+                if transition(order, S.ERROR, 'upload_tracking',
+                              {'missing_tracking': [p.tracking_number
+                                                    for p in missing]},
+                              error_reason=f'Walmart will not accept tracking '
+                                           f'{tns} — line already closed'):
+                    notify_admin(
+                        f'Tracking rejected by Walmart: PO '
+                        f'{order.purchase_order_id}',
+                        f'Amazon shipped {len(missing)} further package(s) but '
+                        f'Walmart has already closed the order line, so this '
+                        f'tracking could not be uploaded: {tns}\n\n'
+                        f'The customer has a parcel Walmart cannot see. Add the '
+                        f'tracking manually in Seller Center, then clear the '
+                        f'order from ERROR.')
+                continue
+
             if transition(order, S.TRACKING_UPLOADED, 'upload_tracking',
                           {'note': 'tracking already present on Walmart'}):
                 already_on_walmart += 1
-                uploaded += len(pending)
-                # Amazon done and every SKU shipped → close out to terminal.
-                if (order.mcf.amazon_status.upper() in AMAZON_DONE_STATUSES
-                        and _order_fully_shipped(order)):
+                # Archive only when nothing further is coming from Amazon AND
+                # every package is on Walmart.
+                if _order_fully_shipped(order) and _all_packages_uploaded(order):
                     if transition(order, S.COMPLETED, 'upload_tracking'):
                         completed += 1
             continue
@@ -895,8 +979,8 @@ def upload_tracking(order_ids: list[int] | None = None) -> dict:
         if ok and all_pkgs_uploaded and _order_fully_shipped(order):
             if transition(order, S.TRACKING_UPLOADED, 'upload_tracking',
                           {'packages': order.mcf.packages.count()}):
-                # Amazon says complete? → close out
-                if order.mcf.amazon_status.upper() in AMAZON_DONE_STATUSES:
+                # Archive only when every package is on Walmart too.
+                if _all_packages_uploaded(order):
                     transition(order, S.COMPLETED, 'upload_tracking')
                     completed += 1
     return {'uploaded_packages': uploaded, 'failed': failed,
@@ -1120,7 +1204,7 @@ def reconcile(stuck_after_hours: int = 24) -> dict:
     # Active instead of being archived behind ops' back.
     for order in WalmartOrder.objects.filter(
             status=S.TRACKING_UPLOADED).select_related('mcf'):
-        if _order_fully_shipped(order):
+        if _order_fully_shipped(order) and _all_packages_uploaded(order):
             if transition(order, S.COMPLETED, 'reconcile'):
                 fixed += 1
 
