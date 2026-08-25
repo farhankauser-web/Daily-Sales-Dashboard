@@ -47,7 +47,7 @@ import gc
 import hashlib
 import time
 from collections import defaultdict
-from datetime import date as _date
+from datetime import date as _date, timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -132,6 +132,13 @@ class Command(BaseCommand):
                        help='Keep Non-Amazon US (MCF) rows in the Amazon column.')
         p.add_argument('--sleep', type=int, default=5,
                        help='Seconds between report downloads (rate limiting).')
+        p.add_argument('--lookahead-days', type=int, default=60,
+                       help='Also read settlements starting up to N days AFTER '
+                            'month-end. Rows are attributed by posted-date, so a '
+                            'later settlement can still carry a row posted in this '
+                            'month (retroactive fees, reimbursements, promo '
+                            'corrections). Reading only period-overlapping '
+                            'settlements undercounts those. 0 = period overlap only.')
 
     # ── report download with backoff ────────────────────────────────────────
     def _download(self, client, doc_id, sleep_s):
@@ -147,7 +154,7 @@ class Command(BaseCommand):
         return []
 
     def handle(self, marketplace, month, m_from, m_to, dry_run,
-               include_mcf, sleep, **_):
+               include_mcf, sleep, lookahead_days, **_):
         from apps.dashboard.models import SettlementReport, SettlementLineActual
         from apps.amazon_api.models import AmazonAPIConfig
         from apps.amazon_api.services import SPAPIClient
@@ -175,23 +182,28 @@ class Command(BaseCommand):
             self._rebuild_one(
                 client, SettlementReport, SettlementLineActual, SPAPIClient,
                 marketplace, month_start, native_ccy,
-                dry_run, include_mcf, sleep)
+                dry_run, include_mcf, sleep, lookahead_days)
 
     # ── one month ───────────────────────────────────────────────────────────
     def _rebuild_one(self, client, SettlementReport, SettlementLineActual,
                      SPAPIClient, marketplace, month_start, native_ccy,
-                     dry_run, include_mcf, sleep_s):
+                     dry_run, include_mcf, sleep_s, lookahead_days=0):
         month_end = _month_end(month_start)
         month_tag = f'{month_start:%Y-%m}'
 
+        # Rows are attributed by posted-date, so a settlement that STARTS after
+        # month-end can still carry rows posted inside the month. Reading only
+        # period-overlapping settlements silently undercounts those.
+        window_end = month_end + timedelta(days=max(0, lookahead_days))
+
         reports = SettlementReport.objects.filter(
             marketplace=marketplace, status='ok',
-            end_date__gte=month_start, start_date__lt=month_end,
+            end_date__gte=month_start, start_date__lt=window_end,
         ).order_by('start_date')
 
         self.stdout.write(self.style.MIGRATE_HEADING(
-            f'\n[{marketplace.upper()}] {month_tag} — '
-            f'{reports.count()} settlement(s) overlap this month'))
+            f'\n[{marketplace.upper()}] {month_tag} — {reports.count()} '
+            f'settlement(s) (period overlap + {lookahead_days}d lookahead)'))
 
         if not reports.exists():
             self.stdout.write(self.style.WARNING(
