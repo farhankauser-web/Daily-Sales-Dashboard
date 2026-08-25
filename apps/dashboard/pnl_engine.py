@@ -4,10 +4,12 @@ apps/dashboard/pnl_engine.py — assemble a Management P&L statement.
 build_statement(marketplace, month) returns a fully-resolved statement for
 one region+month in that region's NATIVE currency:
 
-    auto lines     ← SettlementLineActual (settled actuals)
-                     with a fallback to operational DailyMetric/COGS when no
-                     settlement has landed yet for the month (so recent months
-                     aren't blank during the ~2-week settlement lag).
+    auto lines     ← SettlementLineActual, sourced ONLY from Settlement
+                     Flat File V2. No operational fallback: where V2 is
+                     silent the line is zero, so an open month reads low
+                     until its settlements land (~2-week lag). That is the
+                     true settled figure and is labelled provisional rather
+                     than topped up from another basis.
     manual lines   ← MonthlyPnLEntry (regional currency)
     computed lines ← formulas below
     metrics        ← units, ARPU, per-unit fees
@@ -44,18 +46,31 @@ def currency_for(marketplace: str) -> str:
 def _auto_feed(marketplace: str, month_start: date) -> dict[str, dict]:
     """
     Returns {line_key: {'amount': float, 'units': int, 'src': str}} for the
-    auto (settlement-fed) lines. Falls back to operational data per-line when
-    settlement hasn't landed.
-    """
-    from .models import (
-        SettlementLineActual, DailyMetric, DailySkuSnapshot, SkuPpcAllocation,
-    )
-    from django.db.models import Sum
+    auto lines, sourced ONLY from Settlement Flat File V2 actuals stored in
+    SettlementLineActual.
 
-    month_a, month_b = _month_bounds(month_start)
+    SINGLE SOURCE OF TRUTH — no fallbacks.
+        The Management P&L reports what Settlement V2 says and nothing else.
+        Where V2 is silent the line is ZERO. It is never substituted from
+        DailyMetric, DailySkuSnapshot or SkuPpcAllocation.
+
+        Those fallbacks used to fire per-line whenever settlement hadn't
+        landed, so a single statement could mix a cash-basis settlement
+        figure with an accrual-basis operational one — and nothing on the
+        page told the reader which line came from where.
+
+        Consequence, and it is intended: an OPEN month reads LOW until its
+        settlements arrive. That is the true settled figure, not a gap to be
+        patched. `has_settlement` and each line's 'src' let the view label
+        the statement as provisional.
+
+    Basis note: V2 is posted-date / cash basis; the daily dashboard is
+    order-date / accrual. The two will never tie exactly, and should not.
+    """
+    from .models import SettlementLineActual
+
     out: dict[str, dict] = {}
 
-    # 1) Settlement actuals (preferred)
     settle = {r.line_key: r for r in SettlementLineActual.objects.filter(
         marketplace=marketplace, month=month_start)}
     breakdowns = {k: (getattr(r, 'breakdown', None) or {})
@@ -63,50 +78,9 @@ def _auto_feed(marketplace: str, month_start: date) -> dict[str, dict]:
     for key, row in settle.items():
         out[key] = {'amount': float(row.amount or 0),
                     'units':  int(row.units or 0),
-                    'src':    'settlement'}
+                    'src':    row.source_note or 'settlement'}
 
     has_settlement = bool(settle)
-
-    # 2) Operational fallback for lines settlement didn't provide.
-    #    Uses the same numbers the daily dashboard already shows.
-    def _need(k):  # missing or zero from settlement
-        return k not in out
-
-    if _need('gross_sales') or _need('cogs') or _need('commission') or _need('fba_fee'):
-        dm = DailyMetric.objects.filter(
-            marketplace=marketplace, date__gte=month_a, date__lte=month_b,
-        ).aggregate(
-            rev=Sum('revenue'), cgs=Sum('cgs'),
-            amz=Sum('amazon_fee'), fba=Sum('fba_fee'), ppc=Sum('ppc_spend'),
-        )
-        sku = DailySkuSnapshot.objects.filter(
-            marketplace=marketplace, date__gte=month_a, date__lte=month_b,
-        ).aggregate(units=Sum('qty'))
-
-        if _need('gross_sales'):
-            out['gross_sales'] = {'amount': float(dm['rev'] or 0),
-                                   'units': int(sku['units'] or 0),
-                                   'src': 'operational'}
-        if _need('cogs'):
-            out['cogs'] = {'amount': float(dm['cgs'] or 0), 'units': 0,
-                            'src': 'operational'}
-        if _need('commission'):
-            out['commission'] = {'amount': float(dm['amz'] or 0), 'units': 0,
-                                  'src': 'operational'}
-        if _need('fba_fee'):
-            out['fba_fee'] = {'amount': float(dm['fba'] or 0), 'units': 0,
-                               'src': 'operational'}
-        if _need('ppc'):
-            out['ppc'] = {'amount': float(dm['ppc'] or 0), 'units': 0,
-                           'src': 'operational'}
-
-    # 3) PPC — prefer SkuPpcAllocation sum if present, else operational above
-    if _need('ppc'):
-        ppc = SkuPpcAllocation.objects.filter(
-            marketplace=marketplace, date__gte=month_a, date__lte=month_b,
-        ).aggregate(s=Sum('sku_ppc_spend'))['s']
-        if ppc is not None:
-            out['ppc'] = {'amount': float(ppc), 'units': 0, 'src': 'allocation'}
 
     # Ensure every auto line exists (zero if truly absent)
     for ln in PNL_LINES:
