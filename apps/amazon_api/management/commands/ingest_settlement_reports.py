@@ -81,6 +81,9 @@ class Command(BaseCommand):
         total_new = 0
         total_skipped = 0
         total_failed = 0
+        # (marketplace, month) pairs seen in this run — rebuilt from V2 at the
+        # end, since this command no longer writes P&L lines itself.
+        touched_months: set = set()
 
         for cfg in configs:
             mp = cfg.marketplace
@@ -186,38 +189,43 @@ class Command(BaseCommand):
                                 'source_settlement': audit,
                             },
                         )
-                    # P&L line buckets → SettlementLineActual (per month/line).
-                    # Settlement reports are incremental, so ADD to whatever is
-                    # already stored for that month rather than overwrite.
-                    native_ccy = (settings.AMAZON_MARKETPLACES.get(mp, {})
-                                   .get('currency', 'USD')
-                                   if hasattr(settings, 'AMAZON_MARKETPLACES') else 'USD')
-                    for (month_str, line_key), vals in pnl['lines'].items():
+                    # ── P&L lines are NOT written here any more ──────────────
+                    # This block used to ADD each report's amounts onto
+                    # whatever was already stored for the month:
+                    #
+                    #     row, _ = SettlementLineActual.objects.get_or_create(...)
+                    #     row.amount = (row.amount or 0) + <parsed amount>
+                    #
+                    # A month total that can only grow has no way to be correct
+                    # twice and no way to self-heal once wrong. It also had no
+                    # idea whether the row it found had been created by THIS
+                    # importer or by unified_txn_importer / finances_importer —
+                    # it added on top regardless and overwrote source_note to
+                    # 'settlement', destroying the evidence.
+                    #
+                    # Measured damage, USA 2026-07:
+                    #     gross_sales stored     $2,471,529
+                    #     rebuilt from the same
+                    #     settlements               $1,361,984   (1.81x)
+                    #     flat monthly fees were inflated exactly 2.00x
+                    #
+                    # SettlementLineActual now has exactly ONE writer:
+                    #     manage.py rebuild_settlement_month
+                    # which recomputes a month from every settlement that
+                    # covers it, dedupes rows restated across overlapping
+                    # settlements, and REPLACES the stored lines. Running it
+                    # twice gives the same answer as running it once.
+                    #
+                    # This command's job is now: fetch reports, record them in
+                    # SettlementReport, and write SkuFeeActual (which uses
+                    # update_or_create and is already idempotent). The months
+                    # touched by this run are rebuilt at the end of handle().
+                    for (month_str, _line_key) in pnl['lines']:
                         try:
-                            m = _date.fromisoformat(month_str + '-01')
+                            touched_months.add(
+                                (mp, _date.fromisoformat(month_str + '-01')))
                         except ValueError:
                             continue
-                        row, _created = SettlementLineActual.objects.get_or_create(
-                            marketplace=mp, month=m, line_key=line_key,
-                            defaults={'amount': 0, 'units': 0,
-                                       'currency': native_ccy,
-                                       'source_note': 'settlement'},
-                        )
-                        # row.amount comes back from the DB as Decimal, while
-                        # the parsed settlement value is a float — adding them
-                        # raises TypeError and, because this runs inside the
-                        # same transaction.atomic() as the SkuFeeActual writes
-                        # above, it rolled the FEE ROWS BACK TOO. That is why
-                        # the FBA "actual" fee stopped updating entirely.
-                        # Convert through str so binary float error is not
-                        # carried into the decimal.
-                        row.amount = (row.amount or Decimal('0')) + Decimal(
-                            str(round(float(vals['amount']), 2)))
-                        row.units  = (row.units or 0) + int(vals['units'])
-                        row.currency = native_ccy
-                        row.source_note = 'settlement'
-                        row.save(update_fields=['amount', 'units', 'currency',
-                                                 'source_note', 'updated_at'])
 
                     audit.rows_processed = len(rows)
                     audit.fee_rows       = len(agg)
@@ -236,6 +244,31 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f'DONE: new={total_new}  skipped={total_skipped}  '
             f'failed={total_failed}'))
+
+        # ── rebuild the P&L lines for every month this run touched ──────────
+        # SettlementLineActual has one writer: rebuild_settlement_month. It
+        # recomputes from V2 and replaces, so it is safe to call repeatedly.
+        # A rebuild failure must not fail the ingest — the reports are already
+        # recorded and the next run will rebuild again.
+        if touched_months:
+            from django.core.management import call_command
+            self.stdout.write(self.style.MIGRATE_HEADING(
+                f'\nRebuilding P&L lines for {len(touched_months)} '
+                f'region-month(s) from Settlement V2 …'))
+            for mp_, month_ in sorted(touched_months):
+                try:
+                    call_command('rebuild_settlement_month',
+                                 marketplace=mp_,
+                                 month=f'{month_:%Y-%m}',
+                                 verbosity=0)
+                    self.stdout.write(f'  ✓ {mp_} {month_:%Y-%m}')
+                except Exception as exc:
+                    self.stdout.write(self.style.ERROR(
+                        f'  ✗ {mp_} {month_:%Y-%m} rebuild failed — '
+                        f'{type(exc).__name__}: {exc}'))
+        elif total_new:
+            self.stdout.write(self.style.WARNING(
+                'No months identified for rebuild despite new reports.'))
 
     @staticmethod
     def _parse_iso_date(s: str) -> date | None:
