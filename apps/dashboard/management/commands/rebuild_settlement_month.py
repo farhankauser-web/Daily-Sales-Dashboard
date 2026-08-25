@@ -43,6 +43,8 @@ USAGE
 """
 from __future__ import annotations
 
+import gc
+import hashlib
 import time
 from collections import defaultdict
 from datetime import date as _date
@@ -91,9 +93,17 @@ def _month_end(d: _date) -> _date:
     return _date(d.year + (d.month == 12), d.month % 12 + 1, 1)
 
 
-def _row_signature(r: dict) -> tuple:
-    """Stable identity for one settlement transaction line."""
-    return (
+def _row_digest(r: dict) -> bytes:
+    """
+    Stable 8-byte identity for one settlement transaction line.
+
+    Hashed rather than kept as a tuple of strings on purpose: this box has
+    ~900MB of RAM and a single month can carry ~290k unique signatures. Holding
+    those as 9-string tuples (let alone the source row dicts) exhausts memory
+    and takes gunicorn down with it. 8 bytes each keeps the whole map in a few
+    MB. Collision risk at ~3e5 keys over 64 bits is ~2e-9 — negligible.
+    """
+    sig = '\x1f'.join((
         (r.get('order-id') or '').strip(),
         (r.get('shipment-id') or '').strip(),
         (r.get('order-item-code') or r.get('merchant-order-item-id') or '').strip(),
@@ -103,7 +113,8 @@ def _row_signature(r: dict) -> tuple:
         (r.get('posted-date') or r.get('posted-date-time') or '')[:10],
         (r.get('amount') or '').strip(),
         (r.get('quantity-purchased') or '').strip(),
-    )
+    ))
+    return hashlib.blake2b(sig.encode('utf-8'), digest_size=8).digest()
 
 
 class Command(BaseCommand):
@@ -187,22 +198,26 @@ class Command(BaseCommand):
                 '  no settlements — nothing to rebuild, leaving stored lines alone'))
             return
 
-        # signature → max occurrences seen in any single report
-        best: dict[tuple, int] = {}
-        payload: dict[tuple, dict] = {}
+        # digest → max occurrences seen in any SINGLE report
+        best: dict[bytes, int] = {}
+        # digest → (line_key, amount, signed_units) — compact; never the row.
+        meta: dict[bytes, tuple] = {}
         skipped_mcf = 0
 
         for rep in reports:
-            self.stdout.write(f'  reading {rep.start_date} → {rep.end_date} …')
+            self.stdout.write(
+                f'  reading {rep.start_date} → {rep.end_date} … ', ending='')
+            self.stdout.flush()
             try:
                 rows = self._download(client, rep.document_id, sleep_s)
             except Exception as exc:
                 raise CommandError(
-                    f'  download failed for {rep.report_id}: '
+                    f'\n  download failed for {rep.report_id}: '
                     f'{type(exc).__name__}: {exc}\n'
                     f'  Nothing was written — re-run when the API frees up.')
 
-            local: dict[tuple, int] = defaultdict(int)
+            local: dict[bytes, int] = defaultdict(int)
+            kept = 0
             for r in rows:
                 posted = (r.get('posted-date') or r.get('posted-date-time') or '')[:10]
                 if not posted:
@@ -219,45 +234,61 @@ class Command(BaseCommand):
                     skipped_mcf += 1
                     continue
 
-                sig = _row_signature(r)
-                local[sig] += 1
-                payload.setdefault(sig, r)
+                desc = r.get('amount-description') or ''
+                key = SPAPIClient.classify_settlement_row(
+                    r.get('transaction-type') or '', r.get('amount-type') or '', desc)
+                if not key:
+                    continue
+                try:
+                    amount = float(r.get('amount') or 0)
+                except (TypeError, ValueError):
+                    continue
+                try:
+                    qty = int(float(r.get('quantity-purchased') or 0))
+                except (TypeError, ValueError):
+                    qty = 0
+                if amount == 0 and qty == 0:
+                    continue
 
-            for sig, n in local.items():
-                if n > best.get(sig, 0):
-                    best[sig] = n
+                dn = ''.join(desc.lower().split()).replace('-', '').replace('_', '')
+                if key == 'gross_sales' and dn == 'principal' and qty > 0:
+                    u = qty
+                elif key == 'returns' and dn == 'principal':
+                    u = abs(qty)
+                else:
+                    u = 0
 
+                dig = _row_digest(r)
+                local[dig] += 1
+                if dig not in meta:
+                    meta[dig] = (key, amount, u)
+                kept += 1
+
+            n_rows = len(rows)
+            # Drop the report before merging — a single settlement can be
+            # 140k+ rows and this box cannot hold two of them at once.
+            del rows
+            gc.collect()
+
+            for dig, n in local.items():
+                if n > best.get(dig, 0):
+                    best[dig] = n
+            del local
+
+            self.stdout.write(f'{n_rows:,} rows, {kept:,} in-month')
             time.sleep(sleep_s)
 
-        # ── classify + aggregate ────────────────────────────────────────────
+        # ── aggregate ───────────────────────────────────────────────────────
         signed = defaultdict(float)
         units  = defaultdict(int)
-        for sig, n in best.items():
-            r = payload[sig]
-            ttype = r.get('transaction-type') or ''
-            desc  = r.get('amount-description') or ''
-            atype = r.get('amount-type') or ''
-            try:
-                amount = float(r.get('amount') or 0)
-            except (TypeError, ValueError):
-                continue
-            if amount == 0 and not (r.get('quantity-purchased') or '').strip():
-                continue
-
-            key = SPAPIClient.classify_settlement_row(ttype, atype, desc)
-            if not key:
-                continue
-
+        n_signatures = len(best)
+        for dig, n in best.items():
+            key, amount, u = meta[dig]
             signed[key] += amount * n
-            dn = ''.join(desc.lower().split()).replace('-', '').replace('_', '')
-            try:
-                qty = int(float(r.get('quantity-purchased') or 0))
-            except (TypeError, ValueError):
-                qty = 0
-            if key == 'gross_sales' and dn == 'principal' and qty > 0:
-                units[key] += qty * n
-            elif key == 'returns' and dn == 'principal':
-                units[key] += abs(qty) * n
+            if u:
+                units[key] += u * n
+        del best, meta
+        gc.collect()
 
         income_keys = getattr(SPAPIClient, '_PNL_INCOME_KEYS',
                               {'gross_sales', 'other_income'})
@@ -288,7 +319,7 @@ class Command(BaseCommand):
         if skipped_mcf:
             self.stdout.write(self.style.WARNING(
                 f'\n  excluded {skipped_mcf} Non-Amazon US (MCF) row(s)'))
-        self.stdout.write(f'  deduped signatures: {len(best):,}')
+        self.stdout.write(f'  deduped signatures: {n_signatures:,}')
 
         # A V2 key the rebuild produced nothing for would silently zero a real
         # figure — surface it rather than writing an unexplained 0.
