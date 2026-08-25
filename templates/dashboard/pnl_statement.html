@@ -23,6 +23,8 @@
         title="Generates and imports Amazon's Date-Range Transaction report — the book figure, same as the manual unified upload (deferred transactions included). Takes 2–6 min."
         onclick="syncFromAmazon()">☁ Sync from Amazon</button>
 <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openUnified()">⬆ Upload Txn Report</button>
+<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openSettleV2()"
+        title="Upload Settlement Flat File V2 fetched by hand from Seller Central. Needed only for months Amazon has expired the API document for — the rebuild then reads the file instead of downloading.">⬆ Upload Flat File V2</button>
 <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="openImport()">⬆ Import Overhead Excel</button>
 <button class="btn btn-secondary btn-sm" style="margin-left:6px" id="recalcBtn"
         title="Re-price this month's financials using the currently uploaded COGS"
@@ -172,6 +174,32 @@
   </div>
 </div>
 
+<!-- Settlement Flat File V2 upload -->
+<div class="modal-bg" id="settleV2Modal" onclick="if(event.target===this)closeSettleV2()">
+  <div class="modal-card">
+    <h3>Upload Settlement Flat File V2</h3>
+    <p style="font-size:11px;color:var(--text2)">
+      Seller Central → Payments → <b>Reports Repository</b> → Settlement report
+      (<i>Flat File V2</i>). Only needed for older months: Amazon expires the
+      API document after a few months, so those settlements can no longer be
+      downloaded automatically.
+    </p>
+    <p style="font-size:11px;color:var(--text2)">
+      This uploads the <b>source file</b>, not figures. Press <b>Sync from Amazon</b>
+      afterwards — the rebuild reads these files and computes the month exactly
+      as it would a downloaded one. Upload <b>every</b> settlement covering the
+      month; a month missing one is refused rather than half-built.
+    </p>
+    <label>File(s) — .txt / .tsv / .csv</label>
+    <input type="file" id="settleV2Files" accept=".txt,.tsv,.csv" multiple/>
+    <div id="settleV2Msg" style="font-size:11px;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-sm" onclick="closeSettleV2()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="settleV2Btn" onclick="doSettleV2()">Upload</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="importModal" onclick="if(event.target===this)closeImport()">
   <div class="modal-card">
     <h3>Import P&L Excel</h3>
@@ -181,6 +209,12 @@
       <option value="amazon">Amazon column</option>
       <option value="retail">Retail / Walmart column</option>
     </select>
+    <label>Template</label>
+    <a id="tplLink" class="btn btn-secondary btn-sm" style="display:inline-block;text-decoration:none"
+       href="#" onclick="return dlTemplate()">⬇ Download blank template (.xlsx)</a>
+    <div style="font-size:10px;color:var(--text2);margin-top:4px">
+      Column A carries the exact labels the importer matches on — fill column B and upload.
+    </div>
     <label>File (.xlsx)</label>
     <input type="file" id="importFile" accept=".xlsx"/>
     <div id="importMsg" style="font-size:11px;margin-top:8px"></div>
@@ -199,6 +233,8 @@ const U_ENTRY  = "{% url 'dashboard:save_pnl_entry' %}";
 const U_FX     = "{% url 'dashboard:save_fx_rate' %}";
 const U_IMPORT = "{% url 'dashboard:import_pnl_xlsx' %}";
 const U_UNIFIED = "{% url 'dashboard:import_unified_txn' %}";
+const U_SETTLE_V2 = "{% url 'dashboard:import_settlement_v2' %}";
+const U_OVERHEAD_TPL = "{% url 'dashboard:pnl_overhead_template' %}";
 const CAN_EDIT = {{ can_edit|yesno:"true,false" }};
 const SECTION_LABELS = {
   revenue:'Revenue', cogs:'Cost of Sales', amazon_fees:'Selling Fees',
@@ -516,6 +552,47 @@ async function doUnified(){
     setTimeout(()=>{closeUnified(); document.getElementById('monthPicker').value=mo; loadPnl();},1100);
   } else { document.getElementById('unifiedMsg').textContent='✗ '+(j.message||'failed'); }
 }
+// ── Settlement Flat File V2 upload ───────────────────────────
+function openSettleV2(){
+  document.getElementById('settleV2Msg').textContent='';
+  document.getElementById('settleV2Modal').classList.add('show');
+}
+function closeSettleV2(){document.getElementById('settleV2Modal').classList.remove('show');}
+
+async function doSettleV2(){
+  const files = document.getElementById('settleV2Files').files;
+  const msg   = document.getElementById('settleV2Msg');
+  const btn   = document.getElementById('settleV2Btn');
+  if(!files.length){ msg.textContent='Pick at least one settlement file.'; return; }
+  const fd = new FormData();
+  fd.append('marketplace', currentMP);
+  for(const f of files) fd.append('files', f);
+  btn.disabled = true;
+  msg.textContent = 'Uploading & parsing ' + files.length + ' file(s)…';
+  try{
+    const r = await fetch(U_SETTLE_V2,{method:'POST',headers:{'X-CSRFToken':csrf()},body:fd});
+    const j = await r.json();
+    // Always show the per-file detail: a file that parsed to zero rows is the
+    // usual mistake (wrong report type), and a bare "failed" hides that.
+    const lines = (j.results||[]).map(x =>
+      x.ok ? `✓ ${x.file} — ${x.rows.toLocaleString()} rows, ${x.posted}`
+           : `✗ ${x.file} — ${x.message}`);
+    msg.innerHTML = (j.status==='ok' ? '✓ ' : '✗ ') +
+      (j.message||'') + (lines.length ? '<br><br>' + lines.join('<br>') : '');
+    btn.disabled = false;
+  }catch(e){
+    msg.textContent = '✗ ' + e;
+    btn.disabled = false;
+  }
+}
+
+// ── overhead template download ───────────────────────────────
+function dlTemplate(){
+  const qs = new URLSearchParams({mp: currentMP, month: curMonth()});
+  window.location = U_OVERHEAD_TPL + '?' + qs.toString();
+  return false;
+}
+
 function openImport(){document.getElementById('importMsg').textContent='';document.getElementById('importModal').classList.add('show');}
 function closeImport(){document.getElementById('importModal').classList.remove('show');}
 async function doImport(){

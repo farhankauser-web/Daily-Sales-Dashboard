@@ -8501,3 +8501,186 @@ def api_morning_ai_commentary(request):
             yield 'data: ' + _json.dumps({'error': f'network: {e}'}) + '\n\n'
 
     return StreamingHttpResponse(_stream(), content_type='text/event-stream')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  P&L — overhead template download + Settlement V2 manual upload
+# ═══════════════════════════════════════════════════════════════════════════
+
+@login_required
+@permission_required('can_manage_cogs')
+def pnl_overhead_template_xlsx(request):
+    """
+    Download a blank overhead template matching the Import P&L Excel parser.
+
+    Column A carries the exact labels PNL_LINES defines for source='manual'
+    lines, so the importer's label matching cannot miss. Column B is empty for
+    the user to fill. Amazon lines are deliberately absent — they come from
+    Settlement V2 and the overhead importer has no path to them.
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill
+    except ImportError:
+        return HttpResponse('openpyxl is not installed. Run: pip install openpyxl',
+                            status=500)
+
+    from .pnl_lines import PNL_LINES
+
+    mp    = request.GET.get('mp', 'usa')
+    month = request.GET.get('month', date.today().strftime('%Y-%m'))
+    ccy   = (getattr(settings, 'AMAZON_MARKETPLACES', {})
+             .get(mp, {}).get('currency', 'USD'))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'P&L Summary'
+
+    head_fill = PatternFill('solid', fgColor='1F4E5F')
+    head_font = Font(bold=True, color='FFFFFF', size=11)
+    sec_fill  = PatternFill('solid', fgColor='E8EEF2')
+    sec_font  = Font(bold=True, size=10)
+
+    ws['A1'] = f'Overhead — {mp.upper()} — {month}'
+    ws['B1'] = f'Amount ({ccy})'
+    for c in ('A1', 'B1'):
+        ws[c].fill = head_fill
+        ws[c].font = head_font
+        ws[c].alignment = Alignment(horizontal='left')
+
+    row = 2
+    last_section = None
+    for ln in PNL_LINES:
+        if ln.get('source') != 'manual':
+            continue
+        sec = ln.get('section') or ''
+        if sec != last_section:
+            ws.cell(row=row, column=1, value=str(sec)).fill = sec_fill
+            ws.cell(row=row, column=1).font = sec_font
+            ws.cell(row=row, column=2).fill = sec_fill
+            row += 1
+            last_section = sec
+        ws.cell(row=row, column=1, value=ln['label'])
+        ws.cell(row=row, column=2, value=None)
+        row += 1
+
+    ws.column_dimensions['A'].width = 46
+    ws.column_dimensions['B'].width = 18
+
+    note = ws.cell(row=row + 1, column=1,
+                   value='Leave a row blank to skip it. Negative values are '
+                         'allowed for credits/rebates. Do not rename column A '
+                         '— the importer matches on these labels.')
+    note.font = Font(italic=True, size=9, color='666666')
+
+    resp = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = (
+        f'attachment; filename="pnl_overhead_template_{mp}_{month}.xlsx"')
+    wb.save(resp)
+    return resp
+
+
+@login_required
+@permission_required('can_manage_cogs')
+@_require_POST
+def import_settlement_v2(request):
+    """
+    Upload Settlement Flat File V2 report(s) fetched by hand from
+    Seller Central → Payments → Reports Repository.
+
+    Amazon expires report documents after a few months, so the API can no
+    longer download older settlements — USA April and May 2026 already fail
+    with a 400. Seller Central still serves them. Uploading here caches the
+    file against its SettlementReport so rebuild_settlement_month can read it
+    exactly as if it had downloaded it.
+
+    This does NOT import figures directly. It only makes the source file
+    available; the same rebuild does the parsing, dedup and arithmetic, so an
+    uploaded month is computed identically to a downloaded one.
+
+    POST multipart: marketplace, file(s)
+    """
+    from .settlement_cache import parse_bytes, describe, write_cached
+    from .models import SettlementReport
+
+    mp = request.POST.get('marketplace', 'usa')
+    if not request.user.can_access_marketplace(mp):
+        raise _PermissionDenied
+
+    files = request.FILES.getlist('files') or request.FILES.getlist('file')
+    if not files:
+        return JsonResponse({'status': 'failed', 'message': 'No file.'}, status=400)
+
+    results, months = [], set()
+    for f in files:
+        if f.size > 250 * 1024 * 1024:
+            results.append({'file': f.name, 'ok': False,
+                            'message': 'Too large (max 250 MiB).'})
+            continue
+        try:
+            raw = f.read()
+            rows = parse_bytes(raw)
+        except Exception as exc:
+            results.append({'file': f.name, 'ok': False,
+                            'message': f'{type(exc).__name__}: {exc}'})
+            continue
+
+        info = describe(rows)
+        if not info['rows'] or not info['first_posted']:
+            results.append({'file': f.name, 'ok': False,
+                            'message': 'No settlement rows with a posted-date — '
+                                       'is this the Flat File V2 settlement report?'})
+            continue
+
+        # Attach to the SettlementReport this file belongs to, so the rebuild
+        # knows to look for it. Match on settlement-id where we can; fall back
+        # to the posted-date span; create a row when Amazon never listed it.
+        rep = None
+        for sid in info['settlement_ids']:
+            rep = SettlementReport.objects.filter(
+                marketplace=mp, report_id=f'upload-{sid}').first()
+            if rep:
+                break
+        if rep is None:
+            rep = SettlementReport.objects.filter(
+                marketplace=mp,
+                start_date__lte=info['first_posted'],
+                end_date__gte=info['last_posted'],
+            ).order_by('start_date').first()
+        if rep is None:
+            sid = info['settlement_ids'][0] if info['settlement_ids'] else f.name[:32]
+            rep, _ = SettlementReport.objects.update_or_create(
+                marketplace=mp, report_id=f'upload-{sid}',
+                defaults={'document_id': '', 'status': 'ok',
+                          'start_date': info['first_posted'],
+                          'end_date': info['last_posted'],
+                          'rows_processed': info['rows'],
+                          'error_message': 'uploaded from Seller Central'},
+            )
+
+        write_cached(mp, rep.report_id, raw)
+        m = info['first_posted'].replace(day=1)
+        months.add(f'{m:%Y-%m}')
+        if info['last_posted'].month != info['first_posted'].month:
+            months.add(f'{info["last_posted"].replace(day=1):%Y-%m}')
+
+        results.append({
+            'file': f.name, 'ok': True,
+            'report_id': rep.report_id,
+            'settlement_ids': info['settlement_ids'],
+            'rows': info['rows'],
+            'posted': f"{info['first_posted']} → {info['last_posted']}",
+        })
+
+    ok = [r for r in results if r['ok']]
+    return JsonResponse({
+        'status': 'ok' if ok else 'failed',
+        'message': (
+            f'Cached {len(ok)} settlement file(s). Now press Sync from Amazon '
+            f'for: {", ".join(sorted(months))} — the rebuild will read these '
+            f'instead of downloading.'
+            if ok else 'No file could be read.'),
+        'months': sorted(months),
+        'results': results,
+    })

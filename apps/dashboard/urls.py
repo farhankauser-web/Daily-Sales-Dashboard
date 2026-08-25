@@ -40,6 +40,8 @@ urlpatterns = [
     path('api/pnl-statement/fx/',       views.save_fx_rate,             name='save_fx_rate'),
     path('api/pnl-statement/import/',   views.import_pnl_xlsx,          name='import_pnl_xlsx'),
     path('api/pnl-statement/import-unified/', views.import_unified_txn,  name='import_unified_txn'),
+    path('api/pnl-statement/import-settlement-v2/', views.import_settlement_v2, name='import_settlement_v2'),
+    path('pnl-statement/overhead-template/', views.pnl_overhead_template_xlsx, name='pnl_overhead_template'),
     path('api/cogs/recalc/',            views.api_recalc_cogs,          name='api_recalc_cogs'),
     path('api/pnl-statement/sync/',     views.api_sync_pnl_month,       name='api_sync_pnl_month'),
 

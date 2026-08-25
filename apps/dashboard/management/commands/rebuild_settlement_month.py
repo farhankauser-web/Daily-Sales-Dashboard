@@ -140,11 +140,33 @@ class Command(BaseCommand):
                             'corrections). Reading only period-overlapping '
                             'settlements undercounts those. 0 = period overlap only.')
 
-    # ── report download with backoff ────────────────────────────────────────
-    def _download(self, client, doc_id, sleep_s):
+    # ── source a settlement: local cache first, then the API ────────────────
+    def _fetch(self, client, marketplace, rep, sleep_s):
+        """
+        Rows for one settlement.
+
+        A locally-cached copy wins over the API. Amazon expires report
+        documents after a few months — USA April and May 2026 already return
+        400 — but Seller Central still serves those files, and the upload view
+        caches them here. Preferring the cache also spares the rate limit on
+        months that have already been fetched by hand.
+        """
+        from apps.dashboard.settlement_cache import read_cached
+
+        cached = read_cached(marketplace, rep.report_id)
+        if cached is not None:
+            self.stdout.write('[cached] ', ending='')
+            return cached
+
+        if not rep.document_id:
+            raise CommandError(
+                f'  {rep.report_id} has no document and no cached copy.\n'
+                f'  Upload the flat file from Seller Central → Payments → '
+                f'Reports Repository.')
+
         for attempt in range(5):
             try:
-                return client.download_settlement_report(doc_id)
+                return client.download_settlement_report(rep.document_id)
             except Exception as exc:
                 if '429' not in str(exc) or attempt == 4:
                     raise
@@ -246,12 +268,20 @@ class Command(BaseCommand):
                 f'  reading {rep.start_date} → {rep.end_date} … ', ending='')
             self.stdout.flush()
             try:
-                rows = self._download(client, rep.document_id, sleep_s)
+                rows = self._fetch(client, marketplace, rep, sleep_s)
+            except CommandError:
+                raise
             except Exception as exc:
+                expired = '400' in str(exc)
                 raise CommandError(
-                    f'\n  download failed for {rep.report_id}: '
+                    f'\n  could not read {rep.report_id} '
+                    f'({rep.start_date} → {rep.end_date}): '
                     f'{type(exc).__name__}: {exc}\n'
-                    f'  Nothing was written — re-run when the API frees up.')
+                    + (f'  Amazon has expired this document. Download the flat '
+                       f'file from Seller Central → Payments → Reports '
+                       f'Repository and upload it on the P&L page, then re-run.'
+                       if expired else
+                       f'  Nothing was written — re-run when the API frees up.'))
 
             local: dict[bytes, int] = defaultdict(int)
             kept = 0
