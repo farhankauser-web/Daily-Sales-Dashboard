@@ -178,11 +178,36 @@ class Command(BaseCommand):
         native_ccy = (getattr(settings, 'AMAZON_MARKETPLACES', {})
                       .get(marketplace, {}).get('currency', 'USD'))
 
+        # A month whose settlements cannot all be downloaded must be SKIPPED,
+        # not partially rebuilt — rebuilding from 16 of 17 settlements would
+        # silently undercount, which is worse than leaving the old figure and
+        # saying so. But one dead document must not abort the whole range.
+        done, failed = [], []
         for month_start in months:
-            self._rebuild_one(
-                client, SettlementReport, SettlementLineActual, SPAPIClient,
-                marketplace, month_start, native_ccy,
-                dry_run, include_mcf, sleep, lookahead_days)
+            try:
+                self._rebuild_one(
+                    client, SettlementReport, SettlementLineActual, SPAPIClient,
+                    marketplace, month_start, native_ccy,
+                    dry_run, include_mcf, sleep, lookahead_days)
+                done.append(month_start)
+            except CommandError as exc:
+                failed.append((month_start, str(exc).strip().splitlines()[0]))
+                self.stdout.write(self.style.ERROR(
+                    f'  ✗ {month_start:%Y-%m} SKIPPED — left unchanged'))
+
+        if len(months) > 1 or failed:
+            self.stdout.write('')
+            self.stdout.write(self.style.MIGRATE_HEADING('SUMMARY'))
+            if done:
+                self.stdout.write(self.style.SUCCESS(
+                    f'  rebuilt : {", ".join(f"{m:%Y-%m}" for m in done)}'))
+            for m, why in failed:
+                self.stdout.write(self.style.ERROR(f'  skipped : {m:%Y-%m} — {why}'))
+            if failed:
+                self.stdout.write(self.style.WARNING(
+                    '\n  Skipped months still hold their OLD (inflated) figures.\n'
+                    '  A 400 on a report document usually means Amazon has expired\n'
+                    '  it — those months may not be rebuildable from V2 at all.'))
 
     # ── one month ───────────────────────────────────────────────────────────
     def _rebuild_one(self, client, SettlementReport, SettlementLineActual,
