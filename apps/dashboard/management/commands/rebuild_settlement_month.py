@@ -52,9 +52,28 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-# Line keys this command owns. Everything else in SettlementLineActual
-# (notably the cash_* aggregates the Cash Flow page reads) is left untouched.
-CASH_PREFIX = 'cash_'
+# ── ownership ───────────────────────────────────────────────────────────────
+# This command replaces ONLY the line keys that Settlement V2 can actually
+# produce — i.e. every key classify_settlement_row() can return. Anything else
+# in SettlementLineActual belongs to another subsystem and is left untouched:
+#
+#   cogs                → cogs_recalc (V2 units x YOUR cost table). Amazon
+#                         does not know your cost, so V2 can never rebuild it.
+#                         Deleting it would send gross margin through the roof.
+#   sales_tax,          → the classifier deliberately drops tax rows as
+#   sales_tax_refunds,    pass-through (collected & remitted), so a V2 rebuild
+#   promo_tax             cannot reproduce them. The VAT marketplaces' gross-up
+#                         in pnl_engine needs them; USA (vat=0) does not.
+#   cash_*              → Cash Flow page aggregates.
+#
+# Keep this in step with classify_settlement_row if new heads are added there.
+V2_OWNED_KEYS = {
+    'gross_sales', 'returns', 'promo', 'other_income',
+    'commission', 'fba_fee', 'ppc',
+    'storage_fee', 'subscription', 'account_management',
+    'inbound_transportation', 'other_logistics',
+    'awd_transportation', 'awd_processing', 'awd_storage',
+}
 
 # Settlement marketplace-name values that are NOT Amazon retail sales.
 NON_AMAZON_CHANNELS = {'non-amazon us', 'non-amazon'}
@@ -252,34 +271,50 @@ class Command(BaseCommand):
         prior = {r.line_key: r for r in SettlementLineActual.objects.filter(
             marketplace=marketplace, month=month_start)}
         self.stdout.write(f'\n  {"LINE":<26}{"STORED":>16}{"REBUILT":>16}{"CHANGE":>12}')
-        for k in sorted(set(lines) | {p for p in prior if not p.startswith(CASH_PREFIX)}):
+        for k in sorted(set(lines) | (set(prior) & V2_OWNED_KEYS)):
             old = float(prior[k].amount) if k in prior else 0.0
             new = lines.get(k, {}).get('amount', 0.0)
             mult = (old / new) if new else 0.0
             self.stdout.write(
                 f'  {k:<26}{old:>16,.2f}{new:>16,.2f}'
                 f'{(f"{mult:.2f}x" if mult else "—"):>12}')
+
+        untouched = sorted(set(prior) - V2_OWNED_KEYS)
+        if untouched:
+            self.stdout.write('\n  NOT owned by V2 — left exactly as-is:')
+            for k in untouched:
+                self.stdout.write(f'    {k:<26}{float(prior[k].amount):>16,.2f}')
+
         if skipped_mcf:
             self.stdout.write(self.style.WARNING(
                 f'\n  excluded {skipped_mcf} Non-Amazon US (MCF) row(s)'))
         self.stdout.write(f'  deduped signatures: {len(best):,}')
 
+        # A V2 key the rebuild produced nothing for would silently zero a real
+        # figure — surface it rather than writing an unexplained 0.
+        vanished = sorted((set(prior) & V2_OWNED_KEYS) - set(lines))
+        if vanished:
+            self.stdout.write(self.style.WARNING(
+                f'  V2 keys with a stored value but no rebuilt rows: '
+                f'{", ".join(vanished)} — will be removed'))
+
         if dry_run:
             self.stdout.write(self.style.WARNING('  DRY RUN — nothing written'))
             return
 
-        # ── replace (cash_* rows preserved) ─────────────────────────────────
+        # ── replace ONLY the V2-owned keys ──────────────────────────────────
         with transaction.atomic():
             SettlementLineActual.objects.filter(
                 marketplace=marketplace, month=month_start,
-            ).exclude(line_key__startswith=CASH_PREFIX).delete()
+                line_key__in=V2_OWNED_KEYS,
+            ).delete()
 
             SettlementLineActual.objects.bulk_create([
                 SettlementLineActual(
                     marketplace=marketplace, month=month_start, line_key=k,
                     amount=Decimal(str(v['amount'])), units=v['units'],
                     currency=native_ccy, source_note='settlement_v2')
-                for k, v in lines.items()
+                for k, v in lines.items() if k in V2_OWNED_KEYS
             ])
 
         self.stdout.write(self.style.SUCCESS(
