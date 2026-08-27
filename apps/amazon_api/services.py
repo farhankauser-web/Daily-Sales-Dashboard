@@ -1381,95 +1381,78 @@ class SPAPIClient:
             end_dt = cutoff
         return cls._iso_z(start_dt), cls._iso_z(end_dt)
 
-    def get_fba_economics(self, start_date, end_date, marketplace_id, fee_types=None, poll_timeout=300):
+    def get_fba_economics(self, start_date, end_date, marketplace_id,
+                          fee_types=None, poll_timeout=300):
         """
         Fetch FBA economics (component-level fees) from Data Kiosk.
 
-        Args:
-            start_date (date): Query start date
-            end_date (date): Query end date
-            marketplace_id (str): Amazon marketplace ID
-            fee_types (list): Fee types to query (default: ['FBA_FULFILLMENT_FEE'])
-            poll_timeout (int): Max seconds to wait for query completion
+        WHAT WAS WRONG BEFORE
+            This method built its own Data Kiosk call against
+            `/datakiosk/2024-03-15/queries` and every request came back
+            403 Forbidden. Amazon Solution Provider Support (case 21672812351)
+            identified it: 2024-03-15 is the SCHEMA version, not the API
+            version, and the path is camel-cased. Both constants already exist
+            correctly a few hundred lines above:
 
-        Returns:
-            dict: {queryId, processingStatus, records: [row1, row2, ...]}
+                DATAKIOSK_PATH   = '/dataKiosk/2023-11-15'           # API
+                DK_ECONOMICS_VER = 'analytics_economics_2024_03_15'  # schema
+
+            The SP-API gateway returns 403 rather than 404 for a URI it cannot
+            resolve, which is why this read as a permissions problem for so
+            long. The BrandAnalytics role was correct all along.
+
+            The path was not the only fault. The old code also expected the
+            completed query to carry `s3Location.url`; the real API returns a
+            `dataDocumentId` that must be fetched from `/documents/{id}`. So
+            fixing only the URL would have moved the failure, not removed it.
+
+        WHAT IT DOES NOW
+            Delegates to the validated helpers rather than reimplementing them:
+            build_economics_query → run_dk_query (submit, poll, download).
+            See docs/PHASE2_FBA_COMPONENTS_VALIDATION.md.
+
+        Return shape is unchanged so ingest_fba_components needs no edits:
+            {queryId, processingStatus, records: [row, ...]}
+
+        A FATAL query carries an `errorDocumentId` explaining why. That is
+        fetched and raised — the old code simply polled until timeout with no
+        explanation.
         """
         if fee_types is None:
             fee_types = ['FBA_FULFILLMENT_FEE']
 
-        # GraphQL query for analytics_economics_2024_03_15 schema
-        query = """
-        query GetFBAEconomics($startDate: Date!, $endDate: Date!, $marketplaceId: String!, $reportTypes: [String!]!) {
-            datakioskFbaEconomics(input: {
-                startDate: $startDate
-                endDate: $endDate
-                marketplaceId: $marketplaceId
-                reportTypes: $reportTypes
-            }) {
-                queryId
-                processingStatus
-            }
-        }
-        """
-
-        variables = {
-            "startDate": str(start_date),
-            "endDate": str(end_date),
-            "marketplaceId": marketplace_id,
-            "reportTypes": fee_types,
-        }
-
-        # Submit query
-        response = self._post(
-            "/datakiosk/2024-03-15/queries",
-            json_body={"query": query, "variables": variables}
+        graphql = self.build_economics_query(
+            marketplace_id=marketplace_id,
+            start=str(start_date),
+            end=str(end_date),
+            fee_types=tuple(fee_types),
         )
 
-        query_id = response.get("queryId")
-        processing_status = response.get("processingStatus")
+        rows, status = self.run_dk_query(graphql, max_wait=poll_timeout)
+        state = status.get('processingStatus') or ''
 
-        if not query_id:
-            raise Exception("No queryId returned from Data Kiosk query")
+        if state == 'FATAL':
+            detail = ''
+            err_doc = status.get('errorDocumentId')
+            if err_doc:
+                try:
+                    detail = ' — ' + '; '.join(
+                        str(r) for r in self.download_dk_document(err_doc)[:3])
+                except Exception as exc:
+                    detail = f' — (error document unreadable: {exc})'
+            raise RuntimeError(
+                f'Data Kiosk query {status.get("queryId", "?")} FATAL{detail}')
 
-        # Poll for completion
-        import time
-        start_time = time.time()
-        while processing_status != "DONE":
-            if time.time() - start_time > poll_timeout:
-                raise Exception(f"Data Kiosk query did not complete within {poll_timeout}s")
-
-            time.sleep(5)
-            status_resp = self._get(
-                f"/datakiosk/2024-03-15/queries/{query_id}"
-            )
-            processing_status = status_resp.get("processingStatus")
-
-        # Download compressed JSONL from S3
-        import gzip
-        import io
-        s3_url = status_resp.get("s3Location", {}).get("url")
-        if not s3_url:
-            raise Exception("No S3 download URL in completed query response")
-
-        # Fetch and decompress
-        import requests
-        s3_response = requests.get(s3_url)
-        s3_response.raise_for_status()
-
-        decompressed = gzip.decompress(s3_response.content).decode("utf-8")
-        records = [
-            __import__("json").loads(line)
-            for line in decompressed.strip().split("\n")
-            if line.strip()
-        ]
+        if state not in ('DONE', ''):
+            raise RuntimeError(
+                f'Data Kiosk query {status.get("queryId", "?")} ended '
+                f'{state} after {poll_timeout}s')
 
         return {
-            "queryId": query_id,
-            "processingStatus": processing_status,
-            "records": records,
+            'queryId':          status.get('queryId', ''),
+            'processingStatus': state,
+            'records':          rows,
         }
-
 
 
 class AdsAPIClient:

@@ -144,10 +144,24 @@ class Command(BaseCommand):
             self.stdout.write('querying… ', ending='')
             self.stdout.flush()
 
+            # Use the CLIENT's resolved marketplace id, not the raw config
+            # field. AmazonAPIConfig.marketplace_id is blank=True and is in
+            # fact empty for 'ae' and 'sa'; SPAPIClient.__init__ resolves it
+            # as `config.marketplace_id or settings.AMAZON_MARKETPLACES[..]`.
+            # Reading the config field directly bypassed that fallback and
+            # sent `marketplaceIds: [""]` to Data Kiosk for UAE and KSA — a
+            # query that can only ever come back empty. Every other caller in
+            # the codebase already goes through the resolved value.
+            if not client.mp_id:
+                raise CommandError(
+                    f'No marketplace id for "{marketplace}": it is blank on '
+                    f'AmazonAPIConfig and absent from '
+                    f'settings.AMAZON_MARKETPLACES.')
+
             response = client.get_fba_economics(
                 start_date=start_date,
                 end_date=end_date,
-                marketplace_id=config.marketplace_id,
+                marketplace_id=client.mp_id,
             )
 
             log.query_id = response.get('queryId', '')
