@@ -32,14 +32,8 @@ MAILTO=""
 45 0 * * *   cd $APP && $PYTHON $MANAGE finalize_yesterday      >> $LOG/finalize.log 2>&1
 
 # ── Settlement ingest → SkuFeeActual (FBA fee drift "actual") ────────────────
-# Amazon generates settlements on ~14-day pay cycles, so most runs find nothing
-# new — that is expected and cheap. Twice daily so a newly-DONE report is picked
-# up the same day rather than up to 24h later.
 30 4 * * *   cd $APP && $PYTHON $MANAGE ingest_settlement_reports >> $LOG/settlement.log 2>&1
 30 16 * * *  cd $APP && $PYTHON $MANAGE ingest_settlement_reports >> $LOG/settlement.log 2>&1
-# Weekly wider sweep — catches any report that appeared late or was missed
-# while the server was down. --days 90 re-lists older reports; ingestion is
-# idempotent (dedupes on SettlementReport.report_id) so this is safe.
 0 5 * * 0    cd $APP && $PYTHON $MANAGE ingest_settlement_reports --days 90 >> $LOG/settlement.log 2>&1
 
 # ── PPC / Ads ────────────────────────────────────────────────────────────────
@@ -51,7 +45,6 @@ MAILTO=""
 * * * * *    cd $APP && $PYTHON $MANAGE ingest_ams_s3 --max-objects 100       >> $LOG/ams_ingest.log 2>&1
 30 5 * * *   cd $APP && $PYTHON $MANAGE seed_ams_subscriptions                >> $LOG/ams_subs.log 2>&1
 30 3 * * *   cd $APP && $PYTHON $MANAGE ingest_ads_detail_reports             >> $LOG/ads_detail.log 2>&1
-# NOTE: the macOS file used `date -v-1d` (BSD). GNU date on Ubuntu needs -d.
 */15 8-23 * * * cd $APP && $PYTHON $MANAGE ingest_ads_detail_reports --date $(date -d 'yesterday' +\%Y-\%m-\%d) >> $LOG/ads_detail.log 2>&1
 30 6 * * *   cd $APP && $PYTHON $MANAGE ingest_ads_detail_reports --rewind 6 --report-kinds sp_search_term,sb_search_term,sp_advertised_product,sb_advertised_product,sd_advertised_product >> $LOG/ads_detail.log 2>&1
 
@@ -63,3 +56,44 @@ MAILTO=""
 # ── Housekeeping ─────────────────────────────────────────────────────────────
 30 3 * * 0   cd $APP && $PYTHON $MANAGE prune_hourly_snapshots --keep-days 30 >> $LOG/prune.log 2>&1
 45 3 * * 0   cd $APP && $PYTHON $MANAGE prune_daily_metrics   --keep-days 90 >> $LOG/prune.log 2>&1
+
+# ── WALMART → AMAZON MCF AUTOMATION ──────────────────────────────────────────
+# Import released Walmart orders + acknowledge (idempotent; PO id unique)
+*/5 * * * * cd $APP && $PYTHON $MANAGE walmart_import_orders >> $LOG/walmart_mcf.log 2>&1
+
+# Validate mapping + Blank-Box inventory, create MCF orders (BLANK_BOX + BLOCK_AMZL Required)
+*/10 * * * * cd $APP && $PYTHON $MANAGE walmart_submit_mcf >> $LOG/walmart_mcf.log 2>&1
+
+# Poll Amazon fulfillment status + harvest tracking numbers
+*/15 * * * * cd $APP && $PYTHON $MANAGE walmart_check_status >> $LOG/walmart_mcf.log 2>&1
+
+# Detect Walmart-side cancellations on pre-MCF orders (Walmart never pushes these)
+5-59/15 * * * * cd $APP && $PYTHON $MANAGE walmart_sync_cancellations >> $LOG/walmart_mcf.log 2>&1
+
+# Upload new tracking to Walmart (per-package dedupe; never re-uploads)
+7-59/15 * * * * cd $APP && $PYTHON $MANAGE walmart_upload_tracking >> $LOG/walmart_mcf.log 2>&1
+
+# Nightly reconcile: auto-complete finished orders, alert stuck/error ones
+15 2 * * * cd $APP && $PYTHON $MANAGE walmart_reconcile >> $LOG/walmart_mcf.log 2>&1
+
+# Backfill tracking for any manually-created MCF orders (transition safety net)
+45 6 * * * cd $APP && $PYTHON $MANAGE walmart_backfill_tracking >> $LOG/walmart_mcf.log 2>&1
+
+# Sync inventory from Amazon to Walmart (every 12 hours: 06:30 UTC + 18:30 UTC)
+30 6,18 * * * cd $APP && $PYTHON $MANAGE walmart_sync_inventory >> $LOG/walmart_mcf.log 2>&1
+
+*/30 * * * * cd $APP && for R in uk ae sa; do $PYTHON $MANAGE sync_today_ppc --marketplace $R; done >> $LOG/ppc_today.log 2>&1
+0  2 * * *   cd $APP && $PYTHON $MANAGE backfill_ppc --marketplace uk --days 7 >> $LOG/ppc_daily.log 2>&1
+40 2 * * *   cd $APP && $PYTHON $MANAGE backfill_ppc --marketplace ae --days 7 >> $LOG/ppc_daily.log 2>&1
+20 3 * * *   cd $APP && $PYTHON $MANAGE backfill_ppc --marketplace sa --days 7 >> $LOG/ppc_daily.log 2>&1
+
+# ── FBA Fee Intelligence → FbaFeeComponent (Data Kiosk economics) ────────────
+# Rolling 10-day re-fetch across all marketplaces. Amazon's economics data
+# settles over several days, so a single-day pull captures an incomplete
+# picture and never revisits it. Re-reading a trailing window is self-healing,
+# and safe to repeat: the parser dedupes on the table's unique tuple and
+# bulk_create upserts, so running it twice gives the same answer as once.
+# --all-marketplaces covers usa/uk/de/ae/sa and continues past a failure in any
+# one region. Deliberately no date arithmetic: the BSD-vs-GNU `date` difference
+# noted earlier in this file has already broken one job here.
+0 7 * * *    cd $APP && $PYTHON $MANAGE ingest_fba_components --all-marketplaces --days 10 >> $LOG/fba_components.log 2>&1
