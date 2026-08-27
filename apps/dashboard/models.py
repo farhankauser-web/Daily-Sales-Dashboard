@@ -2593,8 +2593,15 @@ class FbaFeeComponent(models.Model):
         help_text='Transaction date (day-level aggregation)'
     )
     fee_type = models.CharField(
-        max_length=32,
-        help_text='FEE_TYPE from query: FBA_FULFILLMENT_FEE or FBA_STORAGE_FEE'
+        max_length=64,
+        help_text=(
+            "feeTypeName as Data Kiosk returns it — PascalCase display names, "
+            "not the query enum: FbaFulfilmentFee (British spelling, one L), "
+            "ReferralFee, DisposalFee, LiquidationProcessingFee, "
+            "AmazonUpstreamStorageTransportationFee. Was max_length=32, which "
+            "three live names already exceed (up to 38 chars); on Postgres "
+            "that raises 'value too long' and fails the whole atomic ingest."
+        )
     )
     component_name = models.CharField(
         db_index=True, max_length=48,

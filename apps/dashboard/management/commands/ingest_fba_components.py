@@ -247,97 +247,205 @@ class Command(BaseCommand):
             ]
         return records
 
+    # ── Data Kiosk money helper ─────────────────────────────────────────────
+    @staticmethod
+    def _money(detail: dict, key: str) -> tuple[Decimal, str]:
+        """
+        Every monetary field in the economics schema is an OBJECT:
+
+            "amount": {"amount": 3.5, "currencyCode": "USD"}
+
+        never a bare number. The previous parser did Decimal(str(row['amount']))
+        straight onto that dict, which would have produced garbage even if the
+        rest of the walk had been correct. Returns (Decimal, currency) and
+        tolerates null, a missing key, or a scalar.
+        """
+        v = (detail or {}).get(key)
+        if isinstance(v, dict):
+            return Decimal(str(v.get('amount') or 0)), (v.get('currencyCode') or '')
+        if v is None:
+            return Decimal('0'), ''
+        return Decimal(str(v)), ''
+
     def _filter_and_prepare(self, marketplace: str, rows: list[dict]):
         """
-        Apply K1, K2, K3 filters and prepare FbaFeeComponent objects.
+        Walk Data Kiosk economics rows into FbaFeeComponent objects.
 
-        K1: Exclude amzn.* MSKUs (Amazon-generated grade-and-resell)
-        K2: Guard zero-quantity and negative-amount rows (store but mark adjustment)
-        K3: Skip empty-fee rows (no fees charged)
+        WHAT WAS WRONG BEFORE
+            This method read a FLAT row:
+
+                row['date'], row['productId'], row['amount'], row['components']
+
+            The economics schema returns a NESTED one, and none of those keys
+            exist on it:
+
+                { startDate, endDate, marketplaceId, msku, fnsku,
+                  childAsin, parentAsin,
+                  sales { ... },
+                  fees [ { feeTypeName,
+                           charges [ { identifier, startDate, endDate,
+                                       properties [],
+                                       aggregatedDetail { quantity,
+                                           amount/amountPerUnit/promotionAmount/
+                                           taxAmount/totalAmount
+                                             { amount, currencyCode } },
+                                       components [ { name, properties,
+                                                      aggregatedDetail {...} } ]
+                                     } ] } ] }
+
+            So row.get('components') was None on every row, K3 fired, and the
+            first live run discarded all 6,965 rows it had just fetched
+            (0 inserted, 6965 filtered). The endpoint fix made the data arrive;
+            this made it arrive nowhere.
+
+        COMPONENTS ARE OPTIONAL
+            build_economics_query sends includeComponentsForFeeTypes:
+            [FBA_FULFILLMENT_FEE], so ONLY fulfilment charges carry a component
+            breakdown. In a one-day USA sample, 577 charges: 193 had components
+            (all FbaFulfilmentFee), 384 had components: null — ReferralFee,
+            DisposalFee, storage, liquidation, reimbursement and the rest.
+
+            Storing only components would therefore drop two thirds of the fees
+            Amazon billed and the totals would never reconcile against the
+            settlement. Where a charge has no breakdown we store the charge
+            itself, named by its identifier (e.g. 'DisposalFee_Standard'), so
+            every billed amount lands exactly once.
+
+        DUPLICATES ARE SUMMED, NEVER DROPPED
+            The table is unique on
+            (marketplace, msku, date, fee_type, component_name) and the caller
+            uses bulk_create(update_conflicts=True), which OVERWRITES on
+            collision. If one row ever produced two charges sharing that tuple,
+            the second would silently replace the first and the day would
+            under-report — the same failure mode that inflated the P&L for
+            months. So collisions are accumulated here, in the parser, where
+            they are visible and counted, and what reaches the DB is already
+            unique.
 
         Returns: (components_list, stats_dict)
         """
-        components = []
         stats = {
-            'filtered_amzn': 0,
-            'marked_adjustment': 0,
-            'skipped_empty': 0,
-            'total_filtered': 0,
+            'filtered_amzn':      0,   # K1 — amzn.* grade-and-resell MSKUs
+            'marked_adjustment':  0,   # K2 — qty 0 or negative amount
+            'skipped_empty':      0,   # K3 — row carried no fees at all
+            'total_filtered':     0,
+            'charges_seen':       0,
+            'charges_no_breakdown': 0,
+            'duplicates_merged':  0,
+            'rows_no_msku':       0,
         }
 
+        # keyed by the table's unique tuple so nothing can collide downstream
+        merged: dict[tuple, FbaFeeComponent] = {}
+
         for row in rows:
-            # ── Extract fields per Section B (Data Kiosk schema) ──────────────
-            try:
-                # Charge-level data
-                charge_date = row.get('date')
-                charge_msku = row.get('productId')
-                charge_amount = Decimal(str(row.get('amount', 0) or 0))
-                charge_promotion = Decimal(str(row.get('promotionAmount', 0) or 0))
-                charge_tax = Decimal(str(row.get('taxAmount', 0) or 0))
-                charge_qty = float(row.get('quantity') or 0)
-                charge_currency = row.get('currencyCode', 'USD')
+            msku = (row.get('msku') or '').strip()
+            row_date = row.get('startDate')
+            fees = row.get('fees') or []
 
-                # Fee type
-                fee_type = row.get('feeType', 'FBA_FULFILLMENT_FEE')
-
-                # Components (nested array)
-                fee_components = row.get('components', []) or []
-
-            except (KeyError, ValueError, TypeError) as e:
-                logger.warning('Skipped malformed row: %s', e)
-                continue
-
-            # ── K3: Skip empty-fee rows ────────────────────────────────────
-            if not fee_components or len(fee_components) == 0:
+            # ── K3: no fees billed for this MSKU/day ────────────────────────
+            # Expected and dominant: most SKUs are simply not charged on a
+            # given day (1,767 of 1,990 in the USA sample). Not an error.
+            if not fees:
                 stats['skipped_empty'] += 1
                 stats['total_filtered'] += 1
                 continue
 
-            # ── K1: Exclude amzn.* MSKUs ──────────────────────────────────
-            if charge_msku and charge_msku.startswith('amzn.'):
+            # ── K1: Amazon grade-and-resell MSKUs ───────────────────────────
+            # 1,510 of 1,990 rows in the sample. Excluded from impact analysis
+            # by business rule — they are Amazon's inventory, not ours.
+            if msku.startswith('amzn.'):
                 stats['filtered_amzn'] += 1
                 stats['total_filtered'] += 1
                 continue
 
-            # ── Process each component ──────────────────────────────────────
-            for comp in fee_components:
-                try:
-                    comp_name = comp.get('name', '')
-                    comp_amount = Decimal(str(comp.get('amount', 0) or 0))
-                    comp_qty = float(comp.get('quantity') or 0)
-                    comp_amount_per_unit = Decimal(str(comp.get('amountPerUnit', 0) or 0))
-                    comp_promotion = Decimal(str(comp.get('promotionAmount', 0) or 0))
-                    comp_tax = Decimal(str(comp.get('taxAmount', 0) or 0))
+            if not msku:
+                stats['rows_no_msku'] += 1
+                stats['total_filtered'] += 1
+                continue
 
-                except (KeyError, ValueError, TypeError):
-                    continue
+            for fee in fees:
+                fee_type = (fee.get('feeTypeName') or '').strip()
 
-                # ── K2: Mark zero-quantity or negative-amount as adjustment ─
-                is_adjustment = (comp_qty == 0.0) or (comp_amount < 0)
-                if is_adjustment:
-                    stats['marked_adjustment'] += 1
+                for charge in (fee.get('charges') or []):
+                    stats['charges_seen'] += 1
 
-                # ── Create component record ─────────────────────────────────
-                component = FbaFeeComponent(
-                    marketplace=marketplace,
-                    msku=charge_msku or '',
-                    date=charge_date,
-                    fee_type=fee_type,
-                    component_name=comp_name,
-                    quantity=comp_qty,
-                    amount=comp_amount,
-                    amount_per_unit=comp_amount_per_unit,
-                    promotion_amount=comp_promotion,
-                    tax_amount=comp_tax,
-                    currency_code=charge_currency,
-                    is_amzn_generated=False,  # K1 already filtered
-                    is_adjustment=is_adjustment,
-                    query_date_range_start=None,  # populated by caller if needed
-                    query_date_range_end=None,
-                )
-                components.append(component)
+                    charge_date = charge.get('startDate') or row_date
+                    if not charge_date:
+                        continue
 
-        return components, stats
+                    comps = charge.get('components') or []
+                    if comps:
+                        units = [(c.get('name') or '', c.get('aggregatedDetail') or {})
+                                 for c in comps]
+                    else:
+                        # No breakdown for this fee type — keep the charge so
+                        # the money is not lost, named by its identifier.
+                        stats['charges_no_breakdown'] += 1
+                        units = [(
+                            (charge.get('identifier') or fee_type or 'Charge'),
+                            charge.get('aggregatedDetail') or {},
+                        )]
+
+                    for comp_name, detail in units:
+                        amount,   cur_a = self._money(detail, 'amount')
+                        per_unit, cur_b = self._money(detail, 'amountPerUnit')
+                        promo,    _     = self._money(detail, 'promotionAmount')
+                        tax,      _     = self._money(detail, 'taxAmount')
+                        try:
+                            qty = float(detail.get('quantity') or 0)
+                        except (TypeError, ValueError):
+                            qty = 0.0
+
+                        # ── K2: adjustment rows ─────────────────────────────
+                        # quantity 0 or a negative amount means a
+                        # reclassification between components, not a new
+                        # charge. Stored, flagged, excluded from rate
+                        # derivation downstream.
+                        is_adjustment = (qty == 0.0) or (amount < 0)
+                        if is_adjustment:
+                            stats['marked_adjustment'] += 1
+
+                        # model caps: fee_type 64, component_name 48
+                        ft = fee_type[:64]
+                        cn = comp_name[:48]
+                        key = (marketplace, msku, charge_date, ft, cn)
+
+                        prior = merged.get(key)
+                        if prior is None:
+                            merged[key] = FbaFeeComponent(
+                                marketplace=marketplace,
+                                msku=msku,
+                                date=charge_date,
+                                fee_type=ft,
+                                component_name=cn,
+                                quantity=qty,
+                                amount=amount,
+                                amount_per_unit=per_unit,
+                                promotion_amount=promo,
+                                tax_amount=tax,
+                                currency_code=(cur_a or cur_b or 'USD')[:4],
+                                is_amzn_generated=False,   # K1 already excluded
+                                is_adjustment=is_adjustment,
+                                query_date_range_start=None,
+                                query_date_range_end=None,
+                            )
+                        else:
+                            # Same unique tuple twice — accumulate rather than
+                            # let the DB overwrite one with the other.
+                            stats['duplicates_merged'] += 1
+                            prior.quantity         += qty
+                            prior.amount           += amount
+                            prior.promotion_amount += promo
+                            prior.tax_amount       += tax
+                            prior.is_adjustment     = prior.is_adjustment or is_adjustment
+                            # per-unit is a rate, not a total: recompute it
+                            if prior.quantity:
+                                prior.amount_per_unit = (
+                                    prior.amount / Decimal(str(prior.quantity))
+                                )
+
+        return list(merged.values()), stats
 
     @staticmethod
     def _parse_date(date_str: str | None) -> date | None:
