@@ -5,6 +5,7 @@ import csv
 import gzip
 import io
 import json
+import re
 import logging
 import time
 import zlib
@@ -911,6 +912,94 @@ class SPAPIClient:
                 time.sleep(2 * (attempt + 1))         # 2s, 4s, 6s backoff
         raise RuntimeError(f'settlement download failed after retries: {last_exc}')
 
+    # ── settlement money parsing ────────────────────────────────────────────
+    _MONEY_STRIP = re.compile(r'[^\d,.+-]')
+
+    @staticmethod
+    def parse_settlement_amount(raw):
+        """
+        Parse one 'amount' cell from a Settlement Flat File V2.
+
+        WHY THIS EXISTS
+            Amazon LOCALISES the decimal separator in this file. Germany ships
+            comma decimals:
+
+                sku='TW-NBL-BTH-4'  quantity-purchased='1'  amount='-6,24'
+
+            Every caller used a bare float(), which raises ValueError on that
+            and was wrapped in `except (TypeError, ValueError): continue`. So
+            for DE every row was discarded in silence — no error, no log, no
+            failed status. 27 settlements, 35,226 rows parsed, fee_rows=0 on
+            every one, and a Management P&L of nothing. The reports looked
+            perfectly healthy the whole time.
+
+        WHAT THE DATA ACTUALLY LOOKS LIKE
+            Digit-shapes across one full settlement per marketplace:
+
+                de   -D,DD  D,DD  DD,DD  DDD,DD   (total-amount DDDD,DD)
+                uk   -D.DD  D.DD  DD.DD  DDD.DD
+                sa   -DD.DD -D.DD DD.DD  DDD.DD
+                usa  -D.DD  D.DD  DD.DD  -DDDD.DD
+
+            Amazon uses NO thousands separators — not one value in any of those
+            files carried both a comma and a period, and four-digit amounts are
+            ungrouped. The only locale difference is which character is the
+            decimal point. The grouping branches below are defensive, not
+            observed.
+
+        SAFETY PROPERTY
+            A string with no comma takes the same float() path it takes today,
+            so USA/UK/KSA parse bit-identically. This is strictly wider than
+            the old behaviour; it can rescue rows, never change existing ones.
+
+        RETURNS
+            float  — the parsed value
+            0.0    — for None or an empty cell (matches the old
+                     `float(x or 0)`, which treated empty as zero rather than
+                     skipping the row)
+            None   — unparseable. Callers must skip these, which is what the
+                     old bare `except ... : continue` did.
+        """
+        if raw is None:
+            return 0.0
+        if isinstance(raw, (int, float)):
+            return float(raw)
+
+        s = str(raw).strip()
+        if not s:
+            return 0.0
+
+        s = SPAPIClient._MONEY_STRIP.sub('', s)      # drop currency symbols, NBSP
+        if not s or not s.strip('+-'):
+            return None
+
+        if ',' not in s:
+            # English-format or plain — identical to the current float() path.
+            try:
+                return float(s)
+            except ValueError:
+                return None
+
+        if '.' in s:
+            # Both separators present: the RIGHTMOST one is the decimal point,
+            # the other is grouping. Not observed in any Amazon file; here so a
+            # future locale cannot reintroduce the silent-drop failure.
+            if s.rfind(',') > s.rfind('.'):
+                s = s.replace('.', '').replace(',', '.')
+            else:
+                s = s.replace(',', '')
+        else:
+            head, _, tail = s.rpartition(',')
+            if len(tail) == 3 and ',' not in head and head.strip('+-'):
+                s = head + tail                       # 1,234  -> grouping
+            else:
+                s = head + '.' + tail                 # -6,24  -> decimal comma
+
+        try:
+            return float(s)
+        except ValueError:
+            return None
+
     @staticmethod
     def extract_fba_fee_rows(rows: list[dict]) -> list[dict]:
         """
@@ -936,9 +1025,11 @@ class SPAPIClient:
             sku = (r.get('sku') or '').strip()
             if not sku:
                 continue
+            amount = SPAPIClient.parse_settlement_amount(r.get('amount'))
+            if amount is None:          # unparseable — skip, as before
+                continue
             try:
-                qty    = int(r.get('quantity-purchased') or 0)
-                amount = float(r.get('amount') or 0)
+                qty = int(r.get('quantity-purchased') or 0)
             except (TypeError, ValueError):
                 continue
             if qty <= 0:
@@ -1124,9 +1215,8 @@ class SPAPIClient:
             ttype = (r.get('transaction-type') or '')
             desc  = (r.get('amount-description') or '')
             atype = (r.get('amount-type') or '')
-            try:
-                amount = float(r.get('amount') or 0)
-            except (TypeError, ValueError):
+            amount = cls.parse_settlement_amount(r.get('amount'))
+            if amount is None:
                 continue
             if amount == 0:
                 continue
@@ -1135,10 +1225,8 @@ class SPAPIClient:
             month  = cls._settlement_month(posted)
             if not month:
                 continue
-            try:
-                qty = int(float(r.get('quantity-purchased') or 0))
-            except (TypeError, ValueError):
-                qty = 0
+            qty_f = cls.parse_settlement_amount(r.get('quantity-purchased'))
+            qty = int(qty_f) if qty_f is not None else 0
 
             key = cls.classify_settlement_row(ttype, atype, desc)
             if not key:

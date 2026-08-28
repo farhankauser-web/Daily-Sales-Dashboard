@@ -306,14 +306,16 @@ class Command(BaseCommand):
                     r.get('transaction-type') or '', r.get('amount-type') or '', desc)
                 if not key:
                     continue
-                try:
-                    amount = float(r.get('amount') or 0)
-                except (TypeError, ValueError):
+                # Amazon localises the decimal separator: DE ships '-6,24'.
+                # A bare float() raised ValueError and the bare `continue`
+                # below discarded every German row in silence — 27 settlements,
+                # 35,226 rows, a P&L of zero, and no error anywhere.
+                amount = SPAPIClient.parse_settlement_amount(r.get('amount'))
+                if amount is None:
                     continue
-                try:
-                    qty = int(float(r.get('quantity-purchased') or 0))
-                except (TypeError, ValueError):
-                    qty = 0
+                qty_f = SPAPIClient.parse_settlement_amount(
+                    r.get('quantity-purchased'))
+                qty = int(qty_f) if qty_f is not None else 0
                 if amount == 0 and qty == 0:
                     continue
 
