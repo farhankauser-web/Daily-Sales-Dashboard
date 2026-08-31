@@ -1001,6 +1001,60 @@ class SPAPIClient:
             return None
 
     @staticmethod
+    def parse_settlement_date(raw):
+        """
+        Parse a settlement posted-date into a date, across Amazon's locales.
+
+        WHY THIS EXISTS
+            Amazon localises dates in the Settlement Flat File V2 exactly as it
+            localises the decimal separator:
+
+                usa/uk/sa   2026-08-20                (ISO)
+                de          24.06.2026                (DD.MM.YYYY)
+
+            rebuild_settlement_month did `date.fromisoformat(posted)` inside a
+            bare `except ValueError: continue`, so every German row failed the
+            in-month test and was dropped. The rebuild then saw V2 as silent for
+            DE and DELETED the stored P&L lines — storage_fee, ppc,
+            subscription — replacing them with nothing. Silent, like every other
+            fault in this file's history.
+
+            A correct parser already existed in
+            ingest_settlement_reports._parse_iso_date, in a different module,
+            which is the same "two implementations, the wrong one wired up"
+            pattern that produced the Data Kiosk and money-parsing bugs. That
+            command now delegates here so there is one implementation.
+
+        ISO is tried first so US/UK behaviour is bit-identical to before.
+        Dotted dates are unambiguously DD.MM.YYYY in Amazon's European files.
+        Returns None when nothing parses — callers skip, as they did before.
+        """
+        from datetime import date as _d, datetime as _dt
+        if raw is None:
+            return None
+        if isinstance(raw, _dt):
+            return raw.date()
+        if isinstance(raw, _d):
+            return raw
+        s = str(raw).strip()
+        if not s:
+            return None
+        head = s.split('T')[0].split(' ')[0]
+        try:
+            return _d.fromisoformat(head[:10])
+        except ValueError:
+            pass
+        for fmt in ('%d.%m.%Y',    # de / eu
+                    '%d/%m/%Y',    # some eu locales
+                    '%Y/%m/%d',
+                    '%d-%m-%Y'):
+            try:
+                return _dt.strptime(head, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
     def extract_fba_fee_rows(rows: list[dict]) -> list[dict]:
         """
         From a parsed settlement flat file, pull only the per-SKU per-unit

@@ -271,34 +271,13 @@ class Command(BaseCommand):
                 'No months identified for rebuild despite new reports.'))
 
     @staticmethod
-    def _parse_iso_date(s: str) -> date | None:
-        """Settlement dates → date, across Amazon's per-marketplace formats.
+    def _parse_iso_date(s: str):
+        """Delegates to SPAPIClient.parse_settlement_date.
 
-        Amazon LOCALISES posted-date in the settlement flat file:
-            USA      2026-07-23              (ISO)
-            UK/EU    23.07.2026              (DD.MM.YYYY)
-        The old implementation only accepted ISO, so every non-US fee row
-        failed to parse and was skipped — which is why UK/AE/SA/DE produced
-        "0 (sku,date) fee aggregates" from tens of thousands of parsed rows
-        while USA worked. Order matters below: dotted dates are unambiguous
-        DD.MM.YYYY, and ISO is tried first so US behaviour is untouched.
+        This method used to carry its own copy of the locale-handling logic.
+        rebuild_settlement_month carried a THIRD, ISO-only version, which is
+        the one that silently dropped every German row and deleted DE's P&L.
+        One parser now, so a fix here cannot fail to reach the other callers.
         """
-        if not s:
-            return None
-        s = s.strip()
-        # 1) ISO — 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SS(±ZZ|Z)'
-        try:
-            return date.fromisoformat(s[:10])
-        except ValueError:
-            pass
-        # 2) Localised — take the leading date token, drop any time/zone part
-        head = s.split(' ')[0].split('T')[0]
-        for fmt in ('%d.%m.%Y',    # UK / EU / AE / SA
-                    '%d/%m/%Y',    # some EU locales
-                    '%Y/%m/%d',
-                    '%d-%m-%Y'):
-            try:
-                return datetime.strptime(head, fmt).date()
-            except ValueError:
-                continue
-        return None
+        from apps.amazon_api.services import SPAPIClient
+        return SPAPIClient.parse_settlement_date(s)

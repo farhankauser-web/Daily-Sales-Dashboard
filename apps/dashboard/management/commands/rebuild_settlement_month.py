@@ -286,12 +286,13 @@ class Command(BaseCommand):
             local: dict[bytes, int] = defaultdict(int)
             kept = 0
             for r in rows:
-                posted = (r.get('posted-date') or r.get('posted-date-time') or '')[:10]
-                if not posted:
-                    continue
-                try:
-                    pd = _date.fromisoformat(posted)
-                except ValueError:
+                # Amazon localises dates too: DE posts '24.06.2026', not ISO.
+                # date.fromisoformat() raised ValueError on every German row and
+                # the bare `continue` dropped it, so the month looked empty and
+                # the rebuild DELETED DE's stored P&L lines.
+                pd = SPAPIClient.parse_settlement_date(
+                    r.get('posted-date') or r.get('posted-date-time'))
+                if pd is None:
                     continue
                 if not (month_start <= pd < month_end):
                     continue
