@@ -17,6 +17,7 @@ tax columns (collected = remitted, pass-through).
 from __future__ import annotations
 
 import csv
+import logging
 import re
 import io
 from collections import defaultdict
@@ -48,6 +49,8 @@ def _parse_txn_date(s: str) -> date_cls | None:
 # The sales-tax keys carry the report's itemized VAT (UK splits it out;
 # AE/SA prices are tax-inclusive and these stay 0) — the P&L engine uses
 # them to gross-up revenue lines and deduct the ACTUAL VAT exactly once.
+logger = logging.getLogger(__name__)
+
 _INCOME_KEYS = {'gross_sales', 'other_income',
                 'sales_tax', 'sales_tax_refunds', 'promo_tax'}
 
@@ -74,9 +77,17 @@ def _find_header(rows: list[list[str]]) -> int:
     return 0
 
 
-def _classify_other(desc: str, ttype: str) -> str | None:
+def _classify_other(desc: str, ttype: str,
+                    unmatched: list | None = None) -> str | None:
     """Map a non-Order/Refund fee row (by description/type) to a P&L line key.
-    Returns None to skip (e.g. bank Transfer)."""
+    Returns None to skip (e.g. bank Transfer).
+
+    `unmatched` — when a list is passed, every row that reaches the catch-all
+    is appended to it. The catch-all is not a safe default: it silently routed
+    'Others - Seller Rewards' (an Amazon Gulf INCOME credit) into
+    other_logistics for months. Callers log what lands there so a row type
+    Amazon introduces surfaces on the first month, not the twelfth.
+    """
     d = (desc or '').lower()
     t = (ttype or '').lower()
     if t == 'transfer':
@@ -84,7 +95,14 @@ def _classify_other(desc: str, ttype: str) -> str | None:
 
     # Other Income (client definition): these transaction types + Grade-and-
     # Resell are booked as income (shipping/giftwrap credits handled separately).
-    if t in ('adjustment', 'amazon charges', 'fee adjustment', 'liquidations') \
+    # 'Others' is Amazon's own Income-section bucket. In AE/SA it carries
+    # 'Seller Rewards' — the Gulf seller-incentive credit, AED 13,287 in one
+    # month. It matched no rule, fell to the catch-all, and was booked as an
+    # other_logistics COST. Income lost it and expenses gained it, so AE July
+    # contribution came out 24% under Amazon's own statement. USA and UK never
+    # ship this row type, which is why four months of it went unseen.
+    if t in ('adjustment', 'amazon charges', 'fee adjustment', 'liquidations',
+             'others') \
             or 'grade and resell' in d or 'reimburs' in d or 'reimbursement' in t:
         return 'other_income'
 
@@ -106,10 +124,21 @@ def _classify_other(desc: str, ttype: str) -> str | None:
         return 'inbound_transportation'
     if 'removal' in d or 'disposal' in d:
         return 'other_logistics'
+    # Type-only rules, for rows Amazon ships with a BLANK description.
+    # 'FBA Inventory Fee' with no description is the charge Amazon's own
+    # summary calls "FBA inventory and inbound services fees" — $6,170.88 in
+    # USA July 2026. With no description text it fell through every rule
+    # above and landed in the catch-all as other_logistics. Verified against
+    # the July Summary PDF.
+    if t == 'fba inventory fee':
+        return 'inbound_transportation'
+
     if 'customer returns' in d:
         return 'fba_fee'
     if 'mcf' in d or 'multi-channel' in d or 'multichannel' in d:
         return 'fba_fee'
+    if unmatched is not None:
+        unmatched.append(f'{ttype or "?"} - {desc or "(no description)"}')
     return 'other_logistics'                          # catch-all (small misc fees)
 
 
@@ -128,6 +157,29 @@ def parse_unified_csv(file_bytes: bytes, marketplace: str = 'usa',
     text = file_bytes.decode('utf-8-sig', errors='replace')
     rows = list(csv.reader(io.StringIO(text)))
     h = _find_header(rows)
+
+    # ── refuse to parse a file we do not understand ─────────────────────────
+    # _find_header looks for the literal English column names 'date/time' and
+    # 'product sales'. A localised report (Germany ships 'Datum/Uhrzeit' and
+    # 'Umsätze') matches nothing, _find_header falls back to row 0, and every
+    # subsequent lookup returns '' — so the parser produced a complete set of
+    # zero-valued lines and reported success. Written to storage that silently
+    # replaces a real P&L with zeros.
+    #
+    # Measured: DE July 2026, 903,598 bytes of valid report, 0 rows parsed,
+    # "DONE: 1 imported, 0 failed".
+    #
+    # A file with content that yields no header is a FORMAT failure, not an
+    # empty month. Fail loudly; a missing month is recoverable, a month
+    # silently zeroed is not.
+    _hdr = [c.strip().lower() for c in (rows[h] if h < len(rows) else [])]
+    if 'date/time' not in _hdr or 'product sales' not in _hdr:
+        raise ValueError(
+            f'Unrecognised report format for {marketplace!r}: no English '
+            f'header row found in {len(file_bytes):,} bytes. This is expected '
+            f'for localised marketplaces (DE ships "Datum/Uhrzeit"/"Umsätze") '
+            f'and needs the header-mapping layer. Refusing to parse rather '
+            f'than write a month of zeros.')
     hdr = rows[h]
     I = {c.strip().lower(): i for i, c in enumerate(hdr)}
 
@@ -158,6 +210,7 @@ def parse_unified_csv(file_bytes: bytes, marketplace: str = 'usa',
     cash_deferred = 0.0               # 'total' of rows with status Deferred
     cash_released = 0.0
 
+    unmatched: list[str] = []
     n = 0
     for r in rows[h + 1:]:
         if I.get('total') is not None and len(r) <= I['total']:
@@ -270,14 +323,29 @@ def parse_unified_csv(file_bytes: bytes, marketplace: str = 'usa',
             # Non-order fee/charge rows — classify by description, use the
             # row's net fee amount across the fee columns.
             amt = sf + fb + otf + ot
-            if t == 'Liquidations':
-                # product sales = liquidation revenue (small) → other_logistics net
+            if t.startswith('Liquidations'):
+                # Liquidation revenue sits in 'product sales', not in any fee
+                # column, so it must be added explicitly. 'Liquidations
+                # Adjustments' is a SEPARATE row type that carries value the
+                # same way — an exact-match on 'Liquidations' silently dropped
+                # it. Measured: UK 2026-07, two rows, -1.20 and -0.25, the
+                # whole of the GBP 1.45 residual against Amazon's own Summary.
+                # Small here; unbounded in a month with real liquidation
+                # activity, and silent either way.
                 amt += ps
             if amt:
-                key = _classify_other(desc, t)
+                key = _classify_other(desc, t, unmatched)
                 if key:
                     signed[key] += amt
                     _head(key, f'{t} — {_norm_desc(desc)}', amt)
+
+    if unmatched:
+        from collections import Counter
+        top = Counter(unmatched).most_common(15)
+        logger.warning(
+            'unified_txn %s: %d row(s) matched no classification rule and were '
+            'booked to other_logistics. Add explicit rules for these: %s',
+            marketplace, len(unmatched), top)
 
     # ── COGS (client method): net units × uploaded COGS per SKU ──────────
     # Month-aware: use the COGSEntry effective for the REPORT month (latest
@@ -299,7 +367,19 @@ def parse_unified_csv(file_bytes: bytes, marketplace: str = 'usa',
     # ── Assemble final line dict (income signed, costs magnitude) ────────
     lines = {}
     for key, val in signed.items():
-        amt = val if key in _INCOME_KEYS else abs(val)
+        # Cost keys are stored as a magnitude. Negate rather than abs():
+        # for a genuine cost `val` is negative and -val == abs(val), so this
+        # is bit-identical wherever the classification is right. Where a cost
+        # key nets to a CREDIT, abs() flipped it back into a cost — silently,
+        # and on top of the income it had already been taken from, so the
+        # error landed twice. -val reports the credit as a credit.
+        amt = val if key in _INCOME_KEYS else -val
+        if key not in _INCOME_KEYS and amt < 0:
+            logger.warning(
+                'unified_txn %s: cost line %r nets to a CREDIT of %.2f. '
+                'Usually a misclassified income row, not a real refund '
+                'balance. Heads: %s',
+                marketplace, key, -amt, dict(heads.get(key, {})))
         bd = {lbl: round(v, 2) for lbl, v in
               sorted(heads.get(key, {}).items(), key=lambda x: -abs(x[1]))
               if abs(v) >= 0.005}

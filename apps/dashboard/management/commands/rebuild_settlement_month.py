@@ -69,13 +69,37 @@ from django.db import transaction
 #   cash_*              → Cash Flow page aggregates.
 #
 # Keep this in step with classify_settlement_row if new heads are added there.
-V2_OWNED_KEYS = {
-    'gross_sales', 'returns', 'promo', 'other_income',
-    'commission', 'fba_fee', 'ppc',
-    'storage_fee', 'subscription', 'account_management',
-    'inbound_transportation', 'other_logistics',
-    'awd_transportation', 'awd_processing', 'awd_storage',
-}
+# ── SETTLEMENT NO LONGER OWNS ANY P&L LINE ───────────────────────────────────
+# This set used to hold the fifteen order- and fee-level keys, and this command
+# deleted and rewrote every one of them on each run. That was wrong, and it is
+# the direct cause of a 22% overstatement of revenue.
+#
+# Measured against Amazon's own Date Range Summary statement, USA July 2026:
+#
+#     gross_sales   settlement 1,361,983.70   Amazon 1,114,203.14   +22.2%
+#     commission    settlement   197,392.88   Amazon   159,277.47   +23.9%
+#     promo         settlement     2,425.60   Amazon    22,117.54   -89.0%
+#     ppc           settlement   193,549.54   Amazon   193,964.00    -0.2%
+#     fba_fee       settlement   373,640.96   Amazon   376,291.02    -0.7%
+#
+# Account-level charges were accurate; order-level lines were not — settlement
+# yields ~20% more order rows than Amazon attributes to the month (55,819 units
+# against 46,329), whether through duplicate reads across overlapping cycles or
+# because settlement stamps deferred items with their release date rather than
+# their posted date. Either way it is the wrong basis for a P&L.
+#
+# The correct parser already existed: unified_txn_importer reads the Date Range
+# Transaction report and reconciles to Amazon's statement EXACTLY — verified at
+# $324,440.90 contribution before COGS, delta -0.00. This command was
+# overwriting it.
+#
+# Settlement keeps the two jobs it is genuinely good at:
+#   • cash reconciliation (what was disbursed, and when)
+#   • per-SKU FBA fee drift, accurate to 0.7%
+#
+# Emptying this set makes the command write nothing while keeping its
+# diagnostics, which remain useful for comparing the two sources.
+V2_OWNED_KEYS: set = set()
 
 # Settlement marketplace-name values that are NOT Amazon retail sales.
 NON_AMAZON_CHANNELS = {'non-amazon us', 'non-amazon'}
