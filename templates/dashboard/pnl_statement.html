@@ -491,10 +491,16 @@ async function syncFromAmazon(){
     }
     const j = await r.json();
     if (j.status === 'ok'){
-      ixAlert('Synced ' + (j.month||curMonth()) + ' from Amazon.\n'
-        + 'Net Sales: $' + Number(j.net_sales).toLocaleString()
-        + '  ·  COGS: $' + Number(j.cogs).toLocaleString()
-        + '\n\n' + (j.message||''));
+      // Show ONLY what the endpoint returns. This used to prepend
+      // 'Synced <month> from Amazon' and format j.net_sales / j.cogs, fields
+      // the old rebuild_settlement_month endpoint returned and the current
+      // one does not — so every sync rendered '$NaN', and on a month with no
+      // report yet the box claimed success directly above the refusal that
+      // explained why nothing was written.
+      // api_sync_pnl_month's `message` is already complete on both paths:
+      // the built figures, or the "no report available" note. One source of
+      // truth, so the two cannot drift apart again.
+      ixAlert(j.message || 'Sync complete.');
       loadPnl();
     } else {
       ixAlert('Sync failed: ' + (j.error || 'unknown'));
