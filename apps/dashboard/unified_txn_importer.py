@@ -408,6 +408,51 @@ def parse_unified_csv(file_bytes: bytes, marketplace: str = 'usa',
     }
 
 
+def _archive_raw(file_bytes: bytes, marketplace: str, month: date_cls,
+                 original_filename: str = '') -> None:
+    """
+    Keep a gzipped copy of the raw report beside the parsed P&L.
+
+    WHY
+        Amazon's report documents EXPIRE. Once one is gone and we hold only
+        the aggregated lines, that month can never be re-diagnosed: there is
+        no way to answer "which rows made up other_logistics?" again. Three
+        classification defects were found in this file's history only because
+        the July and August documents happened to still be downloadable.
+
+    COST
+        CSV compresses roughly 10:1. Five marketplaces at ~27.7 MB/month raw
+        is about 33 MB for a full year gzipped -- negligible next to being
+        unable to audit a closed month.
+
+    Called BEFORE parsing, so a report that fails to parse (Germany's
+    localised headers, a format Amazon changes) is still on disk to work
+    from. Never raises: an archive failure must not lose a good import.
+    """
+    import gzip
+    from pathlib import Path
+    from django.conf import settings
+    try:
+        root = getattr(settings, 'UNIFIED_REPORT_ARCHIVE_DIR', None)
+        root = Path(root) if root else Path(settings.BASE_DIR) / 'archive' / 'unified'
+        d = root / marketplace
+        d.mkdir(parents=True, exist_ok=True)
+        dest = d / f'{month:%Y-%m}.csv.gz'
+        tmp = dest.with_suffix('.gz.part')
+        with gzip.open(tmp, 'wb', compresslevel=6) as fh:
+            fh.write(file_bytes)
+        tmp.replace(dest)                      # atomic within the directory
+        logger.info('unified_txn %s %s: archived %s (%s -> %s bytes) from %r',
+                    marketplace, f'{month:%Y-%m}', dest,
+                    f'{len(file_bytes):,}', f'{dest.stat().st_size:,}',
+                    original_filename or '(api)')
+    except Exception as e:                     # noqa: BLE001 - never fatal
+        logger.warning('unified_txn %s %s: raw archive failed (%s: %s). '
+                       'Import continues; this month will not be re-auditable '
+                       'once Amazon expires the document.',
+                       marketplace, f'{month:%Y-%m}', type(e).__name__, e)
+
+
 def import_unified_csv_bytes(*, file_bytes: bytes, original_filename: str,
                              marketplace: str, month: date_cls, user=None) -> dict:
     """Parse + store the unified report for one region+month. Replaces any
@@ -417,6 +462,7 @@ def import_unified_csv_bytes(*, file_bytes: bytes, original_filename: str,
     from .models import (SettlementLineActual, ManualPnLUpload, AmazonPayout,
                           UnifiedSkuUnits)
 
+    _archive_raw(file_bytes, marketplace, month, original_filename)
     res = parse_unified_csv(file_bytes, marketplace=marketplace, month=month)
     native_ccy = (getattr(settings, 'AMAZON_MARKETPLACES', {})
                   .get(marketplace, {}).get('currency', 'USD'))

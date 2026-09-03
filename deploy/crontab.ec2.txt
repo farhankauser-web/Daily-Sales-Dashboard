@@ -36,6 +36,19 @@ MAILTO=""
 30 16 * * *  cd $APP && $PYTHON $MANAGE ingest_settlement_reports >> $LOG/settlement.log 2>&1
 0 5 * * 0    cd $APP && $PYTHON $MANAGE ingest_settlement_reports --days 90 >> $LOG/settlement.log 2>&1
 
+# ── Management P&L ← Reports Repository (Date Range Transaction report) ─────
+#   Posted-date basis incl. deferred, so a month is COMPLETE on the 1st. It
+#   does not wait for settlement cycles (3rd-12th by marketplace) -- that is
+#   the point of the source change. Runs on the 4th to leave Amazon room.
+#
+#   NOT self-sufficient: createReport is blocked for report type 1202, so the
+#   monthly Transaction report must be GENERATED IN SELLER CENTRAL first. The
+#   command says "no report yet" and writes nothing until it exists, which is
+#   why the 5th-10th retries are here. Idempotent (delete-and-replace per
+#   month), so the first success wins and later runs are free.
+30 6 4 * *    cd $APP && $PYTHON $MANAGE sync_pnl_month --all-marketplaces >> $LOG/pnl.log 2>&1
+30 6 5-10 * * cd $APP && $PYTHON $MANAGE sync_pnl_month --all-marketplaces >> $LOG/pnl.log 2>&1
+
 # ── PPC / Ads ────────────────────────────────────────────────────────────────
 0 6 * * *    cd $APP && $PYTHON $MANAGE backfill_ppc --marketplace usa --days 7 >> $LOG/ppc_daily.log 2>&1
 */30 * * * * cd $APP && $PYTHON $MANAGE sync_today_ppc --marketplace usa       >> $LOG/ppc_today.log 2>&1

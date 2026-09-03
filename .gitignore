@@ -43,3 +43,7 @@ Thumbs.db
 # ── Misc scratch files ────────────────────────────────────────────────────────
 prompt,
 .envrc
+
+# Gzipped raw Amazon Date-Range Transaction reports (~33 MB/year).
+# Kept for auditability after Amazon expires the documents; never committed.
+archive/
